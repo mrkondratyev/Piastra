@@ -1,0 +1,174 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Nov 13 19:27:10 2023
+
+Initial conditions for different flows 
+
+The "boundMark" variable is a boundary marker. it marks each boundary (by default the boundary marker is set to 100)
+    100 - non-reflecting boundary condition (zero gradient)
+    101 - wall bounary condition (normal velocity is set to zero)
+    102 - semi-transparent wall (i.e. the fluid can flow away, but nothing flows backward)
+    300 - periodic boundaries (even or odd indexes have to the same in this case)
+
+@author: mrkondratyev
+"""
+
+import numpy as np
+from eos_setup import EOSdata
+
+#Sod shock tube problem in 1D (along desired direction)
+def Sod_cart(grid,fluid,aux):
+    
+    
+    print("Sod shock tube test (G.A. Sod (1978)) - is one of the most popular benchmark for hydro codes")
+    
+    fluid.vel1[:, :] = 0.0
+    fluid.vel2[:, :] = 0.0
+    fluid.vel3[:, :] = 0.0
+    
+    aux.Tfin = 0.2
+    aux.time = 0.0
+    
+    
+    eos = EOSdata(7.0/5.0)
+    
+    for i in range(grid.Ngc, grid.Nx1r):
+        for j in range(grid.Ngc, grid.Nx2r):
+            if grid.fx2[i, j] < 0.5:
+                fluid.dens[i, j] = 1.0
+                fluid.pres[i, j] = 1.0
+            else:
+                fluid.dens[i, j] = 0.125
+                fluid.pres[i, j] = 0.1
+            
+    fluid.boundMark[:] = 100
+    #return initial conditions for fluid state
+    return fluid, aux, eos
+
+
+#Kelvin-Helmholtz instability in 2D 
+def KH_inst(grid,fluid,aux):
+    
+    
+    print("Kelvin-Helmholtz instability in 2D")
+    
+    fluid.vel3[:,:] = 0.0
+    fluid.pres[:,:] = 2.5
+    
+    eos = EOSdata(5.0/3.0)
+    
+    aux.Tfin = 2.0
+    aux.time = 0.0
+    
+    sigma1 = 0.05/np.sqrt(2.0)
+            
+    for i in range(grid.Ngc, grid.Nx1r):
+        for j in range(grid.Ngc, grid.Nx2r):
+            if np.abs(grid.fx1[i, j] - 0.5) > 0.25:
+                fluid.vel2[i, j] = -0.5
+                fluid.dens[i, j] = 1.0
+            else:
+                fluid.vel2[i, j] = 0.5
+                fluid.dens[i, j] = 2.0 
+            fluid.vel1[i,j] = 0.1*np.sin(4.0*3.1415926*grid.cx2[i, j])*(np.exp(-(grid.cx1[i, j] - 
+                0.25)**2/2.0/sigma1**2)+np.exp(-(grid.cx1[i, j] - 0.75)**2/2.0/sigma1**2))
+            
+    fluid.boundMark[0] = 101
+    fluid.boundMark[1] = 300
+    fluid.boundMark[2] = 101
+    fluid.boundMark[3] = 300
+    
+    #return initial conditions for fluid state
+    return fluid, aux, eos
+
+
+
+
+#Cylindrical Sod problem (in quadrant symmetry)
+def Sod_cyl(grid,fluid,aux):
+    
+    
+    print("cylindrical 2D Sod shock tube test")
+    #velocity is zero everywhere
+    fluid.vel1[:,:] = 0.0
+    fluid.vel2[:,:] = 0.0
+    fluid.vel3[:,:] = 0.0
+    
+    eos = EOSdata(7.0/5.0)
+    
+    aux.Tfin = 0.2
+    aux.time = 0.0
+    
+    
+    for i in range(grid.Ngc, grid.Nx1r):
+        for j in range(grid.Ngc, grid.Nx2r):
+            #rad = np.sqrt(np.abs(grid.fx1[i, j] - 0.5)**2 + np.abs(grid.fx2[i, j] - 0.5)**2) 
+            rad = np.sqrt(grid.fx1[i, j]**2 + grid.fx2[i, j]**2) 
+            
+            if rad < 0.5:
+                fluid.dens[i, j] = 1.0
+                fluid.pres[i, j] = 1.0
+            else:
+                fluid.dens[i, j] = 0.125
+                fluid.pres[i, j] = 0.1
+    
+    #set the boundary conditions for the cylindrical Sod shock tube problem
+    fluid.boundMark[0] = 101
+    fluid.boundMark[1] = 101
+    fluid.boundMark[2] = 100
+    fluid.boundMark[3] = 100
+    
+    #return initial conditions for fluid state
+    return fluid, aux, eos
+
+
+
+#Cylindrical Sedov-Taylor test problem (in quadrant symmetry)
+def Sedov_blast2D(grid,fluid,aux):
+    
+    
+    print("flat 2D Sedov-Taylor explosion test in Cartesian geometry")
+    #velocity is zero everywhere
+    fluid.vel1[:,:] = 0.0
+    fluid.vel2[:,:] = 0.0
+    fluid.vel3[:,:] = 0.0
+    
+    #density is set to zero
+    fluid.dens[:,:] = 1.0
+    
+    eos = EOSdata(7.0/5.0)
+    
+    aux.Tfin = 0.2
+    aux.time = 0.0
+    
+    #calculate the volume where explosios is set
+    volume = 0.0
+    rad0 = 0.02
+    energ = 1.0
+    
+    for i in range(grid.Ngc, grid.Nx1r):
+        for j in range(grid.Ngc, grid.Nx2r):
+            
+            rad = np.sqrt(grid.fx1[i, j]**2 + grid.fx2[i, j]**2) 
+            if rad < rad0:
+                volume = volume + grid.cVol[i,j]
+    
+    #set the initial conditions
+    for i in range(grid.Ngc, grid.Nx1r):
+        for j in range(grid.Ngc, grid.Nx2r):
+            #rad = np.sqrt(np.abs(grid.fx1[i, j] - 0.5)**2 + np.abs(grid.fx2[i, j] - 0.5)**2) 
+            rad = np.sqrt(grid.fx1[i, j]**2 + grid.fx2[i, j]**2) 
+            
+            if rad < rad0:
+                fluid.pres[i, j] = (eos.GAMMA - 1.0) * energ/volume
+            else:
+                fluid.pres[i, j] = 0.001
+    
+    #set the boundary conditions for the Sedov blast wave problem
+    fluid.boundMark[0] = 101
+    fluid.boundMark[1] = 101
+    fluid.boundMark[2] = 100
+    fluid.boundMark[3] = 100
+    
+    #return initial conditions for fluid state
+    return fluid, aux, eos
