@@ -25,9 +25,6 @@ class auxData:
         #Runge-Kutta temporal order
         self.RK_order = "RK3"
         
-        #in hydrodynamics we consider 5 conservation laws (density, 3 components of momentum and total energy)
-        self.nVar = 5 
-        
         #final time
         self.Tfin = 0.0
         

@@ -12,9 +12,10 @@ after this stage, the finite volume scheme in this code does not use the specifi
 geometry and operates with volumes and surfaces in order to extend this code for 
 diffrent geometries/grid spacing in future
 
+for all values we include ghost cells
+
 @author: mrkondratyev
 """
-
 
 import numpy as np
 
@@ -23,6 +24,10 @@ class Grid:
     
     #here we initialize all important data for our grid 
     def __init__(self, Nx1, Nx2, Ngc):
+        
+        Nx1 = np.int32(Nx1)
+        Nx2 = np.int32(Nx2)
+        Ngc = np.int32(Ngc)
         
         #numbers of cells along 1- and 2-direction
         self.Nx1 = Nx1
@@ -56,8 +61,8 @@ class Grid:
         self.cx2 = np.zeros((Nx1 + Ngc * 2, Nx2 + Ngc * 2), dtype=np.double)
         
         #grid resolution in each direction initialization
-        self.dx1 = np.zeros(Nx1 + Ngc * 2, dtype=np.double)
-        self.dx2 = np.zeros(Nx2 + Ngc * 2, dtype=np.double)
+        self.dx1 = np.zeros((Nx1 + Ngc * 2, Nx2 + Ngc * 2), dtype=np.double)
+        self.dx2 = np.zeros((Nx1 + Ngc * 2, Nx2 + Ngc * 2), dtype=np.double)
         
         
         
@@ -65,18 +70,30 @@ class Grid:
     #uniform 2D Cartesian grid setup
     def uniCartGrid(self, x1ini, x1fin, x2ini,x2fin):
         
+        #ensure that the boundaries of the domain are float
+        x1ini = np.float64(x1ini)
+        x1fin = np.float64(x1fin)
+        x2ini = np.float64(x2ini)
+        x2fin = np.float64(x2fin)
+        
         #local variables (cell number in each direction + number of ghost cells)
         Nx1 = self.Nx1
         Nx2 = self.Nx2
         Ngc = self.Ngc
         
         #uniform cartesian grid resolution (simply 1 number for each direction)
-        dx1uc = ( x1fin - x1ini )/Nx1
-        dx2uc = ( x2fin - x2ini )/Nx2
+        dx1uc = ( x1fin - x1ini ) / Nx1
+        dx2uc = ( x2fin - x2ini ) / Nx2
         
         #grid resolution (array for local cell size in each direction)
-        self.dx1[:] = dx1uc
-        self.dx2[:] = dx2uc
+        dx1 = np.zeros(Nx1 + Ngc * 2, dtype=np.double)
+        dx2 = np.zeros(Nx2 + Ngc * 2, dtype=np.double)
+        dx1[:] = dx1uc
+        dx2[:] = dx2uc
+        
+        #grid resolution -- 2D arrays
+        self.dx1 = np.tile(dx1, (Nx2 + Ngc * 2, 1)).T
+        self.dx2 = np.tile(dx2, (Nx1 + Ngc * 2, 1))
         
         #face coordinates in each direction
         fx1 = np.linspace(x1ini - Ngc * dx1uc, x1fin + Ngc * dx1uc, Nx1 + Ngc * 2 + 1)

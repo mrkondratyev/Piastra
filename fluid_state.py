@@ -28,17 +28,19 @@ class FluidState:
         self.pres = np.zeros(grid.grid_shape, dtype=np.double)
         
         # Conservative variables inside the real cells only (!)
-        self.mass = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc))
-        self.mom1 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc))
-        self.mom2 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc))
-        self.mom3 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc))
-        self.etot = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc))
+        self.mass = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
+        self.mom1 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
+        self.mom2 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
+        self.mom3 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
+        self.etot = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
         
         #boundary marker 
         self.boundMark = np.zeros(4, dtype=np.int32)
         self.boundMark[:] = 100
         
         #user-defined source terms (e.g. gravity acceleration and so on)
-        #TBD 
+        self.F1 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
+        self.F2 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
+
         
         

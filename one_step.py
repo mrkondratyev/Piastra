@@ -8,7 +8,6 @@ from ideal_hydro_functions import prim2cons_idealHydro, cons2prim_idealHydro
 from boundaries import boundCond 
 from reconstruction import VarReconstruct 
 import numpy as np 
-from numba import njit 
 import copy 
 from flux_numpy import FluxCalcRS
 
@@ -191,7 +190,7 @@ def flux_calc_hydro(grid, fluid, rec_type, flux_type, eos):
     ResE = np.zeros((Nx1r - Ngc, Nx2r - Ngc))
     
     #fluxes in 1-dimension 
-    if (grid.Nx1 > 1): 
+    if (grid.Nx1 > 1): #check if we even need to consider this dimension
         
         #primitive variables reconstruction in 1-dim
         #here we reconstruct density, 3 components of velocity and pressure
@@ -216,7 +215,7 @@ def flux_calc_hydro(grid, fluid, rec_type, flux_type, eos):
         
         
     #fluxes in 2-dimension
-    if (grid.Nx2 > 1):
+    if (grid.Nx2 > 1): #check if we even need to consider this dimension
         
         #primitive variables reconstruction in 2-dim
         #here we reconstruct density, 3 components of velocity and pressure
@@ -245,6 +244,14 @@ def flux_calc_hydro(grid, fluid, rec_type, flux_type, eos):
         ResE = ResE + ( Fetot[:,1:]*grid.fS2[Ngc:-Ngc, Ngc+1:Nx2r + 1] - \
             Fetot[:,:-1]*grid.fS2[Ngc:-Ngc, Ngc:Nx2r] ) / grid.cVol[Ngc:-Ngc, Ngc:-Ngc]
         
+        #finally, here we add the external force source terms
+        #we add forces in momentum res, while in energy we add Power = Force*Vel 
+        Res1 = Res1 - fluid.dens[Ngc:-Ngc, Ngc:-Ngc] * fluid.F1
+        Res2 = Res2 - fluid.dens[Ngc:-Ngc, Ngc:-Ngc] * fluid.F2
+        ResE = ResE - fluid.dens[Ngc:-Ngc, Ngc:-Ngc] * \
+            (fluid.F1 * fluid.vel1[Ngc:-Ngc, Ngc:-Ngc] + \
+            fluid.F2 * fluid.vel2[Ngc:-Ngc, Ngc:-Ngc])
+             
     #return the residuals for mass, 3 components of momentum and total energy
     return ResM, Res1, Res2, Res3, ResE
 

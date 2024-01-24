@@ -19,10 +19,11 @@ from CFL_condition import CFLcondition
 from aux_routines import auxData
 from one_step import oneStep_hydro_RK
 import matplotlib.pyplot as plt
+import numpy as np
 import time
 
 #here we introduce the grid cell numbers in each direction + the number of ghost cells
-Nx1 = 64
+Nx1 = 128
 Nx2 = 64
 Ngc = 3
 
@@ -45,15 +46,15 @@ fluid = FluidState(grid)
 #fill the fluid state arrays with initial data
 #see "init_cond.py" for different examples/tests
 ###############################################################
-fluid, aux, eos = KH_inst(grid, fluid, aux)
+fluid, aux, eos = init_cond_RT_inst_2D(grid, fluid, aux)
 ###############################################################
 
 print("grid resolution = ", grid.Nx1, grid.Nx2)
 
-#adjust the solver parameters and print them
-aux.rec_type = 'PLM'
+#here we adjust the solver parameters and print them
+aux.rec_type = 'PPM'
 aux.flux_type = 'HLLC'
-aux.RK_order = 'RK2'
+aux.RK_order = 'RK3'
 print("reconstruction type = ", aux.rec_type)
 print("Riemann flux = ", aux.flux_type)
 print("Temporal integration = ", aux.RK_order)
@@ -84,11 +85,14 @@ while aux.time < aux.Tfin:
     #"real time" output (animated)
     aux.time = aux.time + dt
     if (i_time%60 == 0) or (aux.Tfin - aux.time) < 1e-12:
+        rhomin = np.min(fluid.dens[Ngc:-Ngc,Ngc:-Ngc])
+        rhomax = np.max(fluid.dens[Ngc:-Ngc,Ngc:-Ngc])
         print("phys time = ", aux.time)
         print('num of timesteps = ', i_time)
         plt.cla()
         plt.imshow(fluid.dens[grid.Ngc:-grid.Ngc, grid.Ngc:-grid.Ngc], cmap='jet')
-        plt.clim(0.9, 2.1)
+        #plt.clim(rhomin, rhomax)
+        plt.clim(1.0, 2.0)
         ax = plt.gca()
         ax.invert_yaxis()
         ax.get_xaxis().set_visible(False)
@@ -107,8 +111,8 @@ print("time of simulation = ", end_time1 - start_time1, " secs")
 # Show the plot
 plt.show()
   
-#plt.plot(grid.cx2[Ngc,:], fluid.dens[Ngc,:])
-#plt.plot(grid.cx2, fluid.pres[Ngc,:])
+plt.plot(grid.cx1[Ngc:-Ngc,Ngc], fluid.dens[Ngc:-Ngc,Ngc])
+plt.plot(grid.cx2[Ngc,Ngc:-Ngc], fluid.dens[Ngc,Ngc:-Ngc])
 
 #plt.imshow(fluid.dens, extent=(grid.cx1.min(), grid.cx1.max(), grid.cx2.min(), grid.cx2.max()), origin='lower', cmap='viridis', interpolation='nearest', aspect='auto')
 

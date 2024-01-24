@@ -5,6 +5,7 @@ A very simple class with equation of state data.
 by now, it only contains the GAMMA index and supports only ideal gas EOS
 @author: mrkondratyev
 """
+import numpy as np 
 
 class EOSdata:
     
@@ -13,5 +14,5 @@ class EOSdata:
     def __init__(self, gamma):
         
         #gamma-index for ideal gas EOS 
-        self.GAMMA = gamma
+        self.GAMMA = np.float64(gamma)
         

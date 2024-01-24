@@ -1,6 +1,5 @@
 import numpy as np
 import sys
-import numba
 
 
 """
@@ -63,6 +62,19 @@ def VarReconstruct(var, grid, rec_type, dim):
             #WENO reconstructed states in 2-dimension 
             var_rec_L, var_rec_R = rec_WENO(grid.Ngc, grid.Nx2r, var, 2)
     
+    if (rec_type == 'PPM'):
+        
+        if (dim == 1):
+            
+            #PPM reconstructed states in 1-dimension 
+            var_rec_L, var_rec_R = rec_PPM(grid.Ngc, grid.Nx1r, var, 1)
+        
+        elif (dim == 2):
+            
+            #PPM reconstructed states in 2-dimension 
+            var_rec_L, var_rec_R = rec_PPM(grid.Ngc, grid.Nx2r, var, 2)
+        
+        
     
     #return reconstructed values of some fluid variable on each side of the face
     return var_rec_L, var_rec_R
@@ -113,7 +125,7 @@ def rec_PLM(grid, var, dim):
     Nx2r = grid.Nx2r
     
     #limiter type, see "limiter" function in this file below
-    limtype = 3
+    limtype = 'MC'
     
     #reconstruction along 1-dimension
     if (dim == 1):
@@ -182,39 +194,45 @@ def rec_PLM(grid, var, dim):
 """
 limiter function for second-order monotonic piecewise linear reconstruction
 it offers 5 possible options -- 
-1 - van Leer limiter
-2 - minmod limiter - most diffusive one, but no oscillations observed for it on any problem, including MHD
-3 - MC limiter - also a good option, a bit better, than van Leer
-4 - Koren third-order limiter (third order of approximation only on uniform grid)
-0 - no limiter - simply first order piecewise-constant scheme
+VL - van Leer limiter
+MM - minmod limiter - most diffusive one, but no oscillations observed for it on any problem, including MHD
+MC - MC limiter - also a good option, a bit better, than van Leer
+KOR - Koren third-order limiter (third order of approximation only on uniform grid)
+PCM - simply first order piecewise-constant scheme
+NO - unlimited reconstruction
 """
 def limiter(x, y, limiter_type):
     
     # Smoothness analyzer
     r = (y + 1e-14) / (x + 1e-14)
 
-    if limiter_type == 1:
+    if limiter_type == 'VL':
         #vanLeer limiter
         df = x * (np.abs(r) + r) / (1.0 + np.abs(r))
 
-    elif limiter_type == 2:
+    elif limiter_type == 'MM':
         # minmod limiter -- the most diffusive one (but the most stable)
         df = 0.5 * x * (1.0 + np.sign(r)) * np.minimum(1.0, np.abs(r))
 
-    elif limiter_type == 3:
+    elif limiter_type == 'MC':
         #monotonized-central (MC) limiter
         beta = 2.0
         #in other cases beta should be in range [1.0..2.0]
         
         df = x * np.maximum(0.0, np.minimum( (1.0 + r) / 2.0,  np.minimum(r * beta, beta)))
 
-    elif limiter_type == 4:
+    elif limiter_type == 'KOR':
         #third-order Koren limiter (third order approximation stands only for unifrom cartesian grids)
         df = x * np.maximum(0.0, np.minimum(2.0 * r, np.minimum(1.0 / 3.0 + 2.0 * r / 3.0, 2.0)))
 
-    elif limiter_type == 0:
+    elif limiter_type == 'PCM':
         #first order scheme (for tests)
         df = 0.0
+        
+    elif limiter_type == 'NO':
+        #unlimited second-order reconstruction (it can crash)
+        df = x #Lax-Wendroff-like scheme
+        #df = (x + y) / 2.0 #central difference
         
     else:
         #in case of erroneous limiter type input throw message and stop the program
@@ -246,10 +264,10 @@ in original ENO we should not use the stencils C and R, but inside the left sten
 
 By chosing the smoothest stencil (ENO) with the smallest IS, or by using the weighted convex combination of different stencils (WENO), we can obtain the reconstructed state on the face.
 
-everywhere below the reconstructed value looks adopts the Legendre polynomial inside the cell along the 1- or 2-dimension
+everywhere below the reconstructed value adopts the Legendre polynomial inside the cell along the 1- or 2-dimension
 var_rec = = var(cell) + var_x(cell)*x + var_xx(cell)* (x^2 - 1/12), the integral over the cell volume will be var(cell)*Volume.
 the var_x and var_xx are just the approximations for the derivatives.
-We look for 3 stencils and further use either finite-difference WENO5 scheme for the weights (fifth order in space) of CWENO (C for central) weights, 
+We look for 3 stencils and further use either finite-difference WENO5 scheme for the weights (fifth order in space) or CWENO (C for central) weights, 
 which has third order in space.
 
 ########################################
@@ -331,6 +349,7 @@ def rec_WENO(Ngc, Nr, var, dim):
     
     #final reconstructed states in desired direction
     if (dim == 1):        
+        
         #left reconstructed state
         var_rec_L = var[Ngc-1:Nr, Ngc:-Ngc] + ux[:-1,:] * 0.5 + uxx[:-1, :] * ((0.5) ** 2 - 1.0 / 12.0)
         
@@ -347,6 +366,88 @@ def rec_WENO(Ngc, Nr, var, dim):
         var_rec_R = var[Ngc:-Ngc, Ngc:Nr+1] - ux[:, 1:] * 0.5 + uxx[:, 1:] * ((-0.5) ** 2 - 1.0 / 12.0) 
          
             
+    #return final arrays of reconstructed values        
+    return var_rec_L, var_rec_R
+
+
+"""
+#!!!DESCRIPTION OF rec_PPM!!! 
+TBD 
+"""
+def rec_PPM(Ngc, Nr, var, dim):
+    
+    
+    #choose the dimension of reconsturction
+    if (dim == 1):
+        
+        #limited differences
+        deltaU = limiter(var[Ngc-1:Nr+3, Ngc:-Ngc] - var[Ngc-2:Nr+2, Ngc:-Ngc], var[Ngc-2:Nr+2, Ngc:-Ngc] - var[Ngc-3:Nr+1, Ngc:-Ngc], 'MC')
+        
+        #reconstruction with PPM method: step 1, here we derive the reconstructed profile for all real faces + 1 ghost face on each side 
+        fvar0 = var[Ngc-2:Nr+1, Ngc:-Ngc] + 0.5 * (var[Ngc-1:Nr+2, Ngc:-Ngc] - var[Ngc-2:Nr+1, Ngc:-Ngc]) - (deltaU[1:,:] - deltaU[:-1,:]) / 6.0
+          
+            
+        #reconstruction with PPM method: step 2, check if we have face value outside the allowed interval
+        fvar0_L = np.where( (fvar0[1:,:] - var[Ngc-1:Nr+1, Ngc:-Ngc]) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - fvar0[:-1,:]) < 0.0, \
+            var[Ngc-1:Nr+1, Ngc:-Ngc], fvar0[:-1,:])
+        
+        fvar0_R = np.where( (fvar0[1:,:] - var[Ngc-1:Nr+1, Ngc:-Ngc]) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - fvar0[:-1,:]) < 0.0, \
+            var[Ngc-1:Nr+1, Ngc:-Ngc], fvar0[1:,:])
+            
+
+        #reconstruction with PPM method: step 3, regulate the curvature to exclude extrema inside the cell
+        var_rec_L = np.where( (fvar0_R - fvar0_L) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - 0.5 * (fvar0_R + fvar0_L)) > (fvar0_R - fvar0_L) ** 2 / 6.0, \
+            3.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] - 2.0 * fvar0_R, fvar0_L)
+        
+        var_rec_R = np.where( (fvar0_R - fvar0_L) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - 0.5 * (fvar0_R + fvar0_L)) < -(fvar0_R - fvar0_L) ** 2 / 6.0, \
+            3.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] - 2.0 * fvar0_L, fvar0_R)
+           
+            
+        #final coefficients for Legendre polynomial
+        ux = var_rec_R - var_rec_L
+        uxx = 3.0 * var_rec_R - 6.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] + 3.0 * var_rec_L
+        
+        #left reconstructed state
+        var_rec_L = var[Ngc-1:Nr, Ngc:-Ngc] + ux[:-1,:] * 0.5 + uxx[:-1, :] * ((0.5) ** 2 - 1.0 / 12.0)
+        
+        #right reconstructed state
+        var_rec_R = var[Ngc:Nr+1, Ngc:-Ngc] - ux[1:,:] * 0.5 + uxx[1:, :] * ((-0.5) ** 2 - 1.0 / 12.0)
+            
+    elif (dim == 2):
+        
+        #limited differences
+        deltaU = limiter(var[Ngc:-Ngc, Ngc-1:Nr+3] - var[Ngc:-Ngc, Ngc-2:Nr+2], var[Ngc:-Ngc, Ngc-2:Nr+2] - var[Ngc:-Ngc, Ngc-3:Nr+1], 'MC')
+        
+        #reconstruction with PPM method: step 1, here we derive the reconstructed profile for all real faces + 1 ghost face on each side       
+        fvar0 = var[Ngc:-Ngc, Ngc-2:Nr+1] + 0.5 * (var[Ngc:-Ngc, Ngc-1:Nr+2] - var[Ngc:-Ngc, Ngc-2:Nr+1]) - (deltaU[:,1:] - deltaU[:,:-1]) / 6.0
+
+        
+        #reconstruction with PPM method: step 2, check if we have face value outside the allowed interval
+        fvar0_L = np.where( (fvar0[:,1:] - var[Ngc:-Ngc, Ngc-1:Nr+1]) * (var[Ngc:-Ngc, Ngc-1:Nr+1] - fvar0[:,:-1]) < 0.0, \
+            var[Ngc:-Ngc, Ngc-1:Nr+1], fvar0[:,:-1])
+            
+        fvar0_R = np.where( (fvar0[:,1:] - var[Ngc:-Ngc, Ngc-1:Nr+1]) * (var[Ngc:-Ngc, Ngc-1:Nr+1] - fvar0[:,:-1]) < 0.0, \
+            var[Ngc:-Ngc, Ngc-1:Nr+1], fvar0[:,1:])
+
+
+        #reconstruction with PPM method: step 3, regulate the curvature to exclude extrema inside the cell
+        var_rec_L = np.where( (fvar0_R - fvar0_L) * (var[Ngc:-Ngc, Ngc-1:Nr+1] - 0.5 * (fvar0_R + fvar0_L)) > (fvar0_R - fvar0_L) ** 2 / 6.0, \
+            3.0 * var[Ngc:-Ngc, Ngc-1:Nr+1] - 2.0 * fvar0_R, fvar0_L)
+            
+        var_rec_R = np.where( (fvar0_R - fvar0_L) * (var[Ngc:-Ngc, Ngc-1:Nr+1] - 0.5 * (fvar0_R + fvar0_L)) < -(fvar0_R - fvar0_L) ** 2 / 6.0, \
+            3.0 * var[Ngc:-Ngc, Ngc-1:Nr+1] - 2.0 * fvar0_L, fvar0_R)
+        
+        #final coefficients for Legendre polynomial
+        ux = var_rec_R - var_rec_L
+        uxx = 3.0 * var_rec_R - 6.0 * var[Ngc:-Ngc, Ngc-1:Nr+1] + 3.0 * var_rec_L
+            
+        #left reconstructed state 
+        var_rec_L = var[Ngc:-Ngc, Ngc-1:Nr] + ux[:, :-1] * 0.5 + uxx[:, :-1] * (0.5 ** 2 - 1.0 / 12.0)
+        
+        #right reconstructed state
+        var_rec_R = var[Ngc:-Ngc, Ngc:Nr+1] - ux[:, 1:] * 0.5 + uxx[:, 1:] * ((-0.5) ** 2 - 1.0 / 12.0) 
+         
+        
     #return final arrays of reconstructed values        
     return var_rec_L, var_rec_R
 
