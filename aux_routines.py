@@ -6,27 +6,29 @@ here the auxilary data lives, like CFL multiplier, final time, physical time, ty
 
 @author: mrkondratyev
 """
-import numpy as np
 
 class auxData:
     
     #here we initialize all important data for our grid 
     def __init__(self, grid):
         
-        #Courant-Friedrichs-Lewy multiplier, it can't be more than 2 (in 1D, and more than 1 in 2D)
-        self.CFL = 1.0
-        
         #reconstruction type (by now, PCM, PLM and WENO are supported)
-        self.rec_type = 'WENO'
+        self.rec_type = 'PLM'
         
         #flux type
-        self.flux_type = 'HLLC'
+        self.flux_type = 'HLL'
         
         #Runge-Kutta temporal order
-        self.RK_order = "RK3"
+        self.RK_order = "RK2"
         
         #final time
         self.Tfin = 0.0
         
         #phys time 
         self.time = 0.0
+        
+        #Courant-Friedrichs-Lewy multiplier, it can't be more than 1 (in 1D, and more than 0.5 in 2D)
+        if (grid.Nx1 == 1) or (grid.Nx2 == 1):
+            self.CFL = 0.8
+        else:
+            self.CFL = 0.4

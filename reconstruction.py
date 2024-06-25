@@ -62,19 +62,31 @@ def VarReconstruct(var, grid, rec_type, dim):
             #WENO reconstructed states in 2-dimension 
             var_rec_L, var_rec_R = rec_WENO(grid.Ngc, grid.Nx2r, var, 2)
     
+    #standard PPM reconstruction, introduced by Collela and Woorward (1984)
+    if (rec_type == 'PPMorig'):
+        
+        if (dim == 1):
+            
+            #PPM reconstructed states in 1-dimension 
+            var_rec_L, var_rec_R = rec_PPMorig(grid.Ngc, grid.Nx1r, var, 1)
+        
+        elif (dim == 2):
+            
+            #PPM reconstructed states in 2-dimension 
+            var_rec_L, var_rec_R = rec_PPMorig(grid.Ngc, grid.Nx2r, var, 2)
+        
+    #fifth-order PPM reconstruction, following Mignone (2014)
     if (rec_type == 'PPM'):
         
         if (dim == 1):
             
             #PPM reconstructed states in 1-dimension 
-            var_rec_L, var_rec_R = rec_PPM(grid.Ngc, grid.Nx1r, var, 1)
+            var_rec_L, var_rec_R = rec_PPM5(grid.Ngc, grid.Nx1r, var, 1)
         
         elif (dim == 2):
             
             #PPM reconstructed states in 2-dimension 
-            var_rec_L, var_rec_R = rec_PPM(grid.Ngc, grid.Nx2r, var, 2)
-        
-        
+            var_rec_L, var_rec_R = rec_PPM5(grid.Ngc, grid.Nx2r, var, 2)    
     
     #return reconstructed values of some fluid variable on each side of the face
     return var_rec_L, var_rec_R
@@ -125,7 +137,7 @@ def rec_PLM(grid, var, dim):
     Nx2r = grid.Nx2r
     
     #limiter type, see "limiter" function in this file below
-    limtype = 'MC'
+    limtype = 'VL'
     
     #reconstruction along 1-dimension
     if (dim == 1):
@@ -370,18 +382,38 @@ def rec_WENO(Ngc, Nr, var, dim):
     return var_rec_L, var_rec_R
 
 
+
+
 """
 #!!!DESCRIPTION OF rec_PPM!!! 
-TBD 
+A standard third order PPM reconstruction, introduced by Collela and Woodward (1984) 
+it can be done for any system of equations, the input are the number of ghost zones NGC, number of cells in desired dimension Nr + NGC, 
+2D array of state variable "var" and integer "dim" = 1 or 2, which switches between the dimension of reconsturction.
+The output is a 2D array with reconstructed state variable at left and right sides of the cell faces 
+on the faces of the 2D grid in 1- or 2- dimensions, depending on parameter dim. 
+
+The idea of PPM follows the one from PLM but now we look for parabolic profile inside the computational cell insted of a linear one. In this case, 
+we should take care about a curvature of the quadratic polynomial in order to avoid new extrema inside the cell. 
+
+everywhere below the reconstructed value adopts the Legendre polynomial inside the cell along the 1- or 2-dimension
+var_rec = = var(cell) + var_x(cell)*x + var_xx(cell)* (x^2 - 1/12), the integral over the cell volume will be var(cell)*Volume.
+the var_x and var_xx are just the approximations for the derivatives.
+########################################
+further reading -- see e.g. -- D.S. Balsara "Higher-order accurate space-time schemes
+for computational astrophysics—Part I: finite volume
+methods", Living Rev Comput Astrophys (2017) 3:2
+########################################
+
+PPM routine implemented here works only for uniform Cartesian grids
 """
-def rec_PPM(Ngc, Nr, var, dim):
+def rec_PPMorig(Ngc, Nr, var, dim):
     
     
     #choose the dimension of reconsturction
     if (dim == 1):
         
         #limited differences
-        deltaU = limiter(var[Ngc-1:Nr+3, Ngc:-Ngc] - var[Ngc-2:Nr+2, Ngc:-Ngc], var[Ngc-2:Nr+2, Ngc:-Ngc] - var[Ngc-3:Nr+1, Ngc:-Ngc], 'MC')
+        deltaU = limiter(var[Ngc-1:Nr+3, Ngc:-Ngc] - var[Ngc-2:Nr+2, Ngc:-Ngc], var[Ngc-2:Nr+2, Ngc:-Ngc] - var[Ngc-3:Nr+1, Ngc:-Ngc], 'VL')
         
         #reconstruction with PPM method: step 1, here we derive the reconstructed profile for all real faces + 1 ghost face on each side 
         fvar0 = var[Ngc-2:Nr+1, Ngc:-Ngc] + 0.5 * (var[Ngc-1:Nr+2, Ngc:-Ngc] - var[Ngc-2:Nr+1, Ngc:-Ngc]) - (deltaU[1:,:] - deltaU[:-1,:]) / 6.0
@@ -451,5 +483,97 @@ def rec_PPM(Ngc, Nr, var, dim):
     #return final arrays of reconstructed values        
     return var_rec_L, var_rec_R
 
+
+
+
+
+
+"""
+#!!!DESCRIPTION OF rec_PPM5!!! 
+A slightly improved version of usual PPM reconstruction, which results into the fifth order of spatial approximation. 
+Here we follow the paper by  A. Mignone, JCP (2014)
+
+PPM routine implemented here works for uniform cartesian grids
+"""
+def rec_PPM5(Ngc, Nr, var, dim):
+    
+    PPM5c = np.zeros(5)
+    PPM5c[0] = 2.0 / 60.0
+    PPM5c[1] = - 13.0 / 60.0
+    PPM5c[2] = 47.0 / 60.0
+    PPM5c[3] = 27.0 / 60.0
+    PPM5c[4] = - 3.0 / 60.0
+    
+    #choose the dimension of reconsturction
+    if (dim == 1):
+        
+        var_L = var[Ngc-3:Nr-1, Ngc:-Ngc] * PPM5c[4] + var[Ngc-2:Nr, Ngc:-Ngc] * PPM5c[3] + \
+            var[Ngc-1:Nr+1, Ngc:-Ngc] * PPM5c[2] + var[Ngc:Nr+2, Ngc:-Ngc] * PPM5c[1] + \
+            var[Ngc+1:Nr+3, Ngc:-Ngc] * PPM5c[0]
+        var_R = var[Ngc-3:Nr-1, Ngc:-Ngc] * PPM5c[0] + var[Ngc-2:Nr, Ngc:-Ngc] * PPM5c[1] + \
+            var[Ngc-1:Nr+1, Ngc:-Ngc] * PPM5c[2] + var[Ngc:Nr+2, Ngc:-Ngc] * PPM5c[3] + \
+            var[Ngc+1:Nr+3, Ngc:-Ngc] * PPM5c[4]
+        
+        var_L = np.minimum(var_L, np.maximum(var[Ngc-2:Nr, Ngc:-Ngc], var[Ngc-1:Nr+1, Ngc:-Ngc]))
+        var_R = np.minimum(var_R, np.maximum(var[Ngc-1:Nr+1, Ngc:-Ngc], var[Ngc:Nr+2, Ngc:-Ngc]))
+    
+        var_L = np.maximum(var_L, np.minimum(var[Ngc-2:Nr, Ngc:-Ngc], var[Ngc-1:Nr+1, Ngc:-Ngc]))
+        var_R = np.maximum(var_R, np.minimum(var[Ngc-1:Nr+1, Ngc:-Ngc], var[Ngc:Nr+2, Ngc:-Ngc]))
+    
+        dvar_R = var_R - var[Ngc-1:Nr+1, Ngc:-Ngc]
+        dvar_L = var_L - var[Ngc-1:Nr+1, Ngc:-Ngc]
+        
+        
+        var_rec_L = np.where((dvar_R * dvar_L >= 0.0), var[Ngc-1:Nr+1, Ngc:-Ngc], \
+            np.where((np.abs(dvar_L) >= 2.0 * np.abs(dvar_R)) & (dvar_R * dvar_L < 0.0), var[Ngc-1:Nr+1, Ngc:-Ngc] - 2.0 * dvar_R, \
+            var[Ngc-1:Nr+1, Ngc:-Ngc] + dvar_L))            
+        
+        var_rec_R = np.where((dvar_R * dvar_L >= 0.0), var[Ngc-1:Nr+1, Ngc:-Ngc], \
+            np.where((np.abs(dvar_R) >= 2.0 * np.abs(dvar_L)) & (dvar_R * dvar_L < 0.0), var[Ngc-1:Nr+1, Ngc:-Ngc] - 2.0 * dvar_L, \
+            var[Ngc-1:Nr+1, Ngc:-Ngc] + dvar_R))  
+            
+        
+        dQ = var_rec_R - var_rec_L
+        Q6 = 6.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] - 3.0 * (var_rec_R + var_rec_L)
+        
+        var_rec_L, var_rec_R = var_rec_R[:-1,:], var_rec_L[1:,:]
+            
+    elif (dim == 2):
+        
+        var_L = var[Ngc:-Ngc, Ngc-3:Nr-1] * PPM5c[4] + var[Ngc:-Ngc, Ngc-2:Nr] * PPM5c[3] + \
+            var[Ngc:-Ngc, Ngc-1:Nr+1] * PPM5c[2] + var[Ngc:-Ngc, Ngc:Nr+2] * PPM5c[1] + \
+            var[Ngc:-Ngc, Ngc+1:Nr+3] * PPM5c[0]
+        var_R = var[Ngc:-Ngc, Ngc-3:Nr-1] * PPM5c[0] + var[Ngc:-Ngc, Ngc-2:Nr] * PPM5c[1] + \
+            var[Ngc:-Ngc, Ngc-1:Nr+1] * PPM5c[2] + var[Ngc:-Ngc, Ngc:Nr+2] * PPM5c[3] + \
+            var[Ngc:-Ngc, Ngc+1:Nr+3] * PPM5c[4]
+        
+        
+        var_L = np.minimum(var_L, np.maximum(var[Ngc:-Ngc, Ngc-2:Nr], var[Ngc:-Ngc, Ngc-1:Nr+1]))
+        var_R = np.minimum(var_R, np.maximum(var[Ngc:-Ngc, Ngc-1:Nr+1], var[Ngc:-Ngc, Ngc:Nr+2]))
+    
+        var_L = np.maximum(var_L, np.minimum(var[Ngc:-Ngc, Ngc-2:Nr], var[Ngc:-Ngc, Ngc-1:Nr+1]))
+        var_R = np.maximum(var_R, np.minimum(var[Ngc:-Ngc, Ngc-1:Nr+1], var[Ngc:-Ngc, Ngc:Nr+2]))
+    
+        dvar_R = var_R - var[Ngc:-Ngc, Ngc-1:Nr+1]
+        dvar_L = var_L - var[Ngc:-Ngc, Ngc-1:Nr+1]
+        
+        
+        var_rec_L = np.where((dvar_R * dvar_L >= 0.0), var[Ngc:-Ngc, Ngc-1:Nr+1], \
+            np.where((np.abs(dvar_L) >= 2.0 * np.abs(dvar_R)) & (dvar_R * dvar_L < 0.0), var[Ngc:-Ngc, Ngc-1:Nr+1] - 2.0 * dvar_R, \
+            var[Ngc:-Ngc, Ngc-1:Nr+1] + dvar_L))            
+        
+        var_rec_R = np.where((dvar_R * dvar_L >= 0.0), var[Ngc:-Ngc, Ngc-1:Nr+1], \
+            np.where((np.abs(dvar_R) >= 2.0 * np.abs(dvar_L)) & (dvar_R * dvar_L < 0.0), var[Ngc:-Ngc, Ngc-1:Nr+1] - 2.0 * dvar_L, \
+            var[Ngc:-Ngc, Ngc-1:Nr+1] + dvar_R))  
+        
+        dQ = var_rec_R - var_rec_L
+        Q6 = 6.0 * var[Ngc:-Ngc, Ngc-1:Nr+1] - 3.0 * (var_rec_R + var_rec_L)
+            
+        var_rec_L, var_rec_R = var_rec_R[:, :-1], var_rec_L[:, 1:]
+        
+        
+        
+    #return final arrays of reconstructed values        
+    return var_rec_L, var_rec_R
 
 
