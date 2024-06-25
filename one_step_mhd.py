@@ -5,7 +5,7 @@ Created on Sun Jun 16 22:32:41 2024
 @author: mrkondratyev
 """
 
-from ideal_hydro_functions import prim2cons_idealMHD, cons2prim_idealMHD
+from prim_cons_fluid_MHD import prim2cons_idealMHD, cons2prim_idealMHD
 from boundaries import boundCond_mhd 
 from reconstruction import VarReconstruct 
 import numpy as np 
