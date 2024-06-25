@@ -10,7 +10,7 @@ from init_cond_advection import *
 from advection_state import AdvState
 from CFL_condition import CFLcondition_adv
 from aux_routines import auxData
-from one_step_adv import oneStep_advection_RK
+from one_step_advection import oneStep_advection_RK
 import matplotlib.pyplot as plt
 import numpy as np
 import time
