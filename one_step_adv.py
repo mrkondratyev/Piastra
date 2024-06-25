@@ -7,7 +7,7 @@ Created on Fri Jun 14 14:30:04 2024
 from reconstruction import VarReconstruct 
 import numpy as np 
 import copy 
-from flux_numpy import Riemann_flux_adv 
+from Riemann_fluxes import Riemann_flux_adv 
 
 #this function provides one hydro time step
 def oneStep_advection_RK(grid, adv, dt, rec_type, flux_type, RK_order):
