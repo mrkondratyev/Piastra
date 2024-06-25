@@ -29,6 +29,6 @@ class auxData:
         
         #Courant-Friedrichs-Lewy multiplier, it can't be more than 1 (in 1D, and more than 0.5 in 2D)
         if (grid.Nx1 == 1) or (grid.Nx2 == 1):
-            self.CFL = 0.8
+            self.CFL = 0.6
         else:
             self.CFL = 0.4
