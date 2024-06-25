@@ -30,6 +30,6 @@ Piastra2D — это простой код, который может решат
 Для задания начальных условий для моделируемых задач вы можете выбрать разные примеры/тесты в файле "init_cond_***.py" и добавить их имена в основной файл либо написать их самостоятельно. Удачи!
 
 Чтобы узнать больше о методе конечных объемов в вычислительной гидродинамике, я рекомендую книгу [E.F. Toro "Riemann Solvers and Numerical Methods for Fluid Dynamics: A practical introduction" (2009)]. 
-Для ознакомления с современными методами конечного я также рекомендую обзорную статью [D.S. Balsara "Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods", Living Rev Comput Astrophys 3:2 (2017)].
+Для ознакомления с современными методами конечного объема я также рекомендую обзорную статью [D.S. Balsara "Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods", Living Rev Comput Astrophys 3:2 (2017)].
 
 
