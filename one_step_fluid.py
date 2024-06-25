@@ -4,7 +4,7 @@ Created on Sat Nov 18 12:41:18 2023
 
 @author: mrkondratyev
 """
-from ideal_hydro_functions import prim2cons_idealHydro, cons2prim_idealHydro
+from prim_cons_fluid_MHD import prim2cons_idealHydro, cons2prim_idealHydro
 from boundaries import boundCond_fluid 
 from reconstruction import VarReconstruct 
 import numpy as np 
