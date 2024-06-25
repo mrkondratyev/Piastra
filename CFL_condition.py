@@ -18,7 +18,7 @@ output:
 """
 
 import numpy as np
-from ideal_hydro_functions import soundSpeed
+from prim_cons_fluid_MHD import soundSpeed
 
 def CFLcondition_fluid(grid,fluid,eos,CFL):
       
