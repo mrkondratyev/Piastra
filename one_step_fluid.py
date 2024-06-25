@@ -9,7 +9,7 @@ from boundaries import boundCond_fluid
 from reconstruction import VarReconstruct 
 import numpy as np 
 import copy 
-from flux_numpy import Riemann_flux_nr_fluid 
+from Riemann_fluxes import Riemann_flux_nr_fluid 
 
 
 
