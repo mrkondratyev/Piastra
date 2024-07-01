@@ -92,8 +92,8 @@ def CFLcondition_adv(grid,adv,CFL):
 
     Ngc = grid.Ngc
     #maximal possible timestep in each direction
-    dt1 = np.min( grid.dx1[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(adv.vel1[Ngc:-Ngc, Ngc:-Ngc])) )
-    dt2 = np.min( grid.dx2[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(adv.vel2[Ngc:-Ngc, Ngc:-Ngc])) )
+    dt1 = np.min( grid.dx1[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(adv.vel1)) )
+    dt2 = np.min( grid.dx2[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(adv.vel2)) )
     
     #final timestep (it is already divided by two for 2D calculations for stability reasons)
     dt = CFL * min(dt1, dt2)
