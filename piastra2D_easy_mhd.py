@@ -25,6 +25,7 @@ from MHD_state import MHDState
 from CFL_condition import CFLcondition_mhd
 from aux_routines import auxData
 from one_step_mhd import oneStep_MHD_RK
+from IPython.display import clear_output
 import matplotlib.pyplot as plt
 import numpy as np
 import time
@@ -57,11 +58,38 @@ def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
     #see "init_cond.py" for different examples/tests
     ###############################################################
     if (setup == 'BW1D'):
-        mhd, aux, eos =  init_cond_brio_wu_cart_1D(grid, mhd, aux)
+        mhd, aux, eos = init_cond_brio_wu_cart_1D(grid, mhd, aux)
+        rhomin = np.min(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+        rhomax = np.max(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+    elif setup == 'toth1D':
+        mhd, aux, eos = init_cond_toth_cart_1D(grid, mhd, aux)
+        rhomin = np.min(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+        rhomax = np.max(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+    elif (setup == 'BW1D_0'):
+        mhd, aux, eos = init_cond_brio_wu_cart_1D(grid, mhd, aux)
+        rhomin = np.min(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+        rhomax = np.max(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+        mhd.bfi1[:,:] = 0.0
+        mhd.bfi2[:,:] = 0.0
+    elif setup == 'toth1D_0':
+        mhd, aux, eos = init_cond_toth_cart_1D(grid, mhd, aux)
+        rhomin = np.min(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+        rhomax = np.max(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+        mhd.bfi1[:,:] = 0.0
+        mhd.bfi2[:,:] = 0.0
     elif setup == 'OT2D':
-        mhd, aux, eos =  init_cond_orszag_tang_cart_2D(grid, mhd, aux)
+        mhd, aux, eos = init_cond_orszag_tang_cart_2D(grid, mhd, aux)
+    elif setup == 'OT2D':
+        mhd, aux, eos = init_cond_orszag_tang_cart_2D(grid, mhd, aux)
+        rhomax = 0.5
+        rhomin = 0.1
     elif setup == 'expl2D':
-        mhd, aux, eos =  init_cond_mhd_expl_cart_2D(grid, mhd, aux)
+        mhd, aux, eos = init_cond_mhd_expl_cart_2D(grid, mhd, aux)
+        rhomax = 2.0
+        rhomin = 0.1
+    else:
+        print('choose a problem from the list')
+        aux.Tfin = -1.0
     ###############################################################
     
     print("grid resolution = ", grid.Nx1, grid.Nx2)
@@ -78,6 +106,36 @@ def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
     #print final phys time 
     print("final phys time = ", aux.Tfin)    
     
+    
+    #set plotting
+    if (Nx2 == 1):
+        fig, ax = plt.subplots()
+        line, = ax.plot(grid.cx1[Ngc:-Ngc,Ngc], mhd.dens[Ngc:-Ngc,Ngc])
+        ax.set_title('sol at time = ' + str(np.round(aux.time, 4)))
+        ax.set_xlabel('x1')
+        ax.set_ylabel('solution')
+        plt.close()  
+    
+    elif (Nx1 == 1): 
+        fig, ax = plt.subplots()
+        line, = ax.plot(grid.cx2[Ngc,Ngc:-Ngc], mhd.dens[Ngc,Ngc:-Ngc])
+        ax.set_title('sol at time = ' + str(np.round(aux.time, 4)))
+        ax.set_xlabel('x2')
+        ax.set_ylabel('solution')
+        plt.close()  
+        
+    else:
+        # figures and axes
+        fig, ax = plt.subplots()
+        
+        im = ax.imshow(mhd.dens[Ngc:-Ngc, Ngc:-Ngc], origin='lower', \
+        extent=[grid.cx2[Ngc,Ngc], grid.cx2[Ngc,Nx2+Ngc], grid.cx1[Ngc,Ngc], grid.cx1[Nx1+Ngc,Ngc]], vmin=rhomin, vmax=rhomax)
+        ax.set_title('density at time = ' + str(np.round(aux.time, 2)))
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        cbar = plt.colorbar(im, ax=ax) 
+        plt.ion()
+        plt.show()
     
     #set the start timer to check the elapsed time 
     start_time1 = time.time() 
@@ -96,37 +154,48 @@ def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
         #fluid state variables update 
         mhd = oneStep_MHD_RK(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
         
-        #"real time" output (animated)
+        #time update
         aux.time = aux.time + dt
-        if (i_time % 10 == 0 or aux.time > aux.Tfin - 1e-13):
+        
+        #output 
+        if (i_time%30 == 0) or (aux.Tfin - aux.time) < 1e-12:
             
             print("phys time = ", aux.time)
             print('num of timesteps = ', i_time)
-            if grid.Nx2 == 1:
-                # 1D plot along x1 axis
-                plt.plot(grid.cx1[Ngc:-Ngc, Ngc], mhd.dens[Ngc:-Ngc, Ngc])
-                plt.xlabel('x1')
-                plt.ylabel('adv')
-            elif grid.Nx1 == 1:
-                # 1D plot along x2 axis
-                plt.plot(grid.cx2[Ngc, Ngc:-Ngc], mhd.dens[Ngc, Ngc:-Ngc])
-                plt.xlabel('x2')
-                plt.ylabel('adv')
-            else:
-                # 2D plot
-                rhomin = np.min(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
-                rhomax = np.max(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
-                plt.imshow(mhd.dens[Ngc:-Ngc, Ngc:-Ngc], cmap='jet')
-                plt.clim(rhomin, rhomax)
-                ax = plt.gca()
-                ax.invert_yaxis()
-                ax.get_xaxis().set_visible(False)
-                ax.get_yaxis().set_visible(False)
-                ax.set_aspect('equal')
+            
+            
+            if (grid.Nx2 == 1): 
+                line.set_data(grid.cx1[Ngc:-Ngc,Ngc], mhd.dens[Ngc:-Ngc,Ngc])
+                ax.set_title('density at time = '+ str(np.round(aux.time, 4)))
                 
-            plt.pause(0.03)
+                ax.relim()
+                ax.autoscale_view()
+                
+                clear_output(wait=True)
+                plt.pause(0.1)
+                display(fig)
+                
+            if (grid.Nx1 == 1):
+                line.set_data(grid.cx2[Ngc,Ngc:-Ngc], mhd.dens[Ngc,Ngc:-Ngc])
+                ax.set_title('density at time = '+ str(np.round(aux.time, 4)))
+                
+                ax.relim()
+                ax.autoscale_view()
+                
+                clear_output(wait=True)
+                plt.pause(0.1)
+                display(fig)
+            
+            if (grid.Nx1 != 1 & grid.Nx2 != 1):
+                im.set_data(mhd.dens[Ngc:-Ngc, Ngc:-Ngc]) 
+                ax.set_title('density at time = '+ str(np.round(aux.time, 4)))
+                
+                
+                clear_output(wait=True)
+                display(fig)
+                plt.pause(0.1)
+     
         
-            #plt.clim(0.0, 1.0)
      
     #print final physical time
     print("final phys time = ", aux.time)    
@@ -136,17 +205,4 @@ def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
     end_time1 = time.time()
     print("time of simulation = ", end_time1 - start_time1, " secs")
       
-    # Show the plot
-    plt.show()
-      
-    #plt.plot(grid.cx1[Ngc:-Ngc,Ngc], mhd.dens[Ngc:-Ngc,Ngc])
-    #plt.plot(grid.cx2[Ngc,Ngc:-Ngc], mhd.dens[Ngc,Ngc:-Ngc])
-    
-    #plt.imshow(fluid.dens, extent=(grid.cx1.min(), grid.cx1.max(), grid.cx2.min(), grid.cx2.max()), origin='lower', cmap='viridis', interpolation='nearest', aspect='auto')
-    
-    # Add labels and a colorbar
-    #plt.colorbar(label='Colorbar Label')
-    #plt.xlabel('X Label')
-    #plt.ylabel('Y Label')
-    #plt.title('2D Plot of Data')
     

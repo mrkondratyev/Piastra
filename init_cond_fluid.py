@@ -26,6 +26,37 @@ def init_cond_Sod_cart_1D(grid,fluid,aux):
     fluid.vel2[:, :] = 0.0
     fluid.vel3[:, :] = 0.0
     
+    aux.Tfin = 0.2
+    aux.time = 0.0
+    
+    
+    eos = EOSdata(7.0/5.0)
+    
+    for i in range(grid.Ngc, grid.Nx1r):
+        for j in range(grid.Ngc, grid.Nx2r):
+            if grid.fx1[i, j] < 0.5:
+                fluid.dens[i, j] = 1.0
+                fluid.pres[i, j] = 1.0
+            else:
+                fluid.dens[i, j] = 0.125
+                fluid.pres[i, j] = 0.1
+            
+    fluid.boundMark[:] = 100
+    #return initial conditions for fluid state
+    return fluid, aux, eos
+
+
+
+#strong shock tube problem in 1D (along desired direction)
+def init_cond_strong_cart_1D(grid,fluid,aux):
+    
+    
+    print("Shock tube test with a strong shock")
+    
+    fluid.vel1[:, :] = 0.0
+    fluid.vel2[:, :] = 0.0
+    fluid.vel3[:, :] = 0.0
+    
     aux.Tfin = 0.008
     aux.time = 0.0
     
@@ -44,6 +75,7 @@ def init_cond_Sod_cart_1D(grid,fluid,aux):
     fluid.boundMark[:] = 100
     #return initial conditions for fluid state
     return fluid, aux, eos
+
 
 
 

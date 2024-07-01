@@ -13,9 +13,9 @@ from CFL_condition import CFLcondition_adv
 from aux_routines import auxData
 from one_step_advection import oneStep_advection_RK
 import matplotlib.pyplot as plt
+from IPython.display import clear_output
 import numpy as np
 import time
-from visualization import visual
     
 
 def easy_advection_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
@@ -47,6 +47,9 @@ def easy_advection_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_int
         adv, aux = init_cond_advection_1D(grid,adv,aux)
     elif setup == '2D':
         adv, aux = init_cond_advection_2D(grid,adv,aux)
+    else:
+        print('choose a problem from the list')
+        aux.Tfin = -1.0
     ###############################################################
     
     print("grid resolution = ", grid.Nx1, grid.Nx2)
@@ -61,6 +64,37 @@ def easy_advection_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_int
     
     #print final phys time 
     print("final phys time = ", aux.Tfin)    
+    
+    #plotting
+    if (Nx2 == 1):
+        fig, ax = plt.subplots()
+        line, = ax.plot(grid.cx1[Ngc:-Ngc,Ngc], adv.adv[Ngc:-Ngc,Ngc])
+        ax.set_title('sol at time = ' + str(np.round(aux.time, 4)))
+        ax.set_xlabel('x1')
+        ax.set_ylabel('solution')
+        plt.close()  
+    
+    elif (Nx1 == 1): 
+        fig, ax = plt.subplots()
+        line, = ax.plot(grid.cx2[Ngc,Ngc:-Ngc], adv.adv[Ngc,Ngc:-Ngc])
+        ax.set_title('sol at time = ' + str(np.round(aux.time, 4)))
+        ax.set_xlabel('x2')
+        ax.set_ylabel('solution')
+        plt.close()  
+        
+    else:
+        # figures and axes
+        fig, ax = plt.subplots()
+        rhomin = np.min(adv.adv[Ngc:-Ngc, Ngc:-Ngc])
+        rhomax = np.max(adv.adv[Ngc:-Ngc, Ngc:-Ngc])
+        im = ax.imshow(adv.adv[Ngc:-Ngc, Ngc:-Ngc], origin='lower', \
+        extent=[grid.cx2[Ngc,Ngc], grid.cx2[Ngc,Nx2+Ngc], grid.cx1[Ngc,Ngc], grid.cx1[Nx1+Ngc,Ngc]], vmin=rhomin, vmax=rhomax)
+        ax.set_title('density at time = ' + str(np.round(aux.time, 2)))
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        cbar = plt.colorbar(im, ax=ax) 
+        plt.ion()
+        plt.show()
     
     
     #set the start timer to check the elapsed time 
@@ -89,7 +123,37 @@ def easy_advection_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_int
             print("phys time = ", aux.time)
             print('num of timesteps = ', i_time)
             
-            visual(grid, adv.adv)
+            
+            if (grid.Nx2 == 1): 
+                line.set_data(grid.cx1[Ngc:-Ngc,Ngc], adv.adv[Ngc:-Ngc,Ngc])
+                ax.set_title('sol at time = '+ str(np.round(aux.time, 4)))
+                
+                ax.relim()
+                ax.autoscale_view()
+                
+                clear_output(wait=True)
+                plt.pause(0.1)
+                display(fig)
+                
+            if (grid.Nx1 == 1):
+                line.set_data(grid.cx2[Ngc,Ngc:-Ngc], adv.adv[Ngc,Ngc:-Ngc])
+                ax.set_title('sol at time = '+ str(np.round(aux.time, 4)))
+                
+                ax.relim()
+                ax.autoscale_view()
+                
+                clear_output(wait=True)
+                plt.pause(0.1)
+                display(fig)
+            
+            if (grid.Nx1 != 1 & grid.Nx2 != 1):
+                im.set_data(adv.adv[Ngc:-Ngc, Ngc:-Ngc]) 
+                ax.set_title('sol at time = '+ str(np.round(aux.time, 4)))
+                
+                
+                clear_output(wait=True)
+                display(fig)
+                plt.pause(0.1)
             
      
     #print final physical time
@@ -99,26 +163,13 @@ def easy_advection_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_int
     ##calculate and the elapsed time of the simulation
     end_time1 = time.time()
     print("time of simulation = ", end_time1 - start_time1, " secs")
-      
-    # Show the plot
-    plt.show()
-      
-    plt.plot(grid.cx1[Ngc:-Ngc,Ngc], adv.adv[Ngc:-Ngc,Ngc])
-    plt.plot(grid.cx2[Ngc,Ngc:-Ngc], adv.adv[Ngc,Ngc:-Ngc])
+   
     
-    #plt.imshow(fluid.dens, extent=(grid.cx1.min(), grid.cx1.max(), grid.cx2.min(), grid.cx2.max()), origin='lower', cmap='viridis', interpolation='nearest', aspect='auto')
-    
-    # Add labels and a colorbar
-    #plt.colorbar(label='Colorbar Label')
-    #plt.xlabel('X Label')
-    #plt.ylabel('Y Label')
-    #plt.title('2D Plot of Data')
-    
-Nx1 = 64
-Nx2 = 64
-setup = '2D'
-CFL = 0.4
-flux_type = 'adv'
-rec_type = 'PPM'
-RK_integr = 'RK3'
+#Nx1 = 128
+#Nx2 = 1
+#setup = '1D'
+#CFL = 0.4
+#flux_type = 'adv'
+#rec_type = 'PCM'
+#RK_integr = 'RK1'
 #easy_advection_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr)

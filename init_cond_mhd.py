@@ -44,6 +44,44 @@ def init_cond_brio_wu_cart_1D(grid,mhd,aux):
     return mhd, aux, eos
 
 
+
+
+#Sod shock tube problem in 1D (along desired direction)
+def init_cond_toth_cart_1D(grid,mhd,aux):
+    
+    
+    print("Toth (2000) shock tube test - is one of the most popular benchmark for 1D mhd codes")
+    
+    mhd.vel1[:, :] = 0.0
+    mhd.vel2[:, :] = 0.0
+    mhd.vel3[:, :] = 0.0    
+    mhd.bfi3[:, :] = 0.0
+    
+    mhd.bfi1[:, :] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
+    mhd.dens[:, :] = 1.0
+    
+    aux.Tfin = 0.08
+    aux.time = 0.0
+    
+    
+    eos = EOSdata(5.0/3.0)
+    
+    for i in range(grid.Ngc, grid.Nx1r):
+        for j in range(grid.Ngc, grid.Nx2r):
+            if grid.fx1[i, j] < 0.5:
+                mhd.pres[i, j] = 20.0
+                mhd.vel1[i, j] = 10.0
+                mhd.bfi2[i, j] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
+            else:
+                mhd.pres[i, j] = 1.0
+                mhd.vel1[i, j] = -10.0
+                mhd.bfi2[i, j] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
+            
+    mhd.boundMark[:] = 100
+    #return initial conditions for fluid state
+    return mhd, aux, eos
+
+
 def init_cond_mhd_expl_cart_2D(grid,mhd,aux):
     
     
