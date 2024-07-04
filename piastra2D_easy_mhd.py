@@ -79,6 +79,8 @@ def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
         mhd.bfi2[:,:] = 0.0
     elif setup == 'OT2D':
         mhd, aux, eos = init_cond_orszag_tang_cart_2D(grid, mhd, aux)
+        rhomin = 0.1
+        rhomax = 0.5
     elif setup == 'OT2D':
         mhd, aux, eos = init_cond_orszag_tang_cart_2D(grid, mhd, aux)
         rhomax = 0.5
