@@ -5,6 +5,7 @@ other coordinate directions can be obtained by simple rotations of a coordinate 
 flux_type == 'LLF' - Local Lax-Frierdichs (Rusanov (1961)) solver - the most diffusive but most stable
 flux_type == 'HLL' - Harten, Lax & van Leer (1983) flux - assumes, that the Riemann fan consists of only 2 shocks
 flux_type = 'HLLC' - HLL(Contact) (Toro et al (1994)) - assumes 2 shocks and a contact discontinuity between them 
+flux_type = 'Roe' - Linearized Roe solver for gas dynamics (P.Roe (1981))
 The last option is less diffusive and allows to resolve stationary contact waves exactly  
 @author: mrkondratyev
 """
@@ -74,74 +75,6 @@ def Riemann_flux_nr_fluid(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos,
         Fmomz = ( Fmomz_L + Fmomz_R ) / 2.0 - Sr * (momz_R - momz_L) / 2.0
         Fetot = ( Fetot_L + Fetot_R ) / 2.0 - Sr * (etot_R - etot_L) / 2.0
         
-        
-    elif flux_type == 'HLL':  
-        
-        #maximal and minimal eigenvalues estimate according to Davis (1988)
-        Sl = np.minimum(vxl, vxr) - np.maximum(csl, csr)
-        Sr = np.maximum(vxl, vxr) + np.maximum(csl, csr)
-        
-        #maximal and minimal eigenvalues for one-line form of HLL flux
-        Sl = np.minimum(Sl, 0.0)
-        Sr = np.maximum(Sr, 0.0)
-        
-        #calculation of the flux using HLL approximate Riemann fan (3 states between two shocks)
-        Fmass = ( Sr * Fmass_L - Sl * Fmass_R + Sr * Sl * (mass_R - mass_L) ) / (Sr - Sl + 1e-14)
-        Fmomx = ( Sr * Fmomx_L - Sl * Fmomx_R + Sr * Sl * (momx_R - momx_L) ) / (Sr - Sl + 1e-14)
-        Fmomy = ( Sr * Fmomy_L - Sl * Fmomy_R + Sr * Sl * (momy_R - momy_L) ) / (Sr - Sl + 1e-14)
-        Fmomz = ( Sr * Fmomz_L - Sl * Fmomz_R + Sr * Sl * (momz_R - momz_L) ) / (Sr - Sl + 1e-14)
-        Fetot = ( Sr * Fetot_L - Sl * Fetot_R + Sr * Sl * (etot_R - etot_L) ) / (Sr - Sl + 1e-14)
-            
-            
-    elif flux_type == 'HLLC':
-        
-        #maximal and minimal eigenvalues estimate according to Davis (1988)
-        Sl = np.minimum(vxl, vxr) - np.maximum(csl, csr)
-        Sr = np.maximum(vxl, vxr) + np.maximum(csl, csr)
-        
-        #contact wave speed in HLLC approximation
-        Sstar = (pr - pl + rhol * vxl * (Sl - vxl) - 
-            rhor * vxr * (Sr - vxr)) / (rhol * (Sl - vxl) - rhor * (Sr - vxr))
-        
-        
-        #conservative fluid state in the regions in both sides from the contact discontinuity
-        #left starred state
-        massS_L = rhol * (Sl - vxl) / (Sl - Sstar) 
-        momxS_L = massS_L * Sstar 
-        momyS_L = massS_L * vyl 
-        momzS_L = massS_L * vzl 
-        etotS_L = massS_L * ( etot_L / rhol + (Sstar - vxl) * (Sstar + pl / rhol / (Sl - vxl)) ) 
-        
-        #right starred state
-        massS_R = rhor * (Sr - vxr) / (Sr - Sstar)
-        momxS_R = massS_R * Sstar 
-        momyS_R = massS_R * vyr 
-        momzS_R = massS_R * vzr 
-        etotS_R = massS_R * ( etot_R / rhor + (Sstar - vxr) * (Sstar + pr / rhor / (Sr - vxr)) ) 
-        
-        
-        # calculation of the flux using HLLC approximate Riemann fan 
-        # 4 states between left shock, contact wave, and right shock
-        Fmass = np.where(Sl >= 0.0, Fmass_L, 
-                         np.where((Sl < 0.0) & (Sstar >= 0.0), Fmass_L + Sl * (massS_L - mass_L),
-                                  np.where((Sstar < 0.0) & (Sr >= 0.0), Fmass_R + Sr * (massS_R - mass_R), Fmass_R)))
-        
-        Fmomx = np.where(Sl >= 0.0, Fmomx_L, 
-                          np.where((Sl < 0.0) & (Sstar >= 0.0), Fmomx_L + Sl * (momxS_L - momx_L),
-                                   np.where((Sstar < 0.0) & (Sr >= 0.0), Fmomx_R + Sr * (momxS_R - momx_R), Fmomx_R)))
-
-        Fmomy = np.where(Sl >= 0.0, Fmomy_L, 
-                          np.where((Sl < 0.0) & (Sstar >= 0.0), Fmomy_L + Sl * (momyS_L - momy_L),
-                                   np.where((Sstar < 0.0) & (Sr >= 0.0), Fmomy_R + Sr * (momyS_R - momy_R), Fmomy_R)))
-
-        Fmomz = np.where(Sl >= 0.0, Fmomz_L, 
-                          np.where((Sl < 0.0) & (Sstar >= 0.0), Fmomz_L + Sl * (momzS_L - momz_L),
-                                   np.where((Sstar < 0.0) & (Sr >= 0.0), Fmomz_R + Sr * (momzS_R - momz_R), Fmomz_R)))
-
-        Fetot = np.where(Sl >= 0.0, Fetot_L, 
-                          np.where((Sl < 0.0) & (Sstar >= 0.0), Fetot_L + Sl * (etotS_L - etot_L),
-                                   np.where((Sstar < 0.0) & (Sr >= 0.0), Fetot_R + Sr * (etotS_R - etot_R), Fetot_R)))
-
 
     elif flux_type == 'Roe':
     
