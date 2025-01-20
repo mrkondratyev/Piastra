@@ -86,7 +86,7 @@ while aux.time < aux.Tfin:
     
     #"real time" output (animated)
     aux.time = aux.time + dt
-    if (i_time%5 == 0) or (aux.Tfin - aux.time) < 1e-12:
+    if (i_time%25 == 0) or (aux.Tfin - aux.time) < 1e-12:
         plt.clf()
         rhomin = np.min(fluid.dens[Ngc:-Ngc,Ngc:-Ngc])
         rhomax = np.max(fluid.dens[Ngc:-Ngc,Ngc:-Ngc])
