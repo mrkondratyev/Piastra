@@ -24,8 +24,8 @@ import time
 from visualization import visual
 
 #here we introduce the grid cell numbers in each direction + the number of ghost cells
-Nx1 = 512
-Nx2 = 1
+Nx1 = 64
+Nx2 = 64
 Ngc = 3
 
 #here we initialize the grid
@@ -47,16 +47,16 @@ fluid = FluidState(grid)
 #fill the fluid state arrays with initial data
 #see "init_cond.py" for different examples/tests
 ###############################################################
-#fluid, aux, eos = init_cond_KH_inst_2D(grid, fluid, aux)
-fluid, aux, eos =  init_cond_Sod_cart_1D(grid, fluid, aux)
+fluid, aux, eos = init_cond_KH_inst_2D(grid, fluid, aux)
+#fluid, aux, eos =  init_cond_Sod_cart_1D(grid, fluid, aux)
 ###############################################################
 
 print("grid resolution = ", grid.Nx1, grid.Nx2)
 
 #here we adjust the solver parameters and print them
-aux.rec_type = 'PPM'
-aux.flux_type = 'HLLC'
-aux.RK_order = 'RK3'
+aux.rec_type = 'PLM'
+aux.flux_type = 'Roe'
+aux.RK_order = 'RK2'
 print("reconstruction type = ", aux.rec_type)
 print("Riemann flux = ", aux.flux_type)
 print("Temporal integration = ", aux.RK_order)
