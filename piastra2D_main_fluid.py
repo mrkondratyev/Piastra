@@ -55,7 +55,7 @@ print("grid resolution = ", grid.Nx1, grid.Nx2)
 
 #here we adjust the solver parameters and print them
 aux.rec_type = 'PLM'
-aux.flux_type = 'Roe'
+aux.flux_type = 'LLF'
 aux.RK_order = 'RK2'
 print("reconstruction type = ", aux.rec_type)
 print("Riemann flux = ", aux.flux_type)
