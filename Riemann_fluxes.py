@@ -143,27 +143,24 @@ def Riemann_flux_nr_fluid(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos,
     
     
     elif flux_type == 'Roe':
-        print("now it does not work, you should finish the flux function")
-        raise ValueError(f"this procedure is not finished yet")
-
         
-        # left and rigth enthalpies
+        #left and rigth enthalpies
         entl = eos.GAMMA*pl/rhol/(eos.GAMMA-1.0) + (vxl**2 + vyl**2 + vzl**2)/2.0 
         entr = eos.GAMMA*pr/rhor/(eos.GAMMA-1.0) + (vxr**2 + vyr**2 + vzr**2)/2.0 
         
-        # Roe-averaged density
+        #Roe-averaged density
         rhos = np.sqrt(rhol*rhor)
         
-        # Roe-averaged velocity
+        #Roe-averaged velocity
         vxs = (np.sqrt(rhol)*vxl + np.sqrt(rhor)*vxr)/(np.sqrt(rhol) + np.sqrt(rhor))
-        #vys = ...
-        #vzs = ...
+        vys = (np.sqrt(rhol)*vyl + np.sqrt(rhor)*vyr)/(np.sqrt(rhol) + np.sqrt(rhor))
+        vzs = (np.sqrt(rhol)*vzl + np.sqrt(rhor)*vzr)/(np.sqrt(rhol) + np.sqrt(rhor))
         
         #Roe-averaged enthalpy
         ents = (np.sqrt(rhol)*entl + np.sqrt(rhor)*entr)/(np.sqrt(rhol) + np.sqrt(rhor))
         
         #Roe-averaged sound speed 
-        css = np.sqrt( (eos.GAMMA - 1.0)*(ents - vxs**2/2.0) )
+        css = np.sqrt( (eos.GAMMA - 1.0)*(ents - (vxs**2 + vys**2 + vzs**2)/2.0) )
         #OR WE CAN USE THE FOLLOWING PRESCRIPTION
         #css = np.sqrt( (np.sqrt(rhol)*csl**2 + np.sqrt(rhor)*csr**2)/(np.sqrt(rhol) + np.sqrt(rhor)) + (eos.GAMMA - 1.0)*rhos/(np.sqrt(rhol) + np.sqrt(rhor))**2 * ((vxr-vxl)**2 + (vyr-vyl)**2 + (vzr-vzl)**2)/2.0 ) 
         
@@ -187,31 +184,40 @@ def Riemann_flux_nr_fluid(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos,
         rv[2,3,:,:] = np.zeros_like(rhos)
         rv[2,4,:,:] = 2.0*css*vys
         
-        #rv[3,0,:,:] = .......
+        rv[3,0,:,:] = np.zeros_like(rhos)
+        rv[3,1,:,:] = np.zeros_like(rhos)
+        rv[3,2,:,:] = np.zeros_like(rhos)
+        rv[3,3,:,:] = 2.0*css
+        rv[3,4,:,:] = 2.0*css*vzs
         
-        
-        #rv[4,0,:,:] = ......
-        
+        rv[4,0,:,:] = np.ones_like(rhos)
+        rv[4,1,:,:] = vxs + css
+        rv[4,2,:,:] = vys
+        rv[4,3,:,:] = vzs
+        rv[4,4,:,:] = ents + vxs*css
         
         #array of eugenvalues
         eugen = np.zeros((5, *rhos.shape))
         eugen[0,:,:] = np.abs(vxs - css)
-        #eugen[1,:,:] = ....
-        
+        eugen[1,:,:] = np.abs(vxs) 
+        eugen[2,:,:] = np.abs(vxs) 
+        eugen[3,:,:] = np.abs(vxs) 
+        eugen[4,:,:] = np.abs(vxs + css)
         
         #array of left eugenvectors residuals
         dS = np.zeros((5, *rhos.shape))
         dS[0,:,:] = ( (pr - pl) - rhos*css*(vxr - vxl) )/2.0/css**2
-        #dS[1.:,:] = ....
+        dS[1,:,:] = ( css**2*(rhor - rhos) - (pr - pl) )/2.0/css**2
+        dS[2,:,:] = rhos*css*(vyr - vyl)/2.0/css**2
+        dS[3,:,:] = rhos*css*(vzr - vzl)/2.0/css**2
+        dS[4,:,:] = ( (pr - pl) + rhos*css*(vxr - vxl) )/2.0/css**2
         
         #array of flux residuals
         dF = np.zeros((5, *rhos.shape))
-
         
-        # Вычисление всех dF
+        # calculation of dF
         dF = np.sum(eugen[:, np.newaxis, :, :] * rv[:, :, :, :] * dS[:, np.newaxis, :, :], axis=0)
 
-        
         #final values of conservative fluxes
         Fmass = (Fmass_L + Fmass_R)/2.0 - dF[0,:,:]/2.0
         
@@ -222,9 +228,10 @@ def Riemann_flux_nr_fluid(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos,
         Fmomz = (Fmomz_L + Fmomz_R)/2.0 - dF[3,:,:]/2.0
 
         Fetot = (Fetot_L + Fetot_R)/2.0 - dF[4,:,:]/2.0
-        
+
     else:
-    
+
+        #flux_type is incorrect
         raise ValueError(f"Unknown flux_type: {flux_type}. Expected one of ['LLF', 'HLL', 'HLLC', 'Roe'].")
     
     
