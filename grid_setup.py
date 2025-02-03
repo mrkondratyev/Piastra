@@ -76,6 +76,11 @@ class Grid:
         x2ini = np.float64(x2ini)
         x2fin = np.float64(x2fin)
         
+        self.x1ini = x1ini
+        self.x1fin = x1fin
+        self.x2ini = x2ini
+        self.x2fin = x2fin
+        
         #local variables (cell number in each direction + number of ghost cells)
         Nx1 = self.Nx1
         Nx2 = self.Nx2
@@ -84,6 +89,9 @@ class Grid:
         #uniform cartesian grid resolution (simply 1 number for each direction)
         dx1uc = ( x1fin - x1ini ) / Nx1
         dx2uc = ( x2fin - x2ini ) / Nx2
+        
+        self.dx1uc = dx1uc 
+        self.dx2uc = dx2uc
         
         #grid resolution (array for local cell size in each direction)
         dx1 = np.zeros(Nx1 + Ngc * 2, dtype=np.double)
@@ -117,5 +125,8 @@ class Grid:
         
         #cell volumes including ghost cells
         self.cVol[:, :] = dx1uc * dx2uc * 1.0
+        
+
+
         
         

@@ -37,6 +37,11 @@ class MHDState:
         self.bfi2 = np.zeros(grid.grid_shape, dtype=np.double)
         self.bfi3 = np.zeros(grid.grid_shape, dtype=np.double)
         
+        #staggered fields 
+        self.fb1 = np.zeros((grid.Nx1r - grid.Ngc + 1, grid.Nx2r - grid.Ngc), dtype=np.double)
+        self.fb2 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc + 1), dtype=np.double)
+        
+        
         # Conservative variables inside the real cells only (!)
         self.mass = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)
         self.mom1 = np.zeros((grid.Nx1r - grid.Ngc, grid.Nx2r - grid.Ngc), dtype=np.double)

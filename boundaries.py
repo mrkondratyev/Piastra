@@ -270,10 +270,11 @@ def boundCond_mhd(grid, mhd):
 
 
 
-#this routine interpolates the electric field from the real faces to the ghost ones
-#it is done in order to construct a CT scheme for MHD equations 
-#we assume here that only 1 ghost cell is needed for the electric field (2nd order approximation)
-def boundCond_Efld(grid, Efld, boundMark, dim):
+
+
+
+
+def boundCond_Efld_x(grid, Efld, mhd):
     
     #local variables -- numbers of cells in each direction + number of ghost cells
     Nx1 = grid.Nx1
@@ -281,53 +282,68 @@ def boundCond_Efld(grid, Efld, boundMark, dim):
     Ngc = grid.Ngc
     
     
-    #for Bfld2 fluxes in 1-direction
-    if dim == 1:                
-        #inner boundary in 2-direction
-        if boundMark[1] == 100: #non-reflective boundary
-            Efld[:, 0] = Efld[:, 1]
-                
-        elif boundMark[1] == 101: #reflective (wall or symmetry) boundary
-            Efld[:, 0] = - Efld[:, 1]
-                
-        elif boundMark[1] == 300: #periodic boundary
-            Efld[:, 0] = Efld[:, Nx2]
-                   
-                
-        #outer boundary in 2-direction
-        if boundMark[3] == 100: #non-reflective boundary
-            Efld[:, Nx2 + 1] = Efld[:, Nx2]
-                
-        elif boundMark[3] == 101: #reflective (wall or symmetry) boundary
-            Efld[:, Nx2 + 1] = - Efld[:, Nx2]
-            
-        elif boundMark[3] == 300: #periodic boundary
-            Efld[:, Nx2 + 1] = Efld[:, 1]
-        
-        
-    #for Bfld1-fluxes in 2-direction
-    elif dim == 2:
+    
+    for i in range(0,Ngc):
         #inner boundary in 1-direction
-        if boundMark[0] == 100: #non-reflective boundary
-            Efld[0, :] = Efld[1, :]
+        if mhd.boundMark[0] == 100: #non-reflective boundary
+            Efld[i, :] = Efld[2 * Ngc - 1 - i, :]
+            
+            
+        elif mhd.boundMark[0] == 101: #reflective (wall or symmetry) boundary
+            Efld[i, :] = -Efld[2 * Ngc - 1 - i, :]
+            
+        elif mhd.boundMark[0] == 300: #periodic boundary
+            Efld[i, :] = Efld[Nx1 + i, :]
+            
                 
-        elif boundMark[0] == 101: #reflective (wall or symmetry) boundary
-            Efld[0, :] = - Efld[1, :]
-                
-        elif boundMark[0] == 300: #periodic boundary
-            Efld[0, :] = Efld[Nx1, :]
-                    
-                
+            
         #outer boundary in 1-direction
-        if boundMark[2] == 100: #non-reflective boundary
-            Efld[Nx1 + 1, :] = Efld[Nx1, :]
-                
-        elif boundMark[2] == 101: #reflective (wall or symmetry) boundary
-            Efld[Nx1 + 1, :] = - Efld[Nx1, :]
-                
-        elif boundMark[2] == 300: #periodic boundary
-            Efld[Nx1 + 1, :] = Efld[1, :]
-    
+        if mhd.boundMark[2] == 100: #non-reflective boundary
+            Efld[Nx1 + Ngc + i, :] = Efld[Nx1 + Ngc - 1 - i, :]
+            
+        elif mhd.boundMark[2] == 101: #reflective (wall or symmetry) boundary
+            Efld[Nx1 + Ngc + i, :] = -Efld[Nx1 + Ngc - 1 - i, :]
+            
+            
+        elif mhd.boundMark[2] == 300: #periodic boundary
+            Efld[Nx1 + Ngc + i, :] = Efld[Ngc + i, :]
+            
+        
     return Efld
+
+
+
+
+def boundCond_Efld_y(grid, Efld, mhd):
     
-    
+    #local variables -- numbers of cells in each direction + number of ghost cells
+    Nx1 = grid.Nx1
+    Nx2 = grid.Nx2
+    Ngc = grid.Ngc
+
+    for i in range(0,Ngc):
+        #inner boundary in 2-direction
+        if mhd.boundMark[1] == 100: #non-reflective boundary
+            Efld[:, i] = Efld[:, 2 * Ngc - 1 - i]
+            
+            
+        elif mhd.boundMark[1] == 101: #reflective (wall or symmetry) boundary
+            Efld[:, i] = -Efld[:, 2 * Ngc - 1 - i]
+            
+        elif mhd.boundMark[1] == 300: #periodic boundary
+            Efld[:, i] = Efld[:, Nx2 + i]
+               
+            
+        #outer boundary in 2-direction
+        if mhd.boundMark[3] == 100: #non-reflective boundary
+            Efld[:, Nx2 + Ngc + i] = Efld[:, Nx2 + Ngc - 1 - i]
+            
+            
+        elif mhd.boundMark[3] == 101: #reflective (wall or symmetry) boundary
+            Efld[:, Nx2 + Ngc + i] = Efld[:, Nx2 + Ngc - 1 - i]
+        
+        elif mhd.boundMark[3] == 300: #periodic boundary
+            Efld[:, Nx2 + Ngc + i] = Efld[:, Ngc + i]
+            
+            
+    return Efld

@@ -22,22 +22,34 @@ def init_cond_brio_wu_cart_1D(grid,mhd,aux):
     
     mhd.bfi1[:, :] = 0.0 + 0.75    
         
+    mhd.fb1[:,:] = 0.75
+    
     aux.Tfin = 0.1
     aux.time = 0.0
     
     
     eos = EOSdata(10.0/5.0)
     
+    
+    for i in range(grid.Nx1):
+        if (grid.fx1[i+grid.Ngc,1]<0.5):
+            mhd.fb2[i, :] = 1.0
+        else: 
+            mhd.fb2[i, :] = -1.0
+    
     for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
+        
+        
+        for j in range(grid.Ngc, grid.Nx2r+1):
             if grid.fx1[i, j] < 0.5:
                 mhd.dens[i, j] = 1.0
                 mhd.pres[i, j] = 1.0
-                mhd.bfi2[i, j] = 0.0 + 1.0
+                mhd.bfi2[i, j] = 1.0
             else:
                 mhd.dens[i, j] = 0.125
                 mhd.pres[i, j] = 0.1
-                mhd.bfi2[i, j] = 0.0 - 1.0
+                mhd.bfi2[i, j] = -1.0
+            
             
     mhd.boundMark[:] = 100
     #return initial conditions for fluid state
@@ -58,16 +70,17 @@ def init_cond_toth_cart_1D(grid,mhd,aux):
     mhd.bfi3[:, :] = 0.0
     
     mhd.bfi1[:, :] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
+    mhd.fb1[:, :] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
     mhd.dens[:, :] = 1.0
     
     aux.Tfin = 0.08
     aux.time = 0.0
-    
+    mhd.fb2[:,:] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
     
     eos = EOSdata(5.0/3.0)
     
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
+    for i in range(grid.Ngc, grid.Nx1r):           
+        for j in range(grid.Ngc, grid.Nx2r+1):
             if grid.fx1[i, j] < 0.5:
                 mhd.pres[i, j] = 20.0
                 mhd.vel1[i, j] = 10.0
@@ -76,6 +89,7 @@ def init_cond_toth_cart_1D(grid,mhd,aux):
                 mhd.pres[i, j] = 1.0
                 mhd.vel1[i, j] = -10.0
                 mhd.bfi2[i, j] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
+                
             
     mhd.boundMark[:] = 100
     #return initial conditions for fluid state
@@ -95,6 +109,11 @@ def init_cond_mhd_expl_cart_2D(grid,mhd,aux):
     mhd.dens[:, :] = 1.0
     mhd.bfi1[:, :] = 1.0/np.sqrt(2.0)
     mhd.bfi2[:, :] = 1.0/np.sqrt(2.0)    
+    
+    
+    mhd.fb1[:, :] = 1.0/np.sqrt(2.0)
+    mhd.fb2[:, :] = 1.0/np.sqrt(2.0)    
+    
         
     aux.Tfin = 0.2
     aux.time = 0.0
@@ -134,6 +153,12 @@ def init_cond_orszag_tang_cart_2D(grid,mhd,aux):
     
     eos = EOSdata(5.0/3.0)
     
+    for i in range(grid.Nx1+1):
+        mhd.fb1[i, :] = np.sin(4.0 * np.pi * grid.cx2[i,grid.Ngc:-grid.Ngc])/np.sqrt(4.0 * np.pi)
+    
+    for j in range(grid.Nx2+1):
+        mhd.fb2[:, j] = -np.sin(2.0 * np.pi * grid.cx1[grid.Ngc:-grid.Ngc,j])/np.sqrt(4.0 * np.pi)
+        
     for i in range(grid.Ngc, grid.Nx1r):
         for j in range(grid.Ngc, grid.Nx2r):
             mhd.bfi1[i, j] = np.sin(4.0 * np.pi * grid.cx2[i,j])/np.sqrt(4.0 * np.pi)

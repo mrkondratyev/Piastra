@@ -17,15 +17,16 @@ from init_cond_mhd import *
 from MHD_state import MHDState
 from CFL_condition import CFLcondition_mhd
 from aux_routines import auxData
-from one_step_mhd import oneStep_MHD_RK
+from one_step_mhd import oneStep_MHD_RK_8wave
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+from one_step_mhd_CT import oneStep_MHD_RK_CT 
 from visualization import visual
 
 #here we introduce the grid cell numbers in each direction + the number of ghost cells
-Nx1 = 128
-Nx2 = 128
+Nx1 = 512
+Nx2 = 2
 Ngc = 3
 
 #here we initialize the grid
@@ -47,15 +48,19 @@ mhd = MHDState(grid)
 #fill the fluid state arrays with initial data
 #see "init_cond.py" for different examples/tests
 ###############################################################
-mhd, aux, eos =  init_cond_orszag_tang_cart_2D(grid, mhd, aux)
+#mhd, aux, eos =  init_cond_mhd_expl_cart_2D(grid, mhd, aux)
+#mhd, aux, eos =  init_cond_orszag_tang_cart_2D(grid, mhd, aux)
+mhd, aux, eos =  init_cond_brio_wu_cart_1D(grid, mhd, aux)
+#mhd, aux, eos =  init_cond_toth_cart_1D(grid, mhd, aux)
+
 ###############################################################
 
 print("grid resolution = ", grid.Nx1, grid.Nx2)
 
 #here we adjust the solver parameters and print them
-aux.rec_type = 'PPM'
-aux.flux_type = 'HLL'
-aux.RK_order = 'RK3'
+aux.rec_type = 'PLM'
+aux.flux_type = 'LLF'
+aux.RK_order = 'RK2'
 print("reconstruction type = ", aux.rec_type)
 print("Riemann flux = ", aux.flux_type)
 print("Temporal integration = ", aux.RK_order)
@@ -79,33 +84,37 @@ while aux.time < aux.Tfin:
     dt = CFLcondition_mhd(grid, mhd, eos, aux.CFL)
     dt = min(dt, aux.Tfin - aux.time)
     #fluid state variables update 
-    mhd = oneStep_MHD_RK(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
+    
+    #mhd = oneStep_MHD_RK_8wave(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
+    mhd = oneStep_MHD_RK_CT(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
     
     #"real time" output (animated)
     aux.time = aux.time + dt
-    if grid.Nx2 == 1:
-        # 1D plot along x1 axis
-        plt.plot(grid.cx1[Ngc:-Ngc, Ngc], mhd.dens[Ngc:-Ngc, Ngc])
-        plt.xlabel('x1')
-        plt.ylabel('adv')
-    elif grid.Nx1 == 1:
-        # 1D plot along x2 axis
-        plt.plot(grid.cx2[Ngc, Ngc:-Ngc], mhd.dens[Ngc, Ngc:-Ngc])
-        plt.xlabel('x2')
-        plt.ylabel('adv')
-    else:
-        # 2D plot
-        rhomin = np.min(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
-        rhomax = np.max(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
-        plt.imshow(mhd.dens[Ngc:-Ngc, Ngc:-Ngc], cmap='jet')
-        plt.clim(rhomin, rhomax)
-        ax = plt.gca()
-        ax.invert_yaxis()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.set_aspect('equal')
-        
-    plt.pause(0.03)
+    if (i_time%25 == 0) or (aux.Tfin - aux.time) < 1e-12:
+     
+        if grid.Nx2 <= 2:
+            # 1D plot along x1 axis
+            plt.plot(grid.cx1[Ngc:-Ngc, Ngc], mhd.dens[Ngc:-Ngc, Ngc])
+            plt.xlabel('x1')
+            plt.ylabel('adv')
+        elif grid.Nx1 <= 2:
+            # 1D plot along x2 axis
+            plt.plot(grid.cx2[Ngc, Ngc:-Ngc], mhd.dens[Ngc, Ngc:-Ngc])
+            plt.xlabel('x2')
+            plt.ylabel('adv')
+        else:
+            # 2D plot
+            rhomin = np.min(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+            rhomax = np.max(mhd.dens[Ngc:-Ngc, Ngc:-Ngc])
+            plt.imshow(mhd.dens[Ngc:-Ngc, Ngc:-Ngc], cmap='jet')
+            plt.clim(rhomin, rhomax)
+            ax = plt.gca()
+            ax.invert_yaxis()
+            ax.get_xaxis().set_visible(False)
+            ax.get_yaxis().set_visible(False)
+            ax.set_aspect('equal')
+            
+        plt.pause(0.03)
     
         #plt.clim(0.0, 1.0)
  
@@ -117,6 +126,13 @@ print("END OF SIMULATION")
 end_time1 = time.time()
 print("time of simulation = ", end_time1 - start_time1, " secs")
   
+
+
+rhomin = np.min(mhd.divB)
+rhomax = np.max(mhd.divB)
+plt.imshow(mhd.divB[Ngc:-Ngc, Ngc:-Ngc], cmap='jet')
+plt.clim(rhomin, rhomax)
+print("divB max = ", rhomax)
 # Show the plot
 plt.show()
   
