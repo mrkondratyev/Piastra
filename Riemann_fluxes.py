@@ -271,6 +271,14 @@ def Riemann_flux_nr_mhd(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     b2r = bxn * bxn + byr * byr + bzr * bzr
     ptot_L = pl + b2l / 2.0
     ptot_R = pr + b2r / 2.0
+
+
+
+
+
+    
+
+
     
     #left conservative state
     mass_L = rhol
@@ -284,43 +292,33 @@ def Riemann_flux_nr_mhd(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     
     #right conservative state
     mass_R = rhor
-    momx_R = rhor * vxr
-    momy_R = rhor * vyr
-    momz_R = rhor * vzr
-    etot_R = pr / (eos.GAMMA - 1.0) + rhor * ( vxr * vxr + vyr * vyr + vzr * vzr ) / 2.0 + b2r / 2.0
-    bfix_R = bxn
-    bfiy_R = byr
-    bfiz_R = bzr
+    momx_R = ....
     
     #left fluxes
     Fmass_L = rhol * vxl
     Fmomx_L = rhol * vxl * vxl + ptot_L - bxn * bxn
     Fmomy_L = rhol * vyl * vxl - byl * bxn
-    Fmomz_L = rhol * vzl * vxl - bzl * bxn
-    Fetot_L = vxl * (ptot_L + etot_L) - bxn * (bxn*vxl + byl*vyl + bzl*vzl)
+    Fmomz_L = ....
+    Fetot_L = ....
     Fbfix_L = 0.0
-    Fbfiy_L = vxl * byl - vyl * bxn
-    Fbfiz_L = vxl * bzl - vzl * bxn
+    Fbfiy_L = ......
+    Fbfiz_L = ......
     
     #right fluxes
-    Fmass_R = rhor * vxr
-    Fmomx_R = rhor * vxr * vxr + ptot_R - bxn * bxn
-    Fmomy_R = rhor * vyr * vxr - byr * bxn
-    Fmomz_R = rhor * vzr * vxr - bzr * bxn
-    Fetot_R = vxr * (ptot_R + etot_R) - bxn * (bxn*vxr + byr*vyr + bzr*vzr)
-    Fbfix_R = 0.0
-    Fbfiy_R = vxr * byr - vyr * bxn
-    Fbfiz_R = vxr * bzr - vzr * bxn
+    #Fmass_R = ......
+
 
     #left and right squared sound speeds 
     csl2 = eos.GAMMA * pl / rhol
     csr2 = eos.GAMMA * pr / rhor
     
     #left and right fast magnetosonic speeds 
-    cfl = np.sqrt( (csl2 + b2l/rhol)/2.0 + np.sqrt((csl2 + b2l/rhol)**2 - 4.0*csl2*bxn**2/rhol)/2.0 )
-    cfr = np.sqrt( (csr2 + b2r/rhor)/2.0 + np.sqrt((csr2 + b2r/rhor)**2 - 4.0*csr2*bxn**2/rhor)/2.0 )
+    #cfl = .....
+    #cfr = .....
     
     #here we calculate the flux using LLF or HLL approximate Riemann solvers
+
+    
     if flux_type == 'LLF':
         
         #maximal absolute value of eigenvalues  
@@ -339,24 +337,6 @@ def Riemann_flux_nr_mhd(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         
     elif flux_type == 'HLL':  
         
-        #maximal and minimal eigenvalues estimate according to Davis (1988)
-        Sl = np.minimum(vxl, vxr) - np.maximum(cfl, cfr)
-        Sr = np.maximum(vxl, vxr) + np.maximum(cfl, cfr)
-        
-        #maximal and minimal eigenvalues for one-line form of HLL flux
-        Sl = np.minimum(Sl, 0.0)
-        Sr = np.maximum(Sr, 0.0)
-        
-        #calculation of the flux using HLL approximate Riemann fan (3 states between two shocks)
-        Fmass = ( Sr * Fmass_L - Sl * Fmass_R + Sr * Sl * (mass_R - mass_L) ) / (Sr - Sl + 1e-14)
-        Fmomx = ( Sr * Fmomx_L - Sl * Fmomx_R + Sr * Sl * (momx_R - momx_L) ) / (Sr - Sl + 1e-14)
-        Fmomy = ( Sr * Fmomy_L - Sl * Fmomy_R + Sr * Sl * (momy_R - momy_L) ) / (Sr - Sl + 1e-14)
-        Fmomz = ( Sr * Fmomz_L - Sl * Fmomz_R + Sr * Sl * (momz_R - momz_L) ) / (Sr - Sl + 1e-14)
-        Fetot = ( Sr * Fetot_L - Sl * Fetot_R + Sr * Sl * (etot_R - etot_L) ) / (Sr - Sl + 1e-14)
-        Fbfix = ( Sr * Fbfix_L - Sl * Fbfix_R + Sr * Sl * (bfix_R - bfix_L) ) / (Sr - Sl + 1e-14)
-        Fbfiy = ( Sr * Fbfiy_L - Sl * Fbfiy_R + Sr * Sl * (bfiy_R - bfiy_L) ) / (Sr - Sl + 1e-14)
-        Fbfiz = ( Sr * Fbfiz_L - Sl * Fbfiz_R + Sr * Sl * (bfiz_R - bfiz_L) ) / (Sr - Sl + 1e-14)
-            
             
     else:
         
