@@ -26,7 +26,7 @@ from visualization import visual
 
 #here we introduce the grid cell numbers in each direction + the number of ghost cells
 Nx1 = 512
-Nx2 = 2
+Nx2 = 1
 Ngc = 3
 
 #here we initialize the grid
@@ -85,8 +85,8 @@ while aux.time < aux.Tfin:
     dt = min(dt, aux.Tfin - aux.time)
     #fluid state variables update 
     
-    #mhd = oneStep_MHD_RK_8wave(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
-    mhd = oneStep_MHD_RK_CT(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
+    mhd = oneStep_MHD_RK_8wave(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
+    #mhd = oneStep_MHD_RK_CT(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
     
     #"real time" output (animated)
     aux.time = aux.time + dt

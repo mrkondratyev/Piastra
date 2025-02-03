@@ -310,20 +310,22 @@ def flux_calc_mhd_CT(grid, mhd, rec_type, flux_type, eos):
             Fetot[:,:-1]*grid.fS2[Ngc:-Ngc, Ngc:Nx2r] ) / grid.cVol[Ngc:-Ngc, Ngc:-Ngc]
         ResB3 = ResB3 + ( Fbfi3[:,1:]*grid.fS2[Ngc:-Ngc, Ngc+1:Nx2r + 1] - \
             Fbfi3[:,:-1]*grid.fS2[Ngc:-Ngc, Ngc:Nx2r] ) / grid.cVol[Ngc:-Ngc, Ngc:-Ngc]
-         
-        Efld3 = -(fluxB21[Ngc:Nx1r+1,Ngc-1:Nx2r] + fluxB21[Ngc:Nx1r+1,Ngc:Nx2r+1])/4.0 + \
-            (fluxB12[Ngc-1:Nx1r,Ngc:Nx2r+1] + fluxB12[Ngc:Nx1r+1,Ngc:Nx2r+1])/4.0
-            
-        ResB1 = (Efld3[:,1:] - Efld3[:,:-1])/grid.dx2uc
-        ResB2 = -(Efld3[1:,:] - Efld3[:-1,:])/grid.dx1uc
+        
+    #electric field on the edges
+    Efld3 = -(fluxB21[Ngc:Nx1r+1,Ngc-1:Nx2r] + fluxB21[Ngc:Nx1r+1,Ngc:Nx2r+1])/4.0 + \
+        (fluxB12[Ngc-1:Nx1r,Ngc:Nx2r+1] + fluxB12[Ngc:Nx1r+1,Ngc:Nx2r+1])/4.0
+       
+    #residual update 
+    ResB1 = (Efld3[:,1:] - Efld3[:,:-1])/grid.dx2uc
+    ResB2 = -(Efld3[1:,:] - Efld3[:-1,:])/grid.dx1uc
             
         #finally, here we add the external force source terms
         #we add forces in momentum res, while in energy we add Power = Force*Vel 
-        ResV1 = ResV1 - mhd.dens[Ngc:-Ngc, Ngc:-Ngc] * mhd.F1
-        ResV2 = ResV2 - mhd.dens[Ngc:-Ngc, Ngc:-Ngc] * mhd.F2
-        ResE = ResE - mhd.dens[Ngc:-Ngc, Ngc:-Ngc] * \
-            (mhd.F1 * mhd.vel1[Ngc:-Ngc, Ngc:-Ngc] + \
-            mhd.F2 * mhd.vel2[Ngc:-Ngc, Ngc:-Ngc])
+    ResV1 = ResV1 - mhd.dens[Ngc:-Ngc, Ngc:-Ngc] * mhd.F1
+    ResV2 = ResV2 - mhd.dens[Ngc:-Ngc, Ngc:-Ngc] * mhd.F2
+    ResE = ResE - mhd.dens[Ngc:-Ngc, Ngc:-Ngc] * \
+        (mhd.F1 * mhd.vel1[Ngc:-Ngc, Ngc:-Ngc] + \
+         mhd.F2 * mhd.vel2[Ngc:-Ngc, Ngc:-Ngc])
                 
         
     #return the residuals for mass, 3 components of momentum, total energy and magnetic field
