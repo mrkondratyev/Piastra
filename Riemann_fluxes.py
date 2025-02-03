@@ -279,30 +279,36 @@ def Riemann_flux_nr_mhd(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     
 
 
+    !HERE STARTS THE TASK
+
     
     #left conservative state
     mass_L = rhol
     momx_L = rhol * vxl
-    momy_L = rhol * vyl
-    momz_L = rhol * vzl
-    etot_L = pl / (eos.GAMMA - 1.0) + rhol * ( vxl * vxl + vyl * vyl + vzl * vzl ) / 2.0 + b2l / 2.0
+    momy_L = ....
+    momz_L = ...
+    etot_L = ......
     bfix_L = bxn
     bfiy_L = byl
     bfiz_L = bzl
     
     #right conservative state
-    mass_R = rhor
-    momx_R = ....
+    #mass_R = rhor
+    #momx_R = ....
+    .....
+
+
+
     
     #left fluxes
-    Fmass_L = rhol * vxl
-    Fmomx_L = rhol * vxl * vxl + ptot_L - bxn * bxn
-    Fmomy_L = rhol * vyl * vxl - byl * bxn
-    Fmomz_L = ....
-    Fetot_L = ....
-    Fbfix_L = 0.0
-    Fbfiy_L = ......
-    Fbfiz_L = ......
+    #Fmass_L = rhol * vxl
+    #Fmomx_L = rhol * vxl * vxl + ptot_L - bxn * bxn
+    #Fmomy_L = rhol * vyl * vxl - byl * bxn
+    #Fmomz_L = ....
+    #Fetot_L = ....
+    #Fbfix_L = 0.0
+    #Fbfiy_L = ......
+    #Fbfiz_L = ......
     
     #right fluxes
     #Fmass_R = ......
@@ -316,8 +322,7 @@ def Riemann_flux_nr_mhd(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     #cfl = .....
     #cfr = .....
     
-    #here we calculate the flux using LLF or HLL approximate Riemann solvers
-
+    !HERE ENDS THE TASK
     
     if flux_type == 'LLF':
         
