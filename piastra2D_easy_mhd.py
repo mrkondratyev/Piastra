@@ -24,16 +24,17 @@ from init_cond_mhd import *
 from MHD_state import MHDState
 from CFL_condition import CFLcondition_mhd
 from aux_routines import auxData
-from one_step_mhd import oneStep_MHD_RK
-from IPython.display import clear_output
+from one_step_mhd import oneStep_MHD_RK_8wave
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+from one_step_mhd_CT import oneStep_MHD_RK_CT 
+from IPython.display import clear_output
 from visualization import visual
 
 
 
-def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
+def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr, divB_treat):
 
     #ghost cells
     Ngc = 3
@@ -150,8 +151,11 @@ def easy_mhd_solver_call(Nx1, Nx2, setup, CFL, flux_type, rec_type, RK_integr):
         dt = CFLcondition_mhd(grid, mhd, eos, aux.CFL)
         dt = min(dt, aux.Tfin - aux.time)
         #fluid state variables update 
-        mhd = oneStep_MHD_RK(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
-        
+        if (divB_treat == '8wave'):
+            mhd = oneStep_MHD_RK_8wave(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
+        if (divB_treat == 'CT'):
+            mhd = oneStep_MHD_RK_CT(grid, mhd, eos, dt, aux.rec_type, aux.flux_type, aux.RK_order)
+    
         #time update
         aux.time = aux.time + dt
         
