@@ -2,12 +2,14 @@
 # Piastra2D
 
 **Piastra2D** is a teaching-oriented code for solving:
-- Linear advection  
+- Linear advection 
 - Inviscid compressible hydrodynamics (HD)  
-- Magnetohydrodynamics (MHD)  
-
-within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time integration**.  
+- Ideal Magnetohydrodynamics (MHD)  
+within a **finite-volume Godunov-type framework** via **TVD Runge–Kutta time integration**.  
 The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.  
+
+Additionally, the folder **notebooks** contains lightweight solvers in separate independent ipynb-files with comments in Russian: 
+2D shallow water simulator, 1D hydrodynamics, 1D advection solver, and 1D diffusion equation
 
 ---
 
@@ -125,13 +127,15 @@ MHD: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
 
 # Piastra2D
 
-**Piastra2D** — учебный код для решения:
-- Линейного переноса  
-- Несжимаемой/сжимаемой гидродинамики (HD)  
-- Магнитной гидродинамики (MHD)  
-
+**Piastra2D** — учебный фреймворк для решения:
+- Линейного уравнения переноса (адвекции)  
+- Сжимаемой невязкой гидродинамики (HD)  
+- Идеальной магнитной гидродинамики (MHD)  
 в рамках **метода конечных объемов Годуновского типа** с **TVD методами Рунге–Кутты** для интегрирования по времени.  
-Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.  
+Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
+
+Дополнительно, в папке **notebooks** представлены облегченнные решатели в отдельных ipynb-файлах с комментариями на русском: 
+2D симулятора уравнений мелкой воды, 1D газовая динамика, 1D решатель адвекции, и 1D модель диффузии
 
 ---
 
