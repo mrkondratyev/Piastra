@@ -1,12 +1,11 @@
 # #ENG
 # Piastra
 
-**Piastra** is a teaching-oriented code for solving:
+**Piastra** is a teaching-oriented framework for solving:
 - Linear advection 
 - Inviscid compressible hydrodynamics (HD)  
 - Ideal Magnetohydrodynamics (MHD)  
-within a **finite-volume Godunov-type framework** via **TVD Runge–Kutta time integration**.  
-The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.  
+within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time integration** and **limited high-order spatial reconstruction**. The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.  
 
 ---
 
@@ -136,12 +135,11 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
 
 # Piastra
 
-**Piastra** — учебный фреймворк для решения:
+**Piastra** — учебный код для моделирования:
 - Линейного уравнения переноса (адвекции)  
 - Сжимаемой невязкой гидродинамики (HD)  
 - Идеальной магнитной гидродинамики (MHD)  
-в рамках **метода конечных объемов Годуновского типа** с **TVD методами Рунге–Кутты** для интегрирования по времени.  
-Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
+в рамках **метода конечных объемов Годуновского типа** с **TVD методами Рунге–Кутты** для интегрирования по времени и **ограниченной кусочно-полиномиальной реконструкцией высокого порядка по пространству**. Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
 
 ---
 
