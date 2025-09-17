@@ -2,348 +2,218 @@
 """
 Created on Tue Nov 14 20:00:11 2023
 
+Boundary condition module for 2D hydrodynamics and MHD simulations.
 
-"boundCond" function fills the ghost zones with data of the 2D computational domain.
-by now, periodic, reflective (wall/symmetry and so on) and 
-non-reflective (zero force/free boundary) boundaries are supported fro hydrodynamics and MHD equations
+This module provides functions to fill ghost cells for scalar and vector fields.
+Supported boundary types:
+    'free'  - non-reflective (zero-gradient) boundary
+    'wall'  - reflective (normal component flips) boundary
+    'peri'  - periodic boundary
+    'axis'  - axis boundary
 
-The "boundMark" variable is a boundary marker. it marks each boundary (by default the boundary marker is set to 100)
-    100 - non-reflecting boundary condition (zero gradient)
-    101 - wall bounary condition (normal velocity and B-field arer set to zero)
-    300 - periodic boundaries (even or odd indexes have to the same in this case)
- 
+Functions:
+- apply_bc_scalar(var, Ngc, BC_type, axis=1, side='inner'):
+      Fill ghost cells for a scalar field along a given axis.
+- apply_bc_vector(V1, V2, V3, Ngc, BC_type, axis=1, side='inner'):
+      Fill ghost cells for a 3-component vector field along a given axis.
+- boundCond_hydro(grid, BC, fluid):
+      Apply BCs to hydrodynamic variables (density, pressure, velocities).
+- boundCond_mhd(grid, BC, fluid):
+      Apply BCs to MHD variables (density, pressure, velocities, magnetic fields).
+- boundCond_electric_field:
+      Fill ghost cells for face-centered electric field E3 along x1 and x2.
+      (E3 = Ez for MHD in 2D XY coordinates, for instance)
 
-@author: mrkondratyev
+Ghost Cell Implementation Note
+------------------------------
+
+This module provides routines to fill ghost cells for 2D hydrodynamic
+and MHD simulations. The approach separates scalar, vector, and face-centered
+fields for clarity and correctness:
+
+1. apply_bc_scalar(var, ...)  
+   - For scalar quantities (e.g., density, pressure).  
+   - Fills ghost cells along the specified axis according to BC_type.
+
+2. apply_bc_vector(V1, V2, V3, ...)  
+   - For 3-component vector quantities (e.g., velocity, cell-centered magnetic field).  
+   - Treats the normal component differently for reflective (wall) boundaries
+     while leaving tangential components unchanged.
+
+3. Face-centered third component of the electric field (Efld3 along x1/x2)  
+   - needed for CT MHD 
+   - Separate function boundCond_electric_field
+     to handle this explicitly.
+
+Author: mrkondratyev
 """
+
 import numpy as np
 
-def boundCond_fluid(grid, fluid):
+
+def apply_bc_scalar(var, Ngc, BC_type, axis=1, side='inner'):
+    """
+    Fill ghost cells for a scalar field along a given axis.
+
+    Parameters
+    ----------
+    var : np.ndarray
+        Scalar field array including ghost cells.
+    Ngc : int
+        Number of ghost cells.
+    BC_type : str
+        Boundary type: 'free', 'wall', 'peri', 'axis.
+    axis : int
+        Axis along which to apply BC (1 for x1, 2 for x2).
+    side : str
+        'inner' or 'outer' boundary.
+
+    Returns
+    -------
+    var : np.ndarray
+        Field with ghost cells updated.
+    """
+    shape = var.shape
+    N1, N2 = shape[0], shape[1]
+
+    for i in range(Ngc):
+        if axis == 1:  # x1-direction
+            if side == 'inner':
+                if BC_type == 'free':
+                    var[i, :] = var[2*Ngc - 1 - i, :]
+                elif BC_type == 'wall':
+                    var[i, :] = var[2*Ngc - 1 - i, :]
+                elif BC_type == 'peri':
+                    var[i, :] = var[N1 - 2*Ngc + i, :]
+                elif BC_type == 'axis':
+                    var[i, :] = var[2*Ngc - 1 - i, :]
+            elif side == 'outer':
+                if BC_type == 'free':
+                    var[N1 - Ngc + i, :] = var[N1 - Ngc - 1 - i, :]
+                elif BC_type == 'wall':
+                    var[N1 - Ngc + i, :] = var[N1 - Ngc - 1 - i, :]
+                elif BC_type == 'peri':
+                    var[N1 - Ngc + i, :] = var[Ngc + i, :]
+        elif axis == 2:  # x2-direction
+            if side == 'inner':
+                if BC_type == 'free':
+                    var[:, i] = var[:, 2*Ngc - 1 - i]
+                elif BC_type == 'wall':
+                    var[:, i] = var[:, 2*Ngc - 1 - i]
+                elif BC_type == 'peri':
+                    var[:, i] = var[:, N2 - 2*Ngc + i]
+                elif BC_type == 'axis':
+                    var[:, i] = var[:, 2*Ngc - 1 - i] #spherical axis
+            elif side == 'outer':
+                if BC_type == 'free':
+                    var[:, N2 - Ngc + i] = var[:, N2 - Ngc - 1 - i]
+                elif BC_type == 'wall':
+                    var[:, N2 - Ngc + i] = var[:, N2 - Ngc - 1 - i]
+                elif BC_type == 'peri':
+                    var[:, N2 - Ngc + i] = var[:, Ngc + i]
+                elif BC_type == 'axis':
+                    var[:, N2 - Ngc + i] = var[:, N2 - Ngc - 1 - i] #spherical axis
+
+    return var
+
+
+
+def apply_bc_vector(V1, V2, V3, Ngc, BC_type, axis=1, side='inner'):
+    """
+    Fill ghost cells for a 3-component vector field along a given axis.
+
+    Parameters
+    ----------
+    V1, V2, V3 : np.ndarray
+        Vector field components including ghost cells.
+    Ngc : int
+        Number of ghost cells.
+    BC_type : str
+        Boundary type: 'free', 'wall', 'peri', 'axis'.
+    axis : int
+        Axis along which to apply BC (1 for x1, 2 for x2).
+    side : str
+        'inner' or 'outer' boundary.
+
+    Returns
+    -------
+    V1, V2, V3 : np.ndarray
+        Vector field components with ghost cells updated.
+    """
+    shape = V1.shape
+    N1, N2 = shape[0], shape[1]
     
-    #local variables -- numbers of cells in each direction + number of ghost cells
-    Nx1 = grid.Nx1
-    Nx2 = grid.Nx2
-    Ngc = grid.Ngc
-    
-    
-    for i in range(0,Ngc):
-        #inner boundary in 1-direction
-        if fluid.boundMark[0] == 100: #non-reflective boundary
-            fluid.dens[i, :] = fluid.dens[2 * Ngc - 1 - i, :]
-            fluid.pres[i, :] = fluid.pres[2 * Ngc - 1 - i, :]
-            fluid.vel1[i, :] = fluid.vel1[2 * Ngc - 1 - i, :]
-            fluid.vel2[i, :] = fluid.vel2[2 * Ngc - 1 - i, :]
-            fluid.vel3[i, :] = fluid.vel3[2 * Ngc - 1 - i, :]
-            
-        elif fluid.boundMark[0] == 101: #reflective (wall or symmetry) boundary
-            fluid.dens[i, :] = fluid.dens[2 * Ngc - 1 - i, :]
-            fluid.pres[i, :] = fluid.pres[2 * Ngc - 1 - i, :]
-            fluid.vel1[i, :] = - fluid.vel1[2 * Ngc - 1 - i, :]
-            fluid.vel2[i, :] = fluid.vel2[2 * Ngc - 1 - i, :]
-            fluid.vel3[i, :] = fluid.vel3[2 * Ngc - 1 - i, :]
-            
-        elif fluid.boundMark[0] == 300: #periodic boundary
-            fluid.dens[i, :] = fluid.dens[Nx1 + i, :]
-            fluid.pres[i, :] = fluid.pres[Nx1 + i, :]
-            fluid.vel1[i, :] = fluid.vel1[Nx1 + i, :]
-            fluid.vel2[i, :] = fluid.vel2[Nx1 + i, :]
-            fluid.vel3[i, :] = fluid.vel3[Nx1 + i, :]
-                
-            
-        #outer boundary in 1-direction
-        if fluid.boundMark[2] == 100: #non-reflective boundary
-            fluid.dens[Nx1 + Ngc + i, :] = fluid.dens[Nx1 + Ngc - 1 - i, :]
-            fluid.pres[Nx1 + Ngc + i, :] = fluid.pres[Nx1 + Ngc - 1 - i, :]
-            fluid.vel1[Nx1 + Ngc + i, :] = fluid.vel1[Nx1 + Ngc - 1 - i, :]
-            fluid.vel2[Nx1 + Ngc + i, :] = fluid.vel2[Nx1 + Ngc - 1 - i, :]
-            fluid.vel3[Nx1 + Ngc + i, :] = fluid.vel3[Nx1 + Ngc - 1 - i, :]
-            
-        elif fluid.boundMark[2] == 101: #reflective (wall or symmetry) boundary
-            fluid.dens[Nx1 + Ngc + i, :] = fluid.dens[Nx1 + Ngc - 1 - i, :]
-            fluid.pres[Nx1 + Ngc + i, :] = fluid.pres[Nx1 + Ngc - 1 - i, :]
-            fluid.vel1[Nx1 + Ngc + i, :] = - fluid.vel1[Nx1 + Ngc - 1 - i, :]
-            fluid.vel2[Nx1 + Ngc + i, :] = fluid.vel2[Nx1 + Ngc - 1 - i, :]
-            fluid.vel3[Nx1 + Ngc + i, :] = fluid.vel3[Nx1 + Ngc - 1 - i, :]
-            
-        elif fluid.boundMark[2] == 300: #periodic boundary
-            fluid.dens[Nx1 + Ngc + i, :] = fluid.dens[Ngc + i, :]
-            fluid.pres[Nx1 + Ngc + i, :] = fluid.pres[Ngc + i, :]
-            fluid.vel1[Nx1 + Ngc + i, :] = fluid.vel1[Ngc + i, :]
-            fluid.vel2[Nx1 + Ngc + i, :] = fluid.vel2[Ngc + i, :]
-            fluid.vel3[Nx1 + Ngc + i, :] = fluid.vel3[Ngc + i, :]
-            
-            
-    for i in range(0,Ngc):
-        #inner boundary in 2-direction
-        if fluid.boundMark[1] == 100: #non-reflective boundary
-            fluid.dens[:, i] = fluid.dens[:, 2 * Ngc - 1 - i]
-            fluid.pres[:, i] = fluid.pres[:, 2 * Ngc - 1 - i]
-            fluid.vel1[:, i] = fluid.vel1[:, 2 * Ngc - 1 - i]
-            fluid.vel2[:, i] = fluid.vel2[:, 2 * Ngc - 1 - i]
-            fluid.vel3[:, i] = fluid.vel3[:, 2 * Ngc - 1 - i]
-            
-        elif fluid.boundMark[1] == 101: #reflective (wall or symmetry) boundary
-            fluid.dens[:, i] = fluid.dens[:, 2 * Ngc - 1 - i]
-            fluid.pres[:, i] = fluid.pres[:, 2 * Ngc - 1 - i]
-            fluid.vel1[:, i] = fluid.vel1[:, 2 * Ngc - 1 - i]
-            fluid.vel2[:, i] = - fluid.vel2[:, 2 * Ngc - 1 - i]
-            fluid.vel3[:, i] = fluid.vel3[:, 2 * Ngc - 1 - i]
-            
-        elif fluid.boundMark[1] == 300: #periodic boundary
-            fluid.dens[:, i] = fluid.dens[:, Nx2 + i]
-            fluid.pres[:, i] = fluid.pres[:, Nx2 + i]
-            fluid.vel1[:, i] = fluid.vel1[:, Nx2 + i]
-            fluid.vel2[:, i] = fluid.vel2[:, Nx2 + i]
-            fluid.vel3[:, i] = fluid.vel3[:, Nx2 + i]
-               
-            
-        #outer boundary in 2-direction
-        if fluid.boundMark[3] == 100: #non-reflective boundary
-            fluid.dens[:, Nx2 + Ngc + i] = fluid.dens[:, Nx2 + Ngc - 1 - i]
-            fluid.pres[:, Nx2 + Ngc + i] = fluid.pres[:, Nx2 + Ngc - 1 - i]
-            fluid.vel1[:, Nx2 + Ngc + i] = fluid.vel1[:, Nx2 + Ngc - 1 - i]
-            fluid.vel2[:, Nx2 + Ngc + i] = fluid.vel2[:, Nx2 + Ngc - 1 - i]
-            fluid.vel3[:, Nx2 + Ngc + i] = fluid.vel3[:, Nx2 + Ngc - 1 - i]
-            
-        elif fluid.boundMark[3] == 101: #reflective (wall or symmetry) boundary
-            fluid.dens[:, Nx2 + Ngc + i] = fluid.dens[:, Nx2 + Ngc - 1 - i]
-            fluid.pres[:, Nx2 + Ngc + i] = fluid.pres[:, Nx2 + Ngc - 1 - i]
-            fluid.vel1[:, Nx2 + Ngc + i] = fluid.vel1[:, Nx2 + Ngc - 1 - i]
-            fluid.vel2[:, Nx2 + Ngc + i] = - fluid.vel2[:, Nx2 + Ngc - 1 - i]
-            fluid.vel3[:, Nx2 + Ngc + i] = fluid.vel3[:, Nx2 + Ngc - 1 - i]
-        
-        elif fluid.boundMark[3] == 300: #periodic boundary
-            fluid.dens[:, Nx2 + Ngc + i] = fluid.dens[:, Ngc + i]
-            fluid.pres[:, Nx2 + Ngc + i] = fluid.pres[:, Ngc + i]
-            fluid.vel1[:, Nx2 + Ngc + i] = fluid.vel1[:, Ngc + i]
-            fluid.vel2[:, Nx2 + Ngc + i] = fluid.vel2[:, Ngc + i]
-            fluid.vel3[:, Nx2 + Ngc + i] = fluid.vel3[:, Ngc + i]
-            
-            
-    return fluid
+    for i in range(Ngc):
+        if axis == 1:  # x1-direction
+            if side == 'inner':
+                if BC_type == 'free':
+                    V1[i, :] = V1[2*Ngc - 1 - i, :]
+                    V2[i, :] = V2[2*Ngc - 1 - i, :]
+                    V3[i, :] = V3[2*Ngc - 1 - i, :]
+                elif BC_type == 'wall':
+                    V1[i, :] = -V1[2*Ngc - 1 - i, :]  # normal component flips
+                    V2[i, :] = V2[2*Ngc - 1 - i, :]
+                    V3[i, :] = V3[2*Ngc - 1 - i, :]
+                elif BC_type == 'peri':
+                    V1[i, :] = V1[N1 - 2*Ngc + i, :]
+                    V2[i, :] = V2[N1 - 2*Ngc + i, :]
+                    V3[i, :] = V3[N1 - 2*Ngc + i, :]
+                elif BC_type == 'axis':
+                    V1[i, :] = -V1[2*Ngc - 1 - i, :]  # normal component flips
+                    V2[i, :] = V2[2*Ngc - 1 - i, :]
+                    V3[i, :] = -V3[2*Ngc - 1 - i, :] # azimuthal component flips
+            elif side == 'outer':
+                if BC_type == 'free':
+                    V1[N1 - Ngc + i, :] = V1[N1 - Ngc - 1 - i, :]
+                    V2[N1 - Ngc + i, :] = V2[N1 - Ngc - 1 - i, :]
+                    V3[N1 - Ngc + i, :] = V3[N1 - Ngc - 1 - i, :]
+                elif BC_type == 'wall':
+                    V1[N1 - Ngc + i, :] = -V1[N1 - Ngc - 1 - i, :]
+                    V2[N1 - Ngc + i, :] = V2[N1 - Ngc - 1 - i, :]
+                    V3[N1 - Ngc + i, :] = V3[N1 - Ngc - 1 - i, :]
+                elif BC_type == 'peri':
+                    V1[N1 - Ngc + i, :] = V1[Ngc + i, :]
+                    V2[N1 - Ngc + i, :] = V2[Ngc + i, :]
+                    V3[N1 - Ngc + i, :] = V3[Ngc + i, :]
+        elif axis == 2:  # x2-direction
+            if side == 'inner':
+                if BC_type == 'free':
+                    V1[:, i] = V1[:, 2*Ngc - 1 - i]
+                    V2[:, i] = V2[:, 2*Ngc - 1 - i]
+                    V3[:, i] = V3[:, 2*Ngc - 1 - i]
+                elif BC_type == 'wall':
+                    V1[:, i] = V1[:, 2*Ngc - 1 - i]
+                    V2[:, i] = -V2[:, 2*Ngc - 1 - i]  # normal component flips
+                    V3[:, i] = V3[:, 2*Ngc - 1 - i]
+                elif BC_type == 'peri':
+                    V1[:, i] = V1[:, N2 - 2*Ngc + i]
+                    V2[:, i] = V2[:, N2 - 2*Ngc + i]
+                    V3[:, i] = V3[:, N2 - 2*Ngc + i]
+                elif BC_type == 'axis':
+                    V1[:, i] = V1[:, 2*Ngc - 1 - i]
+                    V2[:, i] = -V2[:, 2*Ngc - 1 - i]  # normal component flips
+                    V3[:, i] = -V3[:, 2*Ngc - 1 - i]  # azimuthal component flips
+            elif side == 'outer':
+                if BC_type == 'free':
+                    V1[:, N2 - Ngc + i] = V1[:, N2 - Ngc - 1 - i]
+                    V2[:, N2 - Ngc + i] = V2[:, N2 - Ngc - 1 - i]
+                    V3[:, N2 - Ngc + i] = V3[:, N2 - Ngc - 1 - i]
+                elif BC_type == 'wall':
+                    V1[:, N2 - Ngc + i] = V1[:, N2 - Ngc - 1 - i]
+                    V2[:, N2 - Ngc + i] = -V2[:, N2 - Ngc - 1 - i]  # normal component flips
+                    V3[:, N2 - Ngc + i] = V3[:, N2 - Ngc - 1 - i]
+                elif BC_type == 'peri':
+                    V1[:, N2 - Ngc + i] = V1[:, Ngc + i]
+                    V2[:, N2 - Ngc + i] = V2[:, Ngc + i]
+                    V3[:, N2 - Ngc + i] = V3[:, Ngc + i]
+                elif BC_type == 'axis':
+                    V1[:, N2 - Ngc + i] = V1[:, N2 - Ngc - 1 - i]
+                    V2[:, N2 - Ngc + i] = -V2[:, N2 - Ngc - 1 - i]  # normal component flips
+                    V3[:, N2 - Ngc + i] = -V3[:, N2 - Ngc - 1 - i]  # azimuthal component flips
+
+    return V1, V2, V3
 
 
 
 
 
-
-def boundCond_mhd(grid, mhd):
-    
-    #local variables -- numbers of cells in each direction + number of ghost cells
-    Nx1 = grid.Nx1
-    Nx2 = grid.Nx2
-    Ngc = grid.Ngc
-    
-    
-    
-    for i in range(0,Ngc):
-        #inner boundary in 1-direction
-        if mhd.boundMark[0] == 100: #non-reflective boundary
-            mhd.dens[i, :] = mhd.dens[2 * Ngc - 1 - i, :]
-            mhd.pres[i, :] = mhd.pres[2 * Ngc - 1 - i, :]
-            mhd.vel1[i, :] = mhd.vel1[2 * Ngc - 1 - i, :]
-            mhd.vel2[i, :] = mhd.vel2[2 * Ngc - 1 - i, :]
-            mhd.vel3[i, :] = mhd.vel3[2 * Ngc - 1 - i, :]
-            mhd.bfi1[i, :] = mhd.bfi1[2 * Ngc - 1 - i, :]
-            mhd.bfi2[i, :] = mhd.bfi2[2 * Ngc - 1 - i, :]
-            mhd.bfi3[i, :] = mhd.bfi3[2 * Ngc - 1 - i, :]
-            
-        elif mhd.boundMark[0] == 101: #reflective (wall or symmetry) boundary
-            mhd.dens[i, :] = mhd.dens[2 * Ngc - 1 - i, :]
-            mhd.pres[i, :] = mhd.pres[2 * Ngc - 1 - i, :]
-            mhd.vel1[i, :] = - mhd.vel1[2 * Ngc - 1 - i, :]
-            mhd.vel2[i, :] = mhd.vel2[2 * Ngc - 1 - i, :]
-            mhd.vel3[i, :] = mhd.vel3[2 * Ngc - 1 - i, :]
-            mhd.bfi1[i, :] = - mhd.bfi1[2 * Ngc - 1 - i, :]
-            mhd.bfi2[i, :] = mhd.bfi2[2 * Ngc - 1 - i, :]
-            mhd.bfi3[i, :] = mhd.bfi3[2 * Ngc - 1 - i, :]
-            
-        elif mhd.boundMark[0] == 300: #periodic boundary
-            mhd.dens[i, :] = mhd.dens[Nx1 + i, :]
-            mhd.pres[i, :] = mhd.pres[Nx1 + i, :]
-            mhd.vel1[i, :] = mhd.vel1[Nx1 + i, :]
-            mhd.vel2[i, :] = mhd.vel2[Nx1 + i, :]
-            mhd.vel3[i, :] = mhd.vel3[Nx1 + i, :]
-            mhd.bfi1[i, :] = mhd.bfi1[Nx1 + i, :]
-            mhd.bfi2[i, :] = mhd.bfi2[Nx1 + i, :]
-            mhd.bfi3[i, :] = mhd.bfi3[Nx1 + i, :]
-                
-            
-        #outer boundary in 1-direction
-        if mhd.boundMark[2] == 100: #non-reflective boundary
-            mhd.dens[Nx1 + Ngc + i, :] = mhd.dens[Nx1 + Ngc - 1 - i, :]
-            mhd.pres[Nx1 + Ngc + i, :] = mhd.pres[Nx1 + Ngc - 1 - i, :]
-            mhd.vel1[Nx1 + Ngc + i, :] = mhd.vel1[Nx1 + Ngc - 1 - i, :]
-            mhd.vel2[Nx1 + Ngc + i, :] = mhd.vel2[Nx1 + Ngc - 1 - i, :]
-            mhd.vel3[Nx1 + Ngc + i, :] = mhd.vel3[Nx1 + Ngc - 1 - i, :]
-            mhd.bfi1[Nx1 + Ngc + i, :] = mhd.bfi1[Nx1 + Ngc - 1 - i, :]
-            mhd.bfi2[Nx1 + Ngc + i, :] = mhd.bfi2[Nx1 + Ngc - 1 - i, :]
-            mhd.bfi3[Nx1 + Ngc + i, :] = mhd.bfi3[Nx1 + Ngc - 1 - i, :]
-            
-        elif mhd.boundMark[2] == 101: #reflective (wall or symmetry) boundary
-            mhd.dens[Nx1 + Ngc + i, :] = mhd.dens[Nx1 + Ngc - 1 - i, :]
-            mhd.pres[Nx1 + Ngc + i, :] = mhd.pres[Nx1 + Ngc - 1 - i, :]
-            mhd.vel1[Nx1 + Ngc + i, :] = - mhd.vel1[Nx1 + Ngc - 1 - i, :]
-            mhd.vel2[Nx1 + Ngc + i, :] = mhd.vel2[Nx1 + Ngc - 1 - i, :]
-            mhd.vel3[Nx1 + Ngc + i, :] = mhd.vel3[Nx1 + Ngc - 1 - i, :]
-            mhd.bfi1[Nx1 + Ngc + i, :] = -mhd.bfi1[Nx1 + Ngc - 1 - i, :]
-            mhd.bfi2[Nx1 + Ngc + i, :] = mhd.bfi2[Nx1 + Ngc - 1 - i, :]
-            mhd.bfi3[Nx1 + Ngc + i, :] = mhd.bfi3[Nx1 + Ngc - 1 - i, :]
-            
-        elif mhd.boundMark[2] == 300: #periodic boundary
-            mhd.dens[Nx1 + Ngc + i, :] = mhd.dens[Ngc + i, :]
-            mhd.pres[Nx1 + Ngc + i, :] = mhd.pres[Ngc + i, :]
-            mhd.vel1[Nx1 + Ngc + i, :] = mhd.vel1[Ngc + i, :]
-            mhd.vel2[Nx1 + Ngc + i, :] = mhd.vel2[Ngc + i, :]
-            mhd.vel3[Nx1 + Ngc + i, :] = mhd.vel3[Ngc + i, :]
-            mhd.bfi1[Nx1 + Ngc + i, :] = mhd.bfi1[Ngc + i, :]
-            mhd.bfi2[Nx1 + Ngc + i, :] = mhd.bfi2[Ngc + i, :]
-            mhd.bfi3[Nx1 + Ngc + i, :] = mhd.bfi3[Ngc + i, :]
-            
-            
-    for i in range(0,Ngc):
-        #inner boundary in 2-direction
-        if mhd.boundMark[1] == 100: #non-reflective boundary
-            mhd.dens[:, i] = mhd.dens[:, 2 * Ngc - 1 - i]
-            mhd.pres[:, i] = mhd.pres[:, 2 * Ngc - 1 - i]
-            mhd.vel1[:, i] = mhd.vel1[:, 2 * Ngc - 1 - i]
-            mhd.vel2[:, i] = mhd.vel2[:, 2 * Ngc - 1 - i]
-            mhd.vel3[:, i] = mhd.vel3[:, 2 * Ngc - 1 - i]
-            mhd.bfi1[:, i] = mhd.bfi1[:, 2 * Ngc - 1 - i]
-            mhd.bfi2[:, i] = mhd.bfi2[:, 2 * Ngc - 1 - i]
-            mhd.bfi3[:, i] = mhd.bfi3[:, 2 * Ngc - 1 - i]
-            
-        elif mhd.boundMark[1] == 101: #reflective (wall or symmetry) boundary
-            mhd.dens[:, i] = mhd.dens[:, 2 * Ngc - 1 - i]
-            mhd.pres[:, i] = mhd.pres[:, 2 * Ngc - 1 - i]
-            mhd.vel1[:, i] = mhd.vel1[:, 2 * Ngc - 1 - i]
-            mhd.vel2[:, i] = - mhd.vel2[:, 2 * Ngc - 1 - i]
-            mhd.vel3[:, i] = mhd.vel3[:, 2 * Ngc - 1 - i]
-            mhd.bfi1[:, i] = mhd.bfi1[:, 2 * Ngc - 1 - i]
-            mhd.bfi2[:, i] = - mhd.bfi2[:, 2 * Ngc - 1 - i]
-            mhd.bfi3[:, i] = mhd.bfi3[:, 2 * Ngc - 1 - i]
-            
-        elif mhd.boundMark[1] == 300: #periodic boundary
-            mhd.dens[:, i] = mhd.dens[:, Nx2 + i]
-            mhd.pres[:, i] = mhd.pres[:, Nx2 + i]
-            mhd.vel1[:, i] = mhd.vel1[:, Nx2 + i]
-            mhd.vel2[:, i] = mhd.vel2[:, Nx2 + i]
-            mhd.vel3[:, i] = mhd.vel3[:, Nx2 + i]
-            mhd.bfi1[:, i] = mhd.bfi1[:, Nx2 + i]
-            mhd.bfi2[:, i] = mhd.bfi2[:, Nx2 + i]
-            mhd.bfi3[:, i] = mhd.bfi3[:, Nx2 + i]
-               
-            
-        #outer boundary in 2-direction
-        if mhd.boundMark[3] == 100: #non-reflective boundary
-            mhd.dens[:, Nx2 + Ngc + i] = mhd.dens[:, Nx2 + Ngc - 1 - i]
-            mhd.pres[:, Nx2 + Ngc + i] = mhd.pres[:, Nx2 + Ngc - 1 - i]
-            mhd.vel1[:, Nx2 + Ngc + i] = mhd.vel1[:, Nx2 + Ngc - 1 - i]
-            mhd.vel2[:, Nx2 + Ngc + i] = mhd.vel2[:, Nx2 + Ngc - 1 - i]
-            mhd.vel3[:, Nx2 + Ngc + i] = mhd.vel3[:, Nx2 + Ngc - 1 - i]
-            mhd.bfi1[:, Nx2 + Ngc + i] = mhd.bfi1[:, Nx2 + Ngc - 1 - i]
-            mhd.bfi2[:, Nx2 + Ngc + i] = mhd.bfi2[:, Nx2 + Ngc - 1 - i]
-            mhd.bfi3[:, Nx2 + Ngc + i] = mhd.bfi3[:, Nx2 + Ngc - 1 - i]
-            
-        elif mhd.boundMark[3] == 101: #reflective (wall or symmetry) boundary
-            mhd.dens[:, Nx2 + Ngc + i] = mhd.dens[:, Nx2 + Ngc - 1 - i]
-            mhd.pres[:, Nx2 + Ngc + i] = mhd.pres[:, Nx2 + Ngc - 1 - i]
-            mhd.vel1[:, Nx2 + Ngc + i] = mhd.vel1[:, Nx2 + Ngc - 1 - i]
-            mhd.vel2[:, Nx2 + Ngc + i] = - mhd.vel2[:, Nx2 + Ngc - 1 - i]
-            mhd.vel3[:, Nx2 + Ngc + i] = mhd.vel3[:, Nx2 + Ngc - 1 - i]
-            mhd.bfi1[:, Nx2 + Ngc + i] = mhd.bfi1[:, Nx2 + Ngc - 1 - i]
-            mhd.bfi2[:, Nx2 + Ngc + i] = - mhd.bfi2[:, Nx2 + Ngc - 1 - i]
-            mhd.bfi3[:, Nx2 + Ngc + i] = mhd.bfi3[:, Nx2 + Ngc - 1 - i]
-        
-        elif mhd.boundMark[3] == 300: #periodic boundary
-            mhd.dens[:, Nx2 + Ngc + i] = mhd.dens[:, Ngc + i]
-            mhd.pres[:, Nx2 + Ngc + i] = mhd.pres[:, Ngc + i]
-            mhd.vel1[:, Nx2 + Ngc + i] = mhd.vel1[:, Ngc + i]
-            mhd.vel2[:, Nx2 + Ngc + i] = mhd.vel2[:, Ngc + i]
-            mhd.vel3[:, Nx2 + Ngc + i] = mhd.vel3[:, Ngc + i]
-            mhd.bfi1[:, Nx2 + Ngc + i] = mhd.bfi1[:, Ngc + i]
-            mhd.bfi2[:, Nx2 + Ngc + i] = mhd.bfi2[:, Ngc + i]
-            mhd.bfi3[:, Nx2 + Ngc + i] = mhd.bfi3[:, Ngc + i]
-            
-            
-    return mhd
-
-
-
-
-
-
-
-
-def boundCond_Efld_x(grid, Efld, mhd):
-    
-    #local variables -- numbers of cells in each direction + number of ghost cells
-    Nx1 = grid.Nx1
-    Nx2 = grid.Nx2
-    Ngc = grid.Ngc
-    
-    
-    
-    for i in range(0,Ngc):
-        #inner boundary in 1-direction
-        if mhd.boundMark[0] == 100: #non-reflective boundary
-            Efld[i, :] = Efld[2 * Ngc - 1 - i, :]
-            
-            
-        elif mhd.boundMark[0] == 101: #reflective (wall or symmetry) boundary
-            Efld[i, :] = -Efld[2 * Ngc - 1 - i, :]
-            
-        elif mhd.boundMark[0] == 300: #periodic boundary
-            Efld[i, :] = Efld[Nx1 + i, :]
-            
-                
-            
-        #outer boundary in 1-direction
-        if mhd.boundMark[2] == 100: #non-reflective boundary
-            Efld[Nx1 + Ngc + i, :] = Efld[Nx1 + Ngc - 1 - i, :]
-            
-        elif mhd.boundMark[2] == 101: #reflective (wall or symmetry) boundary
-            Efld[Nx1 + Ngc + i, :] = -Efld[Nx1 + Ngc - 1 - i, :]
-            
-            
-        elif mhd.boundMark[2] == 300: #periodic boundary
-            Efld[Nx1 + Ngc + i, :] = Efld[Ngc + i, :]
-            
-        
-    return Efld
-
-
-
-
-def boundCond_Efld_y(grid, Efld, mhd):
-    
-    #local variables -- numbers of cells in each direction + number of ghost cells
-    Nx1 = grid.Nx1
-    Nx2 = grid.Nx2
-    Ngc = grid.Ngc
-
-    for i in range(0,Ngc):
-        #inner boundary in 2-direction
-        if mhd.boundMark[1] == 100: #non-reflective boundary
-            Efld[:, i] = Efld[:, 2 * Ngc - 1 - i]
-            
-            
-        elif mhd.boundMark[1] == 101: #reflective (wall or symmetry) boundary
-            Efld[:, i] = -Efld[:, 2 * Ngc - 1 - i]
-            
-        elif mhd.boundMark[1] == 300: #periodic boundary
-            Efld[:, i] = Efld[:, Nx2 + i]
-               
-            
-        #outer boundary in 2-direction
-        if mhd.boundMark[3] == 100: #non-reflective boundary
-            Efld[:, Nx2 + Ngc + i] = Efld[:, Nx2 + Ngc - 1 - i]
-            
-            
-        elif mhd.boundMark[3] == 101: #reflective (wall or symmetry) boundary
-            Efld[:, Nx2 + Ngc + i] = Efld[:, Nx2 + Ngc - 1 - i]
-        
-        elif mhd.boundMark[3] == 300: #periodic boundary
-            Efld[:, Nx2 + Ngc + i] = Efld[:, Ngc + i]
-            
-            
-    return Efld
