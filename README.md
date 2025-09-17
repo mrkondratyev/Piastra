@@ -1,7 +1,7 @@
 # #ENG
-# Piastra2D
+# Piastra
 
-**Piastra2D** is a teaching-oriented code for solving:
+**Piastra** is a teaching-oriented code for solving:
 - Linear advection 
 - Inviscid compressible hydrodynamics (HD)  
 - Ideal Magnetohydrodynamics (MHD)  
@@ -127,9 +127,9 @@ MHD: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
 
 # #RUS
 
-# Piastra2D
+# Piastra
 
-**Piastra2D** — учебный фреймворк для решения:
+**Piastra** — учебный фреймворк для решения:
 - Линейного уравнения переноса (адвекции)  
 - Сжимаемой невязкой гидродинамики (HD)  
 - Идеальной магнитной гидродинамики (MHD)  
