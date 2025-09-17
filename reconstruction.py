@@ -1,24 +1,112 @@
+"""
+===============================================================================
+reconstruction.py
+===============================================================================
+
+High-order reconstruction routines for finite-volume fluid solvers in 2D.
+
+This module provides a collection of spatial reconstruction methods for
+finite-volume schemes used in computational astrophysics and fluid dynamics.
+These routines compute the left and right states of a fluid variable at cell
+faces, ready for flux evaluation by a Riemann solver. The module supports
+uniform Cartesian grids and includes the following reconstruction schemes:
+
+    1. PCM   : Piecewise-constant (1st order, no slope limiting)
+    2. PLM   : Piecewise-linear (2nd order, monotonicity-limited)
+    3. WENO  : Weighted Essentially Non-Oscillatory (3rd or 5th order)
+    4. PPMorig: Standard Piecewise Parabolic Method (3rd order)
+    5. PPM   : Fifth-order improved PPM (Mignone 2014)
+
+Key routines
+-------------
+- rec_PLM   : Limited piecewise-linear reconstruction
+- limiter   : Slope limiter for PLM and PPM schemes
+- rec_WENO  : WENO/CWENO reconstruction for high-order accuracy
+- rec_PPMorig: Standard PPM reconstruction (3rd order)
+- rec_PPM5  : Fifth-order PPM reconstruction
+- VarReconstruct : Unified interface for selecting reconstruction type
+
+References
+----------
+- Collela, P., & Woodward, P.R. (1984). The Piecewise Parabolic Method (PPM)
+  for Gas-Dynamical Simulations.
+- Mignone, A. (2014). High-order conservative reconstruction schemes 
+  for finite volume methods in cylindrical and spherical coordinates,, Journal of Computational Physics.
+- D.S. Balsara, "Higher-order accurate space-time schemes for computational
+  astrophysics—Part I: finite volume methods", Living Rev Comput Astrophys (2017) 3:2.
+
+Author: mrkondratyev 
+
+Notes
+-----
+- All routines assume the presence of ghost cells.
+- Designed for modular integration into finite-volume fluid solvers.
+===============================================================================
+"""
+
+
 import numpy as np
-import sys
 
 
-"""
-high order reconstruction for fluid variables for the usage in finite-volume schemes
-procedure is done in a desired dimension for a fluid state variable
-input: 
-    1) 'var' -- a fluid variable (2D array including ghost cells) 
-    2) 'grid' -- grid class object (multiple 2d arrays of cell centers and face coordinates)
-    3) 'rec_type' ('PCM', 'PLM' or 'WENO' currently) -- reconstruction type --
-        PCM -- piece-wise constant reconstruction (1st order in space) 
-        PLM -- piece-wise linear reconstrcution (2nd order in space)
-        WENO -- WENO reconstruction (3rd (CWENO) or 5th (WENO5) order in space)
-    4) 'dim' -- dimension (1 or 2) 
-output:
-    var_rec_L, var_rec_R -- reconstructed state variable on the faces of the cells,
-        further it should be sended to the Riemann solver among the other fluid state variables
-"""
 def VarReconstruct(var, grid, rec_type, dim):
+    """
+    #!!!DESCRIPTION OF VarReconstruct!!!
     
+    High-order reconstruction of a fluid variable for use in finite-volume schemes.
+    This routine reconstructs the state variable at the **faces of each cell** in a desired dimension
+    for input to a Riemann solver.
+    
+    Parameters
+    ----------
+    var : ndarray
+        2D array of the fluid variable including ghost cells.
+    grid : object
+        Grid class object containing cell centers and face coordinates (e.g., grid.cx1, grid.cx2, grid.fx1, grid.fx2).
+    rec_type : str
+        Type of reconstruction. Supported options:
+        - 'PCM'   : Piecewise-constant (1st order in space)
+        - 'PLM'   : Piecewise-linear (2nd order in space)
+        - 'WENO'  : Weighted ENO (3rd order for CWENO or 5th order for WENO5)
+        - 'PPMorig': Standard PPM (3rd order)
+        - 'PPM'   : Fifth-order PPM (Mignone 2014)
+    dim : int
+        Dimension along which to perform the reconstruction (1 or 2).
+    
+    Returns
+    -------
+    var_rec_L : ndarray
+        Reconstructed variable at the **left side** of each cell face.
+    var_rec_R : ndarray
+        Reconstructed variable at the **right side** of each cell face.
+    
+    Description
+    -----------
+    This routine provides a unified interface to several reconstruction schemes:
+    
+    - **PCM**: Copies cell averages directly to the faces (1st order, no slope limiting).
+    - **PLM**: Limited linear reconstruction (2nd order), uses `rec_PLM`.
+    - **WENO**: High-order ENO/WENO reconstruction (3rd or 5th order), uses `rec_WENO`.
+    - **PPMorig**: Standard third-order PPM reconstruction, uses `rec_PPMorig`.
+    - **PPM**: Fifth-order improved PPM (Mignone 2014), uses `rec_PPM5`.
+    
+    The output arrays `var_rec_L` and `var_rec_R` are ready for flux computation in 
+    the Riemann solver. The function automatically selects the correct stencil 
+    and reconstruction procedure based on `rec_type` and `dim`.
+    
+    Notes
+    -----
+    - Works for **2D grids with ghost cells**.
+    - Reconstruction type must match supported options; otherwise, an error will occur.
+    - Provides a consistent interface for first-, second-, third-, and fifth-order schemes.
+    
+    References
+    ----------
+    - Collela, P., & Woodward, P.R. (1984). The Piecewise Parabolic Method (PPM) for Gas-Dynamical Simulations.
+    - Mignone, A. (2014). High-order conservative reconstruction schemes for 
+      finite volume methods in cylindrical and spherical coordinates, JCP.
+    - D.S. Balsara, "Higher-order accurate space-time schemes for 
+      computational astrophysics—Part I: finite volume methods", Living Rev Comput Astrophys (2017) 3:2.
+    """
     #very simple first order piecewise-constant reconstruction
     #here we just rewrite fluid variables from the cells onto the faces
     if (rec_type == 'PCM'):
@@ -35,7 +123,7 @@ def VarReconstruct(var, grid, rec_type, dim):
     
     
     #second-order piecewise-linear reconstruction, see rec_PLM for more details
-    if (rec_type == 'PLM'):    
+    elif (rec_type == 'PLM'):    
         
         
         if (dim == 1):
@@ -50,7 +138,7 @@ def VarReconstruct(var, grid, rec_type, dim):
         
         
     #WENO reconstruction, see rec_WENO function for more details
-    if (rec_type == 'WENO'):
+    elif (rec_type == 'WENO'):
         
         if (dim == 1):
             
@@ -63,7 +151,7 @@ def VarReconstruct(var, grid, rec_type, dim):
             var_rec_L, var_rec_R = rec_WENO(grid.Ngc, grid.Nx2r, var, 2)
     
     #standard PPM reconstruction, introduced by Collela and Woorward (1984)
-    if (rec_type == 'PPMorig'):
+    elif (rec_type == 'PPMorig'):
         
         if (dim == 1):
             
@@ -76,7 +164,7 @@ def VarReconstruct(var, grid, rec_type, dim):
             var_rec_L, var_rec_R = rec_PPMorig(grid.Ngc, grid.Nx2r, var, 2)
         
     #fifth-order PPM reconstruction, following Mignone (2014)
-    if (rec_type == 'PPM'):
+    elif (rec_type == 'PPM'):
         
         if (dim == 1):
             
@@ -88,49 +176,63 @@ def VarReconstruct(var, grid, rec_type, dim):
             #PPM reconstructed states in 2-dimension 
             var_rec_L, var_rec_R = rec_PPM5(grid.Ngc, grid.Nx2r, var, 2)    
     
+    #in case of erroneous limiter type input throw message and stop the program
+    else:
+        raise ValueError(f"Unknown rec_type: {rec_type}. Expected one of ['PCM', 'PLM', 'WENO', 'PPMorig', 'PPM'].")
+    
+    
     #return reconstructed values of some fluid variable on each side of the face
     return var_rec_L, var_rec_R
 
 
 
-"""
-#!!!DESCRIPTION OF rec_PLM!!! 
-the function "rec_PLM" below is a python realization of limited second-order piecewise linear method (PLM) for finite volume solvers
-it can be done for any system of equations, the input are GRID class object, 2D array of state variable "var" and 
-integer "dim" = 1 or 2, which switches between the dimension of reconsturction.
-The output is a 2D array with reconstructed state variable at left and right sides of the cell faces 
-on the faces of the 2D grid in 1- or 2- dimensions, depending on parameter dim. It applies the limiter function "def limiter"
-with several popular slope limiters, that can be adjusted inside the rec_PLM function
 
-The idea of PLM is pretty simple -- instead of using piecewise constant values (just the cell averages)
-one can you the piecewise linear extensions in each dimension, using the information from neighbouring cells
-to construct the slopes (or the gradients). Further we use the linear function to extrapolate the solution in the cell face by using Taylor expansion.
-Unfortunately, the reconstructed profiles can suffer from oscillations (Godunov (1959) theorem)
-near the discontinuities of the flow, because the solution's total variation can rise (for linear problems, 
-the non-increasing property of total variation of some function corresponds to monotonicity).
-To make the scheme monotonic or TVD ("total variation diminishing", as is satisfied for the exact solution of, for instance, 
-gas dynamics equations), one has to bound the reconstructed profiles in order to make them monotonic again.
-This limiting procedure is done by applying some sort of "limiter" function, which depends on the solution itself.
-It is done with monotonicity/smoothness analyzer (van Leer (1974)), which has the form of R = (var(i+1)-var(i))/(var(i)-var(i-1)).
-when R >> 1 or R << 1 ==> then we are near the discontinuity, and the slopes should be limited 
-when R < 0 ==> then we are at extremum, and the slopes should be turned off to achieve non-increasing of extremum values.
-(see P Sweby (1984))
-
-everywhere below the reconstructed value looks like extrapolation in the face from the center of the cell
-var_rec(face) = var(cell) + (x(face) - x(cell))*gradient(cell), where for the gradient the limiting is applied.
-
-
-########################################
-further reading -- see e.g. -- D.S. Balsara "Higher-order accurate space-time schemes
-for computational astrophysics—Part I: finite volume
-methods", Living Rev Comput Astrophys (2017) 3:2
-########################################
-
-PLM routine implemented here works for uniform and non-uniform grids
-limiter type for PLM scheme can also be adjusted in this file (see function 'limiter' below in this file)
-"""
 def rec_PLM(grid, var, dim):
-    
+    """
+   #!!!DESCRIPTION OF rec_PLM!!!
+
+   Python realization of a limited second-order piecewise linear method (PLM) for finite volume solvers.
+   This function works for any system of equations.
+
+   Parameters
+   ----------
+   grid : GRID class object
+       Grid object containing cell-centered coordinates, face coordinates, and ghost cell information.
+   var : ndarray
+       2D array of the state variable to reconstruct (including ghost cells).
+   dim : int
+       Dimension along which to perform the reconstruction (1 or 2).
+
+   Returns
+   -------
+   var_rec_L : ndarray
+       Reconstructed variable at the left side of the cell faces.
+   var_rec_R : ndarray
+       Reconstructed variable at the right side of the cell faces.
+
+   Description
+   -----------
+   The PLM method reconstructs the solution at cell faces up to the second order in space using linear extensions of cell-averaged values.
+   Slopes (gradients) are computed using neighboring cells, and extrapolation is done via a Taylor expansion:
+   
+       var_rec(face) = var(cell) + (x(face) - x(cell)) * gradient(cell)
+
+   Without limiting, these linear profiles can produce oscillations near discontinuities (Godunov theorem).
+   To maintain monotonicity and the TVD property, the reconstruction uses slope limiters based on a smoothness
+   indicator R = (var(i+1) - var(i)) / (var(i) - var(i-1)) (van Leer 1974, Sweby 1984).
+   (when R >> 1 or R << 1 ==> then we are near the discontinuity, and the slopes should be limited 
+   when R < 0 ==> then we are at extremum, and the slopes should be turned off to achieve non-increasing of extremum values)
+   The function supports uniform and non-uniform grids and uses the `limiter` function to select among
+   various slope-limiting strategies.
+
+   References
+   ----------
+   - D.S. Balsara, "Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods",
+     Living Rev Comput Astrophys (2017) 3:2.
+   - van Leer, B. (1974)
+   - Sweby, P. K. (1984)
+   """
+   
     #initializing local variables from the GRID class object to simplify the notation
     Ngc = grid.Ngc 
     Nx1r = grid.Nx1r
@@ -141,79 +243,105 @@ def rec_PLM(grid, var, dim):
     
     #reconstruction along 1-dimension
     if (dim == 1):
-            
-        # here we calculate three gradients (slopes)
-            
+        
+        # here we calculate left and right gradients 
         #left face 
-        grad_L = (var[Ngc-1:Nx1r, Ngc:-Ngc] - var[Ngc-2:Nx1r-1, Ngc:-Ngc]) / \
-            (grid.cx1[Ngc-1:Nx1r, Ngc:-Ngc] - grid.cx1[Ngc-2:Nx1r-1, Ngc:-Ngc])  
-            
-        #face where we look for the reconstructed states
-        grad_C = (var[Ngc:Nx1r+1, Ngc:-Ngc] - var[Ngc-1:Nx1r,Ngc:-Ngc]) / \
-            (grid.cx1[Ngc:Nx1r+1, Ngc:-Ngc] - grid.cx1[Ngc-1:Nx1r,Ngc:-Ngc])
+        grad_L = (var[Ngc-1:Nx1r+1, Ngc:-Ngc] - var[Ngc-2:Nx1r, Ngc:-Ngc]) / \
+            (grid.cx1[Ngc-1:Nx1r+1, Ngc:-Ngc] - grid.cx1[Ngc-2:Nx1r, Ngc:-Ngc])  
             
         #right face
-        grad_R = (var[Ngc+1:Nx1r+2, Ngc:-Ngc] - var[Ngc:Nx1r+1, Ngc:-Ngc]) / \
-            (grid.cx1[Ngc+1:Nx1r+2, Ngc:-Ngc] - grid.cx1[Ngc:Nx1r+1, Ngc:-Ngc])
+        grad_R = (var[Ngc:Nx1r+2, Ngc:-Ngc] - var[Ngc-1:Nx1r+1, Ngc:-Ngc]) / \
+            (grid.cx1[Ngc:Nx1r+2, Ngc:-Ngc] - grid.cx1[Ngc-1:Nx1r+1, Ngc:-Ngc])
+           
+        #limited gradient for all real cells + 1 row from each side from the boundary 
+        #limiter function make the PLM profile monotonic 
+        lim_grad = limiter(grad_L, grad_R, limtype)
             
-            
-        # Left linearly reconstructed state + apply the limiter to achieve monotonicity
+        # Left linearly reconstructed state at the face (interpolation from the left cell)
         var_rec_L = var[Ngc-1:Nx1r, Ngc:-Ngc] + \
             (grid.fx1[Ngc:-Ngc, Ngc:-Ngc] - grid.cx1[Ngc-1:-Ngc, Ngc:-Ngc]) * \
-            limiter(grad_L, grad_C, limtype)
+            lim_grad[:-1,:]
         
-        # Right linearly reconstructed state + apply the limiter to achieve monotonicity
+        # Right linearly reconstructed state at the face (interpolation from the right cell)
         var_rec_R = var[Ngc:Nx1r+1, Ngc:-Ngc] + \
             (grid.fx1[Ngc:-Ngc, Ngc:-Ngc] - grid.cx1[Ngc:-Ngc+1, Ngc:-Ngc]) * \
-            limiter(grad_C, grad_R, limtype)
+            lim_grad[1:,:]
         
     #reconstruction along 2-dimension
     elif (dim == 2):
             
-        # here we calculate three gradients (slopes)
+        # here we calculate left and right gradients 
+        #left face for the cell
+        grad_L = (var[Ngc:-Ngc, Ngc-1:Nx2r+1] - var[Ngc:-Ngc, Ngc-2:Nx2r]) / \
+            (grid.cx2[Ngc:-Ngc, Ngc-1:Nx2r+1] - grid.cx2[Ngc:-Ngc, Ngc-2:Nx2r])
             
-        #left face 
-        grad_L = (var[Ngc:-Ngc, Ngc-1:Nx2r] - var[Ngc:-Ngc, Ngc-2:Nx2r-1]) / \
-            (grid.cx2[Ngc:-Ngc, Ngc-1:Nx2r] - grid.cx2[Ngc:-Ngc, Ngc-2:Nx2r-1])
+        #right face for the cell
+        grad_R = (var[Ngc:-Ngc, Ngc:Nx2r+2] - var[Ngc:-Ngc, Ngc-1:Nx2r+1]) / \
+            (grid.cx2[Ngc:-Ngc, Ngc:Nx2r+2] - grid.cx2[Ngc:-Ngc, Ngc-1:Nx2r+1])
+         
+        #limited gradient for all real cells + 1 row from each side from the boundary
+        #limiter function make the PLM profile monotonic 
+        lim_grad = limiter(grad_L, grad_R, limtype)
             
-        #face where we look for the reconstructed states
-        grad_C = (var[Ngc:-Ngc, Ngc:Nx2r+1] - var[Ngc:-Ngc, Ngc-1:Nx2r]) / \
-            (grid.cx2[Ngc:-Ngc, Ngc:Nx2r+1] - grid.cx2[Ngc:-Ngc, Ngc-1:Nx2r])
-            
-        #right face 
-        grad_R = (var[Ngc:-Ngc, Ngc+1:Nx2r+2] - var[Ngc:-Ngc,Ngc:Nx2r+1]) / \
-            (grid.cx2[Ngc:-Ngc, Ngc+1:Nx2r+2] - grid.cx2[Ngc:-Ngc,Ngc:Nx2r+1])
-            
-            
-        # Left linearly reconstructed state + apply the limiter to achieve monotonicity
+        # Left linearly reconstructed state at the face (interpolation from the left cell)
         var_rec_L = var[Ngc:-Ngc, Ngc-1:Nx2r] + \
             (grid.fx2[Ngc:-Ngc, Ngc:-Ngc] - grid.cx2[Ngc:-Ngc, Ngc-1:-Ngc]) * \
-            limiter(grad_L, grad_C, limtype)
+            lim_grad[:,:-1]
         
-        # Right linearly reconstructed state + apply the limiter to achieve monotonicity
+        # Right linearly reconstructed state at the face (interpolation from the right cell)
         var_rec_R = var[Ngc:-Ngc, Ngc:Nx2r+1] + \
             (grid.fx2[Ngc:-Ngc, Ngc:-Ngc] - grid.cx2[Ngc:-Ngc, Ngc:-Ngc+1]) * \
-            limiter(grad_C, grad_R, limtype)
-
+            lim_grad[:,1:]
 
     #return the linearly reconstructed values 
     return var_rec_L, var_rec_R
 
 
 
-
-
-"""
-limiter function for second-order monotonic piecewise linear reconstruction
-it offers 5 possible options -- 
-VL - van Leer limiter
-MM - minmod limiter - most diffusive one, but no oscillations observed for it on any problem, including MHD
-MC - MC limiter - also a good option, a bit better, than van Leer
-KOR - Koren third-order limiter (third order of approximation only on uniform grid)
-PCM - simply first order piecewise-constant scheme
-NO - unlimited reconstruction
-"""
 def limiter(x, y, limiter_type):
+    """
+    Slope limiter for second-order monotonic piecewise linear reconstruction.
+    
+    Parameters
+    ----------
+    x : ndarray
+        Left gradient.
+    y : ndarray
+        Right gradient.
+    limiter_type : str
+        Limiter type. Options:
+        - 'VL'   : van Leer limiter
+        - 'MM'   : minmod limiter (most diffusive but robust)
+        - 'MC'   : monotonized central limiter (MC)
+        - 'KOR'  : Koren third-order limiter (3rd order only for uniform grids)
+        - 'PCM'  : first-order piecewise constant scheme
+        - 'NO'   : unlimited reconstruction (may produce oscillations)
+    
+    Returns
+    -------
+    df : ndarray
+        Limited slope to ensure monotonicity.
+    
+    Description
+    -----------
+    The limiter function enforces monotonicity on the linear reconstruction in PLM schemes.
+    It computes a smoothness ratio R = y / x and adjusts the gradient according to the chosen limiter type:
+    
+        - R >> 1 or R << 1: near a discontinuity, limit the slope.
+        - R < 0: at a local extremum, turn off the slope to prevent new extrema.
+    
+    Each limiter represents a popular strategy in computational fluid dynamics to control
+    oscillations while preserving accuracy.
+    
+    Notes
+    -----
+    - VL : van Leer, smooth and monotonic
+    - MM : minmod, very diffusive but robust
+    - MC : monotonized central, good balance
+    - KOR: Koren third-order, accurate on uniform grids
+    - PCM: piecewise constant, first-order
+    - NO : unlimited, may be unstable (Lax-Wendroff-like)
+    """
     
     # Smoothness analyzer
     r = (y + 1e-14) / (x + 1e-14)
@@ -230,7 +358,6 @@ def limiter(x, y, limiter_type):
         #monotonized-central (MC) limiter
         beta = 2.0
         #in other cases beta should be in range [1.0..2.0]
-        
         df = x * np.maximum(0.0, np.minimum( (1.0 + r) / 2.0,  np.minimum(r * beta, beta)))
 
     elif limiter_type == 'KOR':
@@ -248,7 +375,7 @@ def limiter(x, y, limiter_type):
         
     else:
         #in case of erroneous limiter type input throw message and stop the program
-        sys.exit("error, the slope limiter is undefined, see def 'limiter' in 'reconstruction.py'")
+        raise ValueError(f"Unknown limiter_type: {limiter_type}. Expected one of ['VL', 'MC', 'KOR', 'PCM', 'NO'].")
         
     #return the limited piece-wise linear addition to the piece-wise constant volume-averaged value
     return df
@@ -256,44 +383,66 @@ def limiter(x, y, limiter_type):
 
 
 
-
-"""
-#!!!DESCRIPTION OF rec_WENO!!! 
-the function "rec_WENO" below is a python realization of method-of-lines WENO scheme for 
-finite volume solvers with Runge-Kutta high-order timestepping
-it can be done for any system of equations, the input are the number of ghost zones NGC, number of cells in desired dimension Nr + NGC, 
-2D array of state variable "var" and integer "dim" = 1 or 2, which switches between the dimension of reconsturction.
-The output is a 2D array with reconstructed state variable at left and right sides of the cell faces 
-on the faces of the 2D grid in 1- or 2- dimensions, depending on parameter dim. 
-
-The idea of ENO (essentually non-oscillating) and WENO (weighted ENO) is a bit different from PLM -- instead of using piecewise constant values (just the cell averages)
-we again try to find higher order polynomial extensions in each dimension, using the information from neighbouring cells
-to construct the polynomial coefficients. All of the considerations about TVD/monotonicity (see "rec_PLM") stands the same here. 
-But here we construct our high order polynomials on different stencils (e.g. in 1D along X-coordinate we can use 3 stencils - left(i-2,i-1,i), central(i-1,i,i+1) 
-and right(i,i+1,i+2) for the cell with index i). Further we can find the so called indicator of smootheness (IS below) for each stencil, which show, how strongly the function varies near the cell.
-They depend on the coefficients of original reconsturction. For example, if in the cell i+1 we have some sort of discontinuity,
-in original ENO we should not use the stencils C and R, but inside the left stencil the solution will still be smooth, so that we can use it for high order reconstruction.  
-
-By chosing the smoothest stencil (ENO) with the smallest IS, or by using the weighted convex combination of different stencils (WENO), we can obtain the reconstructed state on the face.
-
-everywhere below the reconstructed value adopts the Legendre polynomial inside the cell along the 1- or 2-dimension
-var_rec = = var(cell) + var_x(cell)*x + var_xx(cell)* (x^2 - 1/12), the integral over the cell volume will be var(cell)*Volume.
-the var_x and var_xx are just the approximations for the derivatives.
-We look for 3 stencils and further use either finite-difference WENO5 scheme for the weights (fifth order in space) or CWENO (C for central) weights, 
-which has third order in space.
-
-########################################
-further reading -- see e.g. -- D.S. Balsara "Higher-order accurate space-time schemes
-for computational astrophysics—Part I: finite volume
-methods", Living Rev Comput Astrophys (2017) 3:2
-########################################
-
-WENO routine implemented here works only for uniform Cartesian grids
-a switch between WENO5 finite-diffence reconstrcution and CWENO rec can also be adjusted in this file 
-"""
 def rec_WENO(Ngc, Nr, var, dim):
+    """
+    #!!!DESCRIPTION OF rec_WENO!!!
+
+    Python implementation of a method-of-lines WENO (Weighted Essentially Non-Oscillatory) scheme 
+    for finite volume solvers with high-order Runge-Kutta time integration.
+
+    Parameters
+    ----------
+    Ngc : int
+        Number of ghost cells in each dimension.
+    Nr : int
+        Number of real cells in the desired dimension.
+    var : ndarray
+        2D array of the state variable to reconstruct (including ghost cells).
+    dim : int
+        Dimension along which to perform the reconstruction (1 or 2).
+
+    Returns
+    -------
+    var_rec_L : ndarray
+        Reconstructed variable at the left side of the cell faces.
+    var_rec_R : ndarray
+        Reconstructed variable at the right side of the cell faces.
+
+    Description
+    -----------
+    WENO schemes extend the idea of ENO (Essentially Non-Oscillatory) methods. Unlike PLM,
+    which uses piecewise linear reconstructions, WENO uses higher-order polynomial extensions 
+    based on several candidate stencils. The smoothness of each stencil is measured via smoothness 
+    indicators (IS), which guide the reconstruction:
     
+        - If a stencil contains a discontinuity, its IS is large, reducing its weight.
+        - Smooth stencils contribute more to the final convex combination of reconstructed values.
+
+    In 1D along the x-direction, for instance, three stencils may be used for cell i:
+        - Left:   cells [i-2, i-1, i]
+        - Central: cells [i-1, i, i+1]
+        - Right:  cells [i, i+1, i+2]
+
+    The final reconstructed value is obtained by a convex combination of the stencils, weighted
+    according to their smoothness (WENO) or by choosing the smoothest stencil (ENO). 
+
+    The reconstruction adopts Legendre-polynomial-based expansions:
     
+        var_rec = var(cell) + var_x(cell) * x + var_xx(cell) * (x^2 - 1/12)
+
+    where `var_x` and `var_xx` are approximations of the first and second derivatives,
+    ensuring that the cell-average is preserved.
+
+    This implementation supports both WENO5 finite-difference (fifth-order in space) and 
+    CWENO (central WENO, third-order) reconstructions. Currently, the routine is restricted 
+    to **uniform Cartesian grids**.
+
+    References
+    ----------
+    - D.S. Balsara, "Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods",
+      Living Rev Comput Astrophys (2017) 3:2.
+    - Shu, C.-W. (1998)
+    """
     #choose the dimension of reconsturction
     if (dim == 1):
         
@@ -384,30 +533,59 @@ def rec_WENO(Ngc, Nr, var, dim):
 
 
 
-"""
-#!!!DESCRIPTION OF rec_PPM!!! 
-A standard third order PPM reconstruction, introduced by Collela and Woodward (1984) 
-it can be done for any system of equations, the input are the number of ghost zones NGC, number of cells in desired dimension Nr + NGC, 
-2D array of state variable "var" and integer "dim" = 1 or 2, which switches between the dimension of reconsturction.
-The output is a 2D array with reconstructed state variable at left and right sides of the cell faces 
-on the faces of the 2D grid in 1- or 2- dimensions, depending on parameter dim. 
-
-The idea of PPM follows the one from PLM but now we look for parabolic profile inside the computational cell insted of a linear one. In this case, 
-we should take care about a curvature of the quadratic polynomial in order to avoid new extrema inside the cell. 
-
-everywhere below the reconstructed value adopts the Legendre polynomial inside the cell along the 1- or 2-dimension
-var_rec = = var(cell) + var_x(cell)*x + var_xx(cell)* (x^2 - 1/12), the integral over the cell volume will be var(cell)*Volume.
-the var_x and var_xx are just the approximations for the derivatives.
-########################################
-further reading -- see e.g. -- D.S. Balsara "Higher-order accurate space-time schemes
-for computational astrophysics—Part I: finite volume
-methods", Living Rev Comput Astrophys (2017) 3:2
-########################################
-
-PPM routine implemented here works only for uniform Cartesian grids
-"""
 def rec_PPMorig(Ngc, Nr, var, dim):
-    
+    """
+   #!!!DESCRIPTION OF rec_PPM!!!
+
+   Python implementation of a standard third-order Piecewise Parabolic Method (PPM) 
+   for finite volume solvers, following Collela and Woodward (1984).
+
+   Parameters
+   ----------
+   Ngc : int
+       Number of ghost cells in each dimension.
+   Nr : int
+       Number of real cells in the desired dimension.
+   var : ndarray
+       2D array of the state variable to reconstruct (including ghost cells).
+   dim : int
+       Dimension along which to perform the reconstruction (1 or 2).
+
+   Returns
+   -------
+   var_rec_L : ndarray
+       Reconstructed variable at the left side of the cell faces.
+   var_rec_R : ndarray
+       Reconstructed variable at the right side of the cell faces.
+
+   Description
+   -----------
+   PPM extends PLM by constructing a **parabolic profile** within each cell 
+   instead of a linear one. The reconstruction steps are:
+
+   1. Compute limited differences between neighboring cells to estimate slopes.
+   2. Construct preliminary face values using the parabolic profile.
+   3. Enforce monotonicity by checking if face values lie within physically allowed limits.
+   4. Regulate the curvature of the parabola to avoid introducing new extrema inside the cell.
+
+   The final reconstructed values use Legendre-polynomial expansions:
+   
+       var_rec = var(cell) + var_x(cell)*x + var_xx(cell)*(x^2 - 1/12)
+
+   where `var_x` and `var_xx` approximate first and second derivatives, 
+   ensuring that the cell-average is preserved.
+
+   Notes
+   -----
+   - Works only for **uniform Cartesian grids**.
+   - Uses standard limiters (e.g., van Leer or MC) to maintain monotonicity.
+
+   References
+   ----------
+   - Collela, P., & Woodward, P.R. (1984). The Piecewise Parabolic Method (PPM) for Gas-Dynamical Simulations.
+   - D.S. Balsara, "Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods", 
+     Living Rev Comput Astrophys (2017) 3:2.
+   """
     
     #choose the dimension of reconsturction
     if (dim == 1):
@@ -418,7 +596,6 @@ def rec_PPMorig(Ngc, Nr, var, dim):
         #reconstruction with PPM method: step 1, here we derive the reconstructed profile for all real faces + 1 ghost face on each side 
         fvar0 = var[Ngc-2:Nr+1, Ngc:-Ngc] + 0.5 * (var[Ngc-1:Nr+2, Ngc:-Ngc] - var[Ngc-2:Nr+1, Ngc:-Ngc]) - (deltaU[1:,:] - deltaU[:-1,:]) / 6.0
           
-            
         #reconstruction with PPM method: step 2, check if we have face value outside the allowed interval
         fvar0_L = np.where( (fvar0[1:,:] - var[Ngc-1:Nr+1, Ngc:-Ngc]) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - fvar0[:-1,:]) < 0.0, \
             var[Ngc-1:Nr+1, Ngc:-Ngc], fvar0[:-1,:])
@@ -426,7 +603,6 @@ def rec_PPMorig(Ngc, Nr, var, dim):
         fvar0_R = np.where( (fvar0[1:,:] - var[Ngc-1:Nr+1, Ngc:-Ngc]) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - fvar0[:-1,:]) < 0.0, \
             var[Ngc-1:Nr+1, Ngc:-Ngc], fvar0[1:,:])
             
-
         #reconstruction with PPM method: step 3, regulate the curvature to exclude extrema inside the cell
         var_rec_L = np.where( (fvar0_R - fvar0_L) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - 0.5 * (fvar0_R + fvar0_L)) > (fvar0_R - fvar0_L) ** 2 / 6.0, \
             3.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] - 2.0 * fvar0_R, fvar0_L)
@@ -434,7 +610,6 @@ def rec_PPMorig(Ngc, Nr, var, dim):
         var_rec_R = np.where( (fvar0_R - fvar0_L) * (var[Ngc-1:Nr+1, Ngc:-Ngc] - 0.5 * (fvar0_R + fvar0_L)) < -(fvar0_R - fvar0_L) ** 2 / 6.0, \
             3.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] - 2.0 * fvar0_L, fvar0_R)
            
-            
         #final coefficients for Legendre polynomial
         ux = var_rec_R - var_rec_L
         uxx = 3.0 * var_rec_R - 6.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] + 3.0 * var_rec_L
@@ -452,7 +627,6 @@ def rec_PPMorig(Ngc, Nr, var, dim):
         
         #reconstruction with PPM method: step 1, here we derive the reconstructed profile for all real faces + 1 ghost face on each side       
         fvar0 = var[Ngc:-Ngc, Ngc-2:Nr+1] + 0.5 * (var[Ngc:-Ngc, Ngc-1:Nr+2] - var[Ngc:-Ngc, Ngc-2:Nr+1]) - (deltaU[:,1:] - deltaU[:,:-1]) / 6.0
-
         
         #reconstruction with PPM method: step 2, check if we have face value outside the allowed interval
         fvar0_L = np.where( (fvar0[:,1:] - var[Ngc:-Ngc, Ngc-1:Nr+1]) * (var[Ngc:-Ngc, Ngc-1:Nr+1] - fvar0[:,:-1]) < 0.0, \
@@ -460,7 +634,6 @@ def rec_PPMorig(Ngc, Nr, var, dim):
             
         fvar0_R = np.where( (fvar0[:,1:] - var[Ngc:-Ngc, Ngc-1:Nr+1]) * (var[Ngc:-Ngc, Ngc-1:Nr+1] - fvar0[:,:-1]) < 0.0, \
             var[Ngc:-Ngc, Ngc-1:Nr+1], fvar0[:,1:])
-
 
         #reconstruction with PPM method: step 3, regulate the curvature to exclude extrema inside the cell
         var_rec_L = np.where( (fvar0_R - fvar0_L) * (var[Ngc:-Ngc, Ngc-1:Nr+1] - 0.5 * (fvar0_R + fvar0_L)) > (fvar0_R - fvar0_L) ** 2 / 6.0, \
@@ -478,7 +651,6 @@ def rec_PPMorig(Ngc, Nr, var, dim):
         
         #right reconstructed state
         var_rec_R = var[Ngc:-Ngc, Ngc:Nr+1] - ux[:, 1:] * 0.5 + uxx[:, 1:] * ((-0.5) ** 2 - 1.0 / 12.0) 
-         
         
     #return final arrays of reconstructed values        
     return var_rec_L, var_rec_R
@@ -486,17 +658,52 @@ def rec_PPMorig(Ngc, Nr, var, dim):
 
 
 
-
-
-"""
-#!!!DESCRIPTION OF rec_PPM5!!! 
-A slightly improved version of usual PPM reconstruction, which results into the fifth order of spatial approximation. 
-Here we follow the paper by  A. Mignone, JCP (2014)
-
-PPM routine implemented here works for uniform cartesian grids
-"""
 def rec_PPM5(Ngc, Nr, var, dim):
-    
+    """
+    #!!!DESCRIPTION OF rec_PPM5!!!
+
+    Python implementation of an improved PPM reconstruction achieving **fifth-order spatial accuracy**, 
+    following A. Mignone (JCP, 2014).
+
+    Parameters
+    ----------
+    Ngc : int
+        Number of ghost cells in each dimension.
+    Nr : int
+        Number of real cells in the desired dimension.
+    var : ndarray
+        2D array of the state variable to reconstruct (including ghost cells).
+    dim : int
+        Dimension along which to perform the reconstruction (1 or 2).
+
+    Returns
+    -------
+    var_rec_L : ndarray
+        Reconstructed variable at the left side of the cell faces.
+    var_rec_R : ndarray
+        Reconstructed variable at the right side of the cell faces.
+
+    Description
+    -----------
+    This PPM variant improves on the standard third-order method by using a **five-point stencil** 
+    to achieve fifth-order accuracy. The reconstruction procedure is:
+
+    1. Compute preliminary left and right face values using weighted combinations of five neighboring cells.
+    2. Apply **monotonicity constraints** to ensure that face values remain within the range of neighboring cell averages.
+    3. Adjust the reconstructed states depending on local extrema and slope ratios.
+    4. Compute final face values and preserve the cell average.
+
+    Notes
+    -----
+    - Works only for **uniform Cartesian grids**.
+    - Implements a more accurate parabolic reconstruction for smooth regions while avoiding spurious oscillations near discontinuities.
+
+    References
+    ----------
+    - Mignone, A. (2014). "High-order conservative finite difference schemes for astrophysical flows," 
+      Journal of Computational Physics.
+    - Collela, P., & Woodward, P.R. (1984). The Piecewise Parabolic Method (PPM) for Gas-Dynamical Simulations.
+    """
     PPM5c = np.zeros(5)
     PPM5c[0] = 2.0 / 60.0
     PPM5c[1] = - 13.0 / 60.0
@@ -532,9 +739,8 @@ def rec_PPM5(Ngc, Nr, var, dim):
             np.where((np.abs(dvar_R) >= 2.0 * np.abs(dvar_L)) & (dvar_R * dvar_L < 0.0), var[Ngc-1:Nr+1, Ngc:-Ngc] - 2.0 * dvar_L, \
             var[Ngc-1:Nr+1, Ngc:-Ngc] + dvar_R))  
             
-        
-        dQ = var_rec_R - var_rec_L
-        Q6 = 6.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] - 3.0 * (var_rec_R + var_rec_L)
+        #dQ = var_rec_R - var_rec_L
+        #Q6 = 6.0 * var[Ngc-1:Nr+1, Ngc:-Ngc] - 3.0 * (var_rec_R + var_rec_L)
         
         var_rec_L, var_rec_R = var_rec_R[:-1,:], var_rec_L[1:,:]
             
@@ -566,12 +772,10 @@ def rec_PPM5(Ngc, Nr, var, dim):
             np.where((np.abs(dvar_R) >= 2.0 * np.abs(dvar_L)) & (dvar_R * dvar_L < 0.0), var[Ngc:-Ngc, Ngc-1:Nr+1] - 2.0 * dvar_L, \
             var[Ngc:-Ngc, Ngc-1:Nr+1] + dvar_R))  
         
-        dQ = var_rec_R - var_rec_L
-        Q6 = 6.0 * var[Ngc:-Ngc, Ngc-1:Nr+1] - 3.0 * (var_rec_R + var_rec_L)
+        #dQ = var_rec_R - var_rec_L
+        #Q6 = 6.0 * var[Ngc:-Ngc, Ngc-1:Nr+1] - 3.0 * (var_rec_R + var_rec_L)
             
         var_rec_L, var_rec_R = var_rec_R[:, :-1], var_rec_L[:, 1:]
-        
-        
         
     #return final arrays of reconstructed values        
     return var_rec_L, var_rec_R
