@@ -39,7 +39,8 @@ The code is written in **Python** with extensive use of **NumPy**, and includes 
 - **Modular design**:
   - `parameters.py`: central parameter container  
   - `grid_setup.py`: structured grid definition  
-  - `sim_state.py`: storage for fluid variables  
+  - `sim_state.py`: storage for fluid variables
+  - `boundaries.py`: boundary conditions handling for scalar and vector variables
   - `helpers.py`: initial condition dispatch and simulation loop  
   - `advection_one_step.py`, `hydro_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`: solver backends
   - `hydro_phys.py`, `MHD_phys.py`: supplementary modules  
@@ -174,7 +175,8 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
   - `parameters.py`: центральный контейнер параметров  
   - `grid_setup.py`: определение структуры сетки  
   - `sim_state.py`: хранение переменных жидкости  
-  - `helpers.py`: диспетчер начальных условий и основной цикл симуляции  
+  - `helpers.py`: диспетчер начальных условий и основной цикл симуляции
+  - `boundaries.py`: учет граничных условий на сетке для скалярных и векторых функций
   - `advection_one_step.py`, `hydro_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`: бэкенды решателей  
   - `hydro_phys.py`, `MHD_phys.py`: вспомогательные модули  
   - `visualization.py`: функции визуализации  
