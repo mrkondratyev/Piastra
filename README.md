@@ -211,7 +211,7 @@ simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.den
 ```
 
 
-# Parameters
+# Параметры
 
 Все параметры хранятся в классе Parameters. Значения по умолчанию присваиваются автоматически.
 
