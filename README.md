@@ -1,35 +1,76 @@
 # Piastra2D
 
-#ENG:
+**Piastra2D** is a teaching-oriented code for solving:
+- Linear advection  
+- Inviscid compressible hydrodynamics (HD)  
+- Magnetohydrodynamics (MHD)  
 
-Piastra2D is a simple code, which solves linear advection, inviscid compressible hydrodynamic as well as magnetohydrodynamic (MHD) equations within a finite volume framework, using high order Godunov-type methods with TVD Runge-Kutta (RK) timestepping. It is written for teaching purposes in Python with an extensive usage of NumPy library.
+within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time integration**.  
+The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.  
 
-By now, Piastra2D can solve 1D and 2D linear advection, compressible hydro and MHD equations on a structured uniform Cartesian grid. The solver utilizes a finite volume approach with approximate Riemann solver solution to obtain fluxes of conservative state variables on cell faces. Users can choose between Local Lax-Friedrichs ('LLF', Rusanov (1961)), Harten-Lax-van Leer ('HLL', Harten, Lax and van Leer (1983)), HLL-Contact ('HLLC', Toro et al (1994)) and Roe ('Roe', P.Roe (1981)) flux functions for hydrodynamics, and between LLF or HLL flux for MHD. The advection equation can be solved, using Riemann solution with high-order RK timestepping or by using Lax-Wendroff scheme. To increase the order of approximation in space, the code uses piecewise-linear method with slope limiter ('PLM', second order of accuracy in space) or Weighted Essentially Non-Oscillating method WENO5 ('WENO', fifth order in space), as well as Piecewise Parabolic Method ('PPM', which correspond to PPM5 method from [A. Mignone, J Comp Phys, 270, 1, 784 (2014)], and original PPM version 'PPMorig', introduced in [P. Colella and P. R. Woodward, J Comp Phys 54  174–201 (1984)]). To achieve a better accuracy in time, the code utilizes Total Variation Diminishing multistage RK timestepping (methods 'RK2' and 'RK3' from [C-W Shu and S Osher, J Comp Phys, 77:439–471, 1988], as well as 'RK1' with the first order of accuracy in time).
+---
 
-In this version, Piastra2D uses the simplest possible 8-wave (or Powell (1994,1999)) approach for B-divergence cleaning in MHD equations (see [G. Toth, J Comp Phys, 161, 605 (2000)]). Additionally, the code utilizes divergence-free FLUX-CT approach with an arithmetic averaging of face electric fields onto the edge (see Balsara and Spicer (1999)). It is planned to include more sophisticated methods for monopole constraint control in future. 
+## Features
 
-To use the code, you should have Python 3 with NumPy, IPython and matplotlib installed. You can adjust the parameters of the simulation by varying the variables "aux.rec_type", "aux.flux_type" and "aux.RK_order" in the main file "piastra2D_main_***.py".
-By default, I set [aux.rec_type = 'PPM', aux.flux_type = 'HLLC', aux.RK_order = 'RK3'] for hydro and [aux.rec_type = 'PPM', aux.flux_type = 'HLL', aux.RK_order = 'RK3'] for MHD in files piastra2D_main_ ***. Also, I set a unit square [0..1, 0..1] as a computational domain. In some test problems, I use different grids and I internally reshape it to fit the initial fluid state in "init_cond_ ***.py" file. The user can do the same or just change the domain in the main code.
+- **Dimensionality**: 1D and 2D Cartesian uniform grids  
+- **Finite-volume solver** with approximate Riemann solvers for fluxes  
+- **Hydrodynamics solvers**:
+  - LLF (Rusanov, 1961)  
+  - HLL (Harten–Lax–van Leer, 1983)  
+  - HLLC (Toro et al., 1994)  
+  - Roe (Roe, 1981)  
+- **MHD solvers**:
+  - LLF, HLL, HLLD  
+  - Divergence control:  
+    - Powell 8-wave method (Powell 1994, 1999; Tóth 2000)  
+    - Constrained Transport (Flux-CT; Balsara & Spicer 1999)  
+- **Advection**: high-order RK with Riemann solver or Lax–Wendroff scheme  
+- **Reconstruction methods**:  
+  - PCM (piecewise constant)  
+  - PLM (piecewise linear with slope limiter, 2nd order)  
+  - PPM (Colella & Woodward 1984, Mignone 2014)  
+  - PPMorig (original Colella & Woodward version)  
+  - WENO5 (5th order, Jiang & Shu 1996)  
+- **Time integration**:  
+  - RK1 (Euler)  
+  - RK2, RK3 (TVD Runge–Kutta; Shu & Osher 1988)  
+- **Ghost cells**: automatically adjusted (2 for PLM/PCM, 3 for PPM/WENO)  
+- **Simulation control** through the `Parameters` class with defaults and validation  
+- **Modular design**:
+  - `parameters.py`: central parameter container  
+  - `grid_setup.py`: structured grid definition  
+  - `sim_state.py`: storage for fluid variables  
+  - `helpers.py`: initial condition dispatch and simulation loop  
+  - `advection_one_step.py`, `hydro_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`: solver backends  
+  - `visualization.py`: plotting utilities  
 
-To set the initial conditions for the simulation, you can choose between different examples/test in the file "init_cond_***.py" and add their names into the main file, or write them by yourself. Have fun!
+---
 
-To learn more about finite volume approach in fluid dynamics simulations, one can read a book by [E.F. Toro "Riemann Solvers and Numerical Methods for Fluid Dynamics: A practical introduction" (2009)].
-To read about some modern solvers -- I recommend a review article by [D.S. Balsara "Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods", Living Rev Comput Astrophys 3:2 (2017)].
+## Usage
 
+**Requirements:**
+- Python 3.9+  
+- NumPy  
+- matplotlib  
+- IPython (recommended for notebooks)  
 
-#RUS:
+**Example (main.py)**
 
-Piastra2D — это простой код, который может решать уравнения линейного переноса, невязкой сжимаемой гидродинамики, а также магнитной гидродинамики (МГД) в рамках метода конечных объемов, используя методы Годуновского типа высокого порядка с использованием TVD-методов Рунге-Кутты (RK) интегрирования по времени. Код написан для учебных целей на языке Python с широким использованием библиотеки NumPy.
+```python
+from parameters import Parameters
+from grid_setup import Grid
+from sim_state import SimState
+from helpers import initial_model, run_simulation
+from hydro_one_step import Hydro2D
 
-На данный момент Piastra2D может решать задачи 1D и 2D линейного переноса, сжимаемой гидродинамики и МГД на структурированной равномерной декартовой сетке. Решатель использует метод конечных объемов с приближенным решением задачи Римана для получения потоков консервативных переменных на гранях ячеек. Пользователи могут выбирать между функциями потоков Русанова/Лакса-Фридрихса ('LLF', Русанов (1961)), Хартена, Лакса и ван Леера ('HLL', Harten, Lax & van Leer (1983)), HLL-Contact ('HLLC', Toro et al. (1994)) и Роу ('Roe', P.Roe (1981)) для гидродинамики, а также методы LLF или HLL для МГД. Линейное уравнение переноса можно также решать, используя точное решение задачи Римана с методом Рунге-Кутты высокого порядка или с помощью схемы Лакса-Вендроффа. Для повышения порядка аппроксимации в пространстве код использует метод кусочно-линейной аппроксимации с ограничителем наклона ('PLM', второй порядок точности в пространстве) или метод WENO5 ('WENO', пятый порядок в пространстве), а также кусочно-параболический метод ('PPM', который соответствует методу PPM5 из работы [A. Mignone, J Comp Phys, 270, 1, 784 (2014)], и оригинальная версия PPM 'PPMorig', представленная в [P. Colella и P. R. Woodward, J Comp Phys 54, 174–201 (1984)]). Для достижения высокого порядка точности во времени код использует методы TVD Рунге-Кутты ('RK2' и 'RK3' из [C-W Shu и S Osher, J Comp Phys, 77:439–471, 1988], а также 'RK1' с первым порядком точности во времени).
+# Setup parameters
+par = Parameters(mode="HD", problem="sod2Dcart", Nx1=64, Nx2=64)
 
-В этой версии Piastra2D использует самый простой возможный 8-волновой (или подход Пауэлла (1994,1999)) метод для очистки дивергенции магнитного поля в уравнениях МГД (см. [G. Toth, J Comp Phys, 161, 605 (2000)]). Дополнительно, в коде реализован бездивергентный подход FLUX-CT, в котором берется арифметическое среднее электрических полей из граней для оценки его величины в ребре ячейки (Balsara and Spicer (1999)). В будущем планируется включить более сложные методы для контроля ограничения на отсутствие магнитных монополей.
+# Setup grid and state
+grid = Grid(par.Nx1, par.Nx2, par.Ngc)
+simstate = SimState(grid, par)
+grid, simstate, par, eos = initial_model(grid, simstate, par)
 
-Для использования кода вам понадобится Python 3 с установленными NumPy, IPython и matplotlib. Вы можете настроить параметры моделирования, изменяя переменные "aux.rec_type", "aux.flux_type" и "aux.RK_order" в основном файле "piastra2D_main_***.py". По умолчанию установлены [aux.rec_type = 'PPM', aux.flux_type = 'HLLC', aux.RK_order = 'RK3'] для гидродинамики и [aux.rec_type = 'PPM', aux.flux_type = 'HLL', aux.RK_order = 'RK3'] для МГД, а также [aux.rec_type = 'PPM', aux.flux_type = 'adv', aux.RK_order = 'RK3'] для линейного уравнения переноса в файлах piastra2D_main_ ***. Также по умолчанию установлена единичная квадратная область [0..1, 0..1] в качетсве области расчета задач. В некоторых тестовых задачах я использую другие сетки и заново задаю их для соответствия начальному состоянию жидкости в файле "init_cond_ ***.py". Пользователь может сделать то же самое или просто изменить область в основном коде.
-
-Для задания начальных условий для моделируемых задач вы можете выбрать разные примеры/тесты в файле "init_cond_***.py" и добавить их имена в основной файл либо написать их самостоятельно. Удачи!
-
-Чтобы узнать больше о методе конечных объемов в вычислительной гидродинамике, я рекомендую книгу [E.F. Toro "Riemann Solvers and Numerical Methods for Fluid Dynamics: A practical introduction" (2009)]. 
-Для ознакомления с современными методами конечного объема я также рекомендую обзорную статью [D.S. Balsara "Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods", Living Rev Comput Astrophys 3:2 (2017)].
-
-
+# Run solver
+solver = Hydro2D(grid, simstate, eos, par)
+simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.dens, nsteps=200)
