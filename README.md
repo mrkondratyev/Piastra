@@ -8,9 +8,6 @@
 within a **finite-volume Godunov-type framework** via **TVD Runge–Kutta time integration**.  
 The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.  
 
-Additionally, the folder **notebooks** contains lightweight solvers in separate independent ipynb-files with comments in Russian: 
-2D shallow water simulator, 1D hydrodynamics, 1D advection solver, and 1D diffusion equation
-
 ---
 
 ## Features
@@ -125,6 +122,15 @@ MHD: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
 - M. Zingale, Introduction to Computational Astrophysical Hydrodynamics (2015+)
 
 
+## Additional notes
+
+The folder **notebooks** contains lightweight solvers in separate independent ipynb-files (with comments in Russian): 
+2D shallow water simulator, 1D hydrodynamics, 1D advection solver, and 1D diffusion equation. My lecture notes are provided as well (they are also in Russian, however. I plan to rewrite them soon).
+
+---
+---
+---
+
 # #RUS
 
 # Piastra
@@ -135,9 +141,6 @@ MHD: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
 - Идеальной магнитной гидродинамики (MHD)  
 в рамках **метода конечных объемов Годуновского типа** с **TVD методами Рунге–Кутты** для интегрирования по времени.  
 Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
-
-Дополнительно, в папке **notebooks** представлены облегченнные решатели в отдельных ipynb-файлах с комментариями на русском: 
-2D симулятора уравнений мелкой воды, 1D газовая динамика, 1D решатель адвекции, и 1D модель диффузии
 
 ---
 
@@ -255,4 +258,8 @@ simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.den
 
 - M. Zingale, Introduction to Computational Astrophysical Hydrodynamics (2015+)
 
+## Дополнения
 
+В папке **notebooks** представлены облегченнные решатели в отдельных ipynb-файлах с комментариями на русском: 
+2D симулятора уравнений мелкой воды, 1D газовая динамика, 1D решатель адвекции, и 1D модель диффузии. 
+Также в корневой папке лежат мои лекционные записи лекции для участников Третьей Школы НЦФМ "Экспериментальная и Лабораторная Астрофизика и Геофизика".
