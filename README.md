@@ -122,6 +122,8 @@ MHD: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
 
 - G. Tóth, The ∇·B constraint in shock-capturing MHD codes, JCP 161, 605 (2000)
 
+- M. Zingale, Introduction to Computational Astrophysical Hydrodynamics (2015+)
+
 
 # #RUS
 
@@ -243,13 +245,14 @@ simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.den
 
 ## Ссылки
 
+- Д. В. Бисикало, А. Г. Жилкин, А. А. Боярчук, Газодинамика Тесных Двойных Звезд, Физматлит (2013)
+
 - E. F. Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics (2009)
 
 - D. S. Balsara, Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods, Living Rev Comput Astrophys 3:2 (2017)
 
 - G. Tóth, The ∇·B constraint in shock-capturing MHD codes, JCP 161, 605 (2000)
 
-
-
+- M. Zingale, Introduction to Computational Astrophysical Hydrodynamics (2015+)
 
 
