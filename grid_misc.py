@@ -178,35 +178,6 @@ def Ln_norm(grid, n, var_num, var_ref):
     
     return norm
     
-    
-
-def Ln_norm(grid, n, var_num, var_ref):
-    """
-    Compute L-n norm for the difference of two grid cell-centered arrays
-
-    Parameters
-    ----------
-    grid : object
-        Grid object with geometry and metric information.
-    n : int
-        number of desired order for the norm
-    var_num : ndarray
-        numerical variable.
-    var_ref : ndarray
-        reference variable.
-
-    Returns
-    -------
-    norm : double
-        norm value
-    """
-    Ngc = grid.Ngc 
-    norm = 0.0
-    
-    norm = np.sum( grid.cVol[:,:]*np.abs(var_num[Ngc:-Ngc, Ngc:-Ngc] - var_ref[Ngc:-Ngc, Ngc:-Ngc])**n )
-    
-    return norm
-    
 
 
 def integral_over_grid(grid, var):
@@ -227,3 +198,4 @@ def integral_over_grid(grid, var):
         integral value
     """
     return np.sum( grid.cVol[:,:]*var[grid.Ngc:-grid.Ngc, grid.Ngc:-grid.Ngc] )
+
