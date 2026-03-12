@@ -25,9 +25,9 @@ def run_simulation(grid, state, par, solver, var_to_plot, n_plot):
         State container for the physical variables.
     par : object
         Parameters object, must include:
-        - mode      : problem type ('adv', 'HD', 'MHD')
-        - rec_type  : reconstruction type
-        - RK_order  : Runge–Kutta order
+        - mode      : problem type ('adv', 'HD', 'MHD', 'diff')
+        - rec_type  : reconstruction type (not used for 'diff')
+        - RK_order  : Runge–Kutta order (not used for 'diff')
         - timenow   : current simulation time
         - timefin   : final simulation time
     solver : object
@@ -47,9 +47,14 @@ def run_simulation(grid, state, par, solver, var_to_plot, n_plot):
     #print solver parameters
     print("numerical model = ", par.mode)
     print("grid resolution = ", grid.Nx1, grid.Nx2)
-    print("reconstruction type = ", par.rec_type)
-    print("Temporal integration = ", par.RK_order)
-    print("final phys time = ", par.timefin)    
+    if par.mode == "diff":
+        print("time integrator = ", par.diff_solver)
+        if par.diff_solver == "rkl2":
+            print("RKL2 stages     = ", par.rkl2_stages)
+    else:
+        print("reconstruction type = ", par.rec_type)
+        print("Temporal integration = ", par.RK_order)
+    print("final phys time = ", par.timefin)
     
     #plot setup
     line, ax, fig, im = plot_setup(grid, var_to_plot, par.timenow)
@@ -96,6 +101,13 @@ from advection_init_cond import (
     IC_advection2D_disc,
     IC_advection_user_defined,
 )
+from diffusion_init_cond import (
+    IC_diffusion_user_defined,
+    IC_diffusion2D_gaussian,
+    IC_diffusion2D_cross,
+    IC_diffusion2D_ring,
+    IC_diffusion1D_gaussian,
+)
 from hydro_init_cond import (
     IC_hydro1D_Sod,
     IC_hydro1D_strong_shock,
@@ -141,6 +153,14 @@ def initial_model(grid, state, par):
     """
 
     # --- dispatch dictionaries ---
+    diff_dispatch = {
+        "gauss2D":      IC_diffusion2D_gaussian,
+        "cross2D":      IC_diffusion2D_cross,
+        "ring2D":       IC_diffusion2D_ring,
+        "gauss1D":      IC_diffusion1D_gaussian,
+        "user_defined": IC_diffusion_user_defined,
+    }
+
     adv_dispatch = {
         "smooth1D": IC_advection1D_smooth,
         "disc1D": IC_advection1D_disc,
@@ -173,7 +193,17 @@ def initial_model(grid, state, par):
     }
 
     # --- mode selection ---
-    if par.mode == "adv":
+    if par.mode == "diff":
+        try:
+            grid, state, par = diff_dispatch[par.problem](grid, state, par)
+            eos = None
+        except KeyError:
+            raise ValueError(
+                f"Invalid diffusion problem '{par.problem}'. "
+                f"Available: {list(diff_dispatch.keys())}"
+            )
+
+    elif par.mode == "adv":
         try:
             grid, state, par = adv_dispatch[par.problem](grid, state, par)
             eos = None 
@@ -202,7 +232,7 @@ def initial_model(grid, state, par):
             )
     else:
         raise ValueError(
-            f"Invalid simulation mode '{par.mode}'. Expected one of ['adv', 'HD', 'MHD']."
+            f"Invalid simulation mode '{par.mode}'. Expected one of ['adv', 'HD', 'MHD', 'diff']."
         )
         
     return grid, state, par, eos
