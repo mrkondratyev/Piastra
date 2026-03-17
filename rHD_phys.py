@@ -401,7 +401,7 @@ def boundCond_rHD(grid, BC, fluid):
     Parameters
     ----------
     grid  : Grid
-    BC    : array of 4 str  –  [x1_inner, x1_outer, x2_inner, x2_outer]
+    BC    : array of 4 str  –  [x1_inner, x2_inner, x1_outer, x2_outer]
     fluid : SimState
 
     Returns
@@ -416,17 +416,17 @@ def boundCond_rHD(grid, BC, fluid):
     fluid.vel1, fluid.vel2, fluid.vel3 = \
         apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[0], axis=1, side='inner')
 
-    # outer x1
-    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[1], axis=1, side='outer')
-    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[1], axis=1, side='outer')
-    fluid.vel1, fluid.vel2, fluid.vel3 = \
-        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[1], axis=1, side='outer')
-
     # inner x2
-    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[2], axis=2, side='inner')
-    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[2], axis=2, side='inner')
+    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[1], axis=2, side='inner')
+    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[1], axis=2, side='inner')
     fluid.vel1, fluid.vel2, fluid.vel3 = \
-        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[2], axis=2, side='inner')
+        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[1], axis=2, side='inner')
+
+    # outer x1
+    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[2], axis=1, side='outer')
+    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[2], axis=1, side='outer')
+    fluid.vel1, fluid.vel2, fluid.vel3 = \
+        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[2], axis=1, side='outer')
 
     # outer x2
     fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[3], axis=2, side='outer')

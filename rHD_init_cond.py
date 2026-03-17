@@ -373,9 +373,10 @@ def IC_rHD2D_RTI(grid, state, par):
     par.timefin = 10.0
 
     # reflecting walls in x1, periodic in x2
+    # BC order: [x1_inner, x2_inner, x1_outer, x2_outer]
     par.BC[0] = 'wall'
-    par.BC[1] = 'wall'
-    par.BC[2] = 'peri'
+    par.BC[1] = 'peri'
+    par.BC[2] = 'wall'
     par.BC[3] = 'peri'
 
     eos = EOSdata(5.0 / 3.0)
