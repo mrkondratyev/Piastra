@@ -5,14 +5,14 @@ parameters.py
 ===============================================================================
 
 Central module for storing simulation parameters for different
-fluid dynamics solvers: advection, hydrodynamics (HD), and 
-magnetohydrodynamics (MHD).
+fluid dynamics solvers: advection, hydrodynamics (HD), special-relativistic
+hydrodynamics (rHD), magnetohydrodynamics (MHD), and thermal diffusion.
 
 The Parameters class:
 - Defines defaults for numerical schemes
 - Stores boundary conditions, CFL, and timing info
 - Provides validation for mode and scheme selection
-- Supports modes: 'adv', 'HD', 'MHD', 'diff'
+- Supports modes: 'adv', 'HD', 'rHD', 'MHD', 'diff'
 
 Author: mrkondratyev
 """
@@ -42,7 +42,7 @@ class Parameters:
     Parameters
     ----------
     mode : str
-        Simulation module ('adv', 'HD', 'MHD').
+        Simulation module ('adv', 'HD', 'rHD', 'MHD', 'diff').
     problem : str
         Name of the initial problem (used by initial condition setup).
     Nx1 : int, optional

@@ -25,7 +25,7 @@ def run_simulation(grid, state, par, solver, var_to_plot, n_plot):
         State container for the physical variables.
     par : object
         Parameters object, must include:
-        - mode      : problem type ('adv', 'HD', 'MHD', 'diff')
+        - mode      : problem type ('adv', 'HD', 'rHD', 'MHD', 'diff')
         - rec_type  : reconstruction type (not used for 'diff')
         - RK_order  : Runge–Kutta order (not used for 'diff')
         - timenow   : current simulation time
@@ -150,7 +150,7 @@ def initial_model(grid, state, par):
         Simulation state object (e.g., Advection, Fluid2D, MHD2D).
     par : object
         Parameters object containing simulation settings, including
-        mode ('adv', 'HD', 'MHD') and problem name.
+        mode ('adv', 'HD', 'rHD', 'MHD', 'diff') and problem name.
 
     Returns
     -------
