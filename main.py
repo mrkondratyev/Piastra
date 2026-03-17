@@ -13,9 +13,10 @@ This script handles:
 
 Available modes:
 ---------------
-- 'adv' : Linear advection problems
-- 'HD'  : Hydrodynamics problems
-- 'MHD' : Magnetohydrodynamics problems
+- 'adv'  : Linear advection problems
+- 'HD'   : Hydrodynamics problems
+- 'MHD'  : Magnetohydrodynamics problems
+- 'diff' : 2D thermal diffusion (explicit or RKL2 super time-stepping)
 
 Available problems (examples):
 ------------------------------
@@ -44,6 +45,12 @@ Magnetohydrodynamics (see MHD_init_cond.py):
     - "blast-cyl": IC_MHD2D_blast_cyl,
     - "OT2D": IC_MHD2D_OT,
     - "user_defined": IC_MHD_user_defined,
+Diffusion (see diffusion_init_cond.py):
+    - "gauss2D":      IC_diffusion2D_gaussian  (2D Gaussian pulse, Cartesian)
+    - "cross2D":      IC_diffusion2D_cross      (crossed Gaussian ridges, Cartesian)
+    - "ring2D":       IC_diffusion2D_ring       (annular hot ring, Cartesian)
+    - "gauss1D":      IC_diffusion1D_gaussian   (1D Gaussian, Nx2=1, Cartesian)
+    - "user_defined": IC_diffusion_user_defined
 
 Parameters (in Parameters class):
 --------------------------------
@@ -77,11 +84,16 @@ all modes :
 'HD' : 
     flux_type = 'LLF', 'HLL', 'HLLC', 'Roe'
     
-'MHD' : 
+'MHD' :
     flux_type = 'LLF', 'HLL', 'HLLD'
     divb_tr = 'CT', '8wave'
     CFL = integer < 1
-    
+
+'diff' :
+    diff_solver = 'expl', 'rkl2'
+    rkl2_stages = integer >= 2   (only for rkl2)
+    CFL = float < 1
+
 Author: mrkondratyev
 """
 
@@ -90,58 +102,75 @@ import numpy as np
 
 from grid_setup import Grid
 from sim_state import SimState
+from diffusion_state import DiffState
 from parameters import Parameters
 from MHD_one_step_CT import MHD2D_CT
 from MHD_one_step_8wave import MHD2D_8wave
 from hydro_one_step import Hydro2D
 from advection_one_step import Advection2D
+from diffusion_one_step import Diffusion2D
 from helpers import run_simulation, initial_model
 from visualization import plot_setup
 
 
 # --- Solver dispatch dictionary ---
 SOLVER_DISPATCH = {
-    "adv": lambda grid, state, eos, par: Advection2D(grid, state, par),
-    "HD":  lambda grid, state, eos, par: Hydro2D(grid, state, eos, par),
-    "MHD": lambda grid, state, eos, par: (
+    "adv":  lambda grid, state, eos, par: Advection2D(grid, state, par),
+    "HD":   lambda grid, state, eos, par: Hydro2D(grid, state, eos, par),
+    "MHD":  lambda grid, state, eos, par: (
         MHD2D_CT(grid, state, eos, par)
         if par.divb_tr == "CT" else
         MHD2D_8wave(grid, state, eos, par)
+    ),
+    "diff": lambda grid, state, eos, par: Diffusion2D(
+        grid, state, par,
+        solver=par.diff_solver,
+        rkl2_stages=par.rkl2_stages,
     ),
 }
 
 
 def main():
     """Main driver function for the simulation."""
-    
+
     # --- Define main simulation parameters ---
     par = Parameters(
-        mode="adv",
-        problem="smooth2D",
+        mode="diff",
+        problem="gauss2D",
         Nx1=128,
         Nx2=128,
-        flux_type="adv",
-        divb_tr="CT",
+        diff_solver="rkl2",
+        rkl2_stages=20,
+        CFL=0.9,
     )
 
     # --- Initialize grid and state ---
     grid = Grid(par.Nx1, par.Nx2, par.Ngc)
     print(par)  # show setup
-    simstate = SimState(grid, par)
-    grid, simstate, par, eos = initial_model(grid, simstate, par)
+
+    # State object depends on the mode
+    if par.mode == "diff":
+        state = DiffState(grid)
+    else:
+        state = SimState(grid, par)
+
+    grid, state, par, eos = initial_model(grid, state, par)
 
     # --- Select solver ---
-    solver = SOLVER_DISPATCH[par.mode](grid, simstate, eos, par)
+    solver = SOLVER_DISPATCH[par.mode](grid, state, eos, par)
+
+    # --- Variable to visualise ---
+    var_to_plot = state.T if par.mode == "diff" else state.dens
 
     # --- Run simulation ---
     nsteps_visual = 10
-    simstate, par.timenow = run_simulation(
-        grid, simstate, par, solver, simstate.dens, nsteps_visual
+    state, par.timenow = run_simulation(
+        grid, state, par, solver, var_to_plot, nsteps_visual
     )
 
-    # --- Visualization (optional) ---
+    # --- Final visualization (optional) ---
     if par.mode == "MHD":
-        line, ax, fig, im = plot_setup(grid, simstate.divB, par.timenow)
+        line, ax, fig, im = plot_setup(grid, state.divB, par.timenow)
         plt.show()
 
 

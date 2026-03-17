@@ -12,7 +12,7 @@ The Parameters class:
 - Defines defaults for numerical schemes
 - Stores boundary conditions, CFL, and timing info
 - Provides validation for mode and scheme selection
-- Can be extended for future models (e.g., SPH)
+- Supports modes: 'adv', 'HD', 'MHD', 'diff'
 
 Author: mrkondratyev
 """
@@ -66,6 +66,13 @@ class Parameters:
         divergence of magnetic field treatment (MHD only).
         - CT
         - 8wave
+    diff_solver : str, optional
+        Time-integration method for diffusion (mode='diff' only).
+        - 'expl'  explicit forward Euler (default)
+        - 'rkl2'  RKL2 super time-stepping
+    rkl2_stages : int, optional
+        Number of RKL2 stages s ≥ 2 (mode='diff', diff_solver='rkl2' only).
+        Default is 10.
 
     Attributes
     ----------
@@ -97,17 +104,46 @@ class Parameters:
                  RK_order: str = "RK3",
                  flux_type: Optional[str] = None,
                  CFL: float = 0.7,
-                 divb_tr: str = '8wave'):
+                 divb_tr: str = '8wave',
+                 diff_solver: str = 'expl',
+                 rkl2_stages: int = 10):
 
         # Simulation mode
-        if mode not in ["adv", "HD", "MHD"]:
-            raise ValueError(f"Unknown mode: {mode}. Expected one of ['adv', 'HD', 'MHD'].")
+        if mode not in ["adv", "HD", "MHD", "diff"]:
+            raise ValueError(f"Unknown mode: {mode}. Expected one of ['adv', 'HD', 'MHD', 'diff'].")
         self.mode = mode
         self.problem = problem
 
         # Grid resolution
         self.Nx1 = Nx1
         self.Nx2 = Nx2
+
+        # Physical time
+        self.timenow = 0.0
+        self.timefin = 0.0
+
+        # Boundary conditions
+        self.BC = np.array(["wall", "wall", "wall", "wall"], dtype=str)
+
+        # CFL condition
+        self.CFL = CFL
+
+        # --- Diffusion-specific parameters ---
+        if mode == "diff":
+            if diff_solver not in ["expl", "rkl2"]:
+                raise ValueError(f"Invalid diff_solver: '{diff_solver}'. Expected 'expl' or 'rkl2'.")
+            self.diff_solver = diff_solver
+            self.rkl2_stages = int(rkl2_stages)
+            # diffusion needs only one ghost-cell layer for the 2nd-order stencil
+            self.Ngc = 1
+            self.flux_type = None
+            self.rec_type  = None
+            self.RK_order  = None
+            self.BCm       = None
+            self.divb_tr   = None
+            return
+
+        # --- Parameters for adv / HD / MHD ---
 
         # Reconstruction method
         self.rec_type = rec_type
@@ -121,14 +157,11 @@ class Parameters:
         # Flux type
         self.flux_type = flux_type if flux_type is not None else self._default_flux[mode]
 
-        # Physical time
-        self.timenow = 0.0
-        self.timefin = 0.0
+        # Diffusion parameters (not used for these modes)
+        self.diff_solver = None
+        self.rkl2_stages = None
 
-        # Boundary conditions
-        self.BC = np.array(["wall", "wall", "wall", "wall"], dtype=str)
-
-        # Magnetic boundary conditions for MHD and divB treatment for MHD 
+        # Magnetic boundary conditions and divB treatment (MHD only)
         if mode == "MHD":
             self.BCm = np.array(["wall", "wall", "wall", "wall"], dtype=str)
             if divb_tr not in ["CT", "8wave"]:
@@ -137,20 +170,26 @@ class Parameters:
         else:
             self.BCm = None
             self.divb_tr = None
-            
-        # CFL condition
-        self.CFL = CFL
 
     def __str__(self):
         lines = [
             f"Simulation mode   : {self.mode}",
             f"Problem           : {self.problem}",
             f"Resolution        : Nx1={self.Nx1}, Nx2={self.Nx2}, Ngc={self.Ngc}",
-            f"Reconstruction    : {self.rec_type}",
-            f"RK Order          : {self.RK_order}",
-            f"Flux Type         : {self.flux_type}",
-            f"CFL               : {self.CFL}",
         ]
-        if self.mode == "MHD":
-            lines.append(f"divB treatment    : {self.divb_tr}")
+        if self.mode == "diff":
+            lines += [
+                f"Time integrator   : {self.diff_solver}",
+                f"RKL2 stages       : {self.rkl2_stages}",
+                f"CFL               : {self.CFL}",
+            ]
+        else:
+            lines += [
+                f"Reconstruction    : {self.rec_type}",
+                f"RK Order          : {self.RK_order}",
+                f"Flux Type         : {self.flux_type}",
+                f"CFL               : {self.CFL}",
+            ]
+            if self.mode == "MHD":
+                lines.append(f"divB treatment    : {self.divb_tr}")
         return "\n".join(lines)
