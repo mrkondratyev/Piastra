@@ -126,7 +126,15 @@ from MHD_init_cond import (
     IC_MHD2D_blast_cyl,
     IC_MHD2D_OT,
     IC_MHD_user_defined,
-    
+)
+from rHD_init_cond import (
+    IC_rHD_user_defined,
+    IC_rHD1D_RP1,
+    IC_rHD1D_RP3,
+    IC_rHD1D_RP4,
+    IC_rHD1D_RP5,
+    IC_rHD2D_RP,
+    IC_rHD2D_RTI,
 )
 
 
@@ -192,6 +200,16 @@ def initial_model(grid, state, par):
         "user_defined": IC_MHD_user_defined,
     }
 
+    rhd_dispatch = {
+        "RP1":          IC_rHD1D_RP1,
+        "RP3":          IC_rHD1D_RP3,
+        "RP4":          IC_rHD1D_RP4,
+        "RP5":          IC_rHD1D_RP5,
+        "RP2D":         IC_rHD2D_RP,
+        "RTI":          IC_rHD2D_RTI,
+        "user_defined": IC_rHD_user_defined,
+    }
+
     # --- mode selection ---
     if par.mode == "diff":
         try:
@@ -230,9 +248,20 @@ def initial_model(grid, state, par):
                 f"Invalid MHD problem '{par.problem}'. "
                 f"Available: {list(mhd_dispatch.keys())}"
             )
+
+    elif par.mode == "rHD":
+        try:
+            grid, state, par, eos = rhd_dispatch[par.problem](grid, state, par)
+        except KeyError:
+            raise ValueError(
+                f"Invalid rHD problem '{par.problem}'. "
+                f"Available: {list(rhd_dispatch.keys())}"
+            )
+
     else:
         raise ValueError(
-            f"Invalid simulation mode '{par.mode}'. Expected one of ['adv', 'HD', 'MHD', 'diff']."
+            f"Invalid simulation mode '{par.mode}'. "
+            f"Expected one of ['adv', 'HD', 'rHD', 'MHD', 'diff']."
         )
         
     return grid, state, par, eos

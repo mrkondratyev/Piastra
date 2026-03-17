@@ -102,11 +102,11 @@ import numpy as np
 
 from grid_setup import Grid
 from sim_state import SimState
-from diffusion_state import DiffState
 from parameters import Parameters
 from MHD_one_step_CT import MHD2D_CT
 from MHD_one_step_8wave import MHD2D_8wave
 from hydro_one_step import Hydro2D
+from rHD_one_step import rHD2D
 from advection_one_step import Advection2D
 from diffusion_one_step import Diffusion2D
 from helpers import run_simulation, initial_model
@@ -117,6 +117,7 @@ from visualization import plot_setup
 SOLVER_DISPATCH = {
     "adv":  lambda grid, state, eos, par: Advection2D(grid, state, par),
     "HD":   lambda grid, state, eos, par: Hydro2D(grid, state, eos, par),
+    "rHD":  lambda grid, state, eos, par: rHD2D(grid, state, eos, par),
     "MHD":  lambda grid, state, eos, par: (
         MHD2D_CT(grid, state, eos, par)
         if par.divb_tr == "CT" else
@@ -148,11 +149,8 @@ def main():
     grid = Grid(par.Nx1, par.Nx2, par.Ngc)
     print(par)  # show setup
 
-    # State object depends on the mode
-    if par.mode == "diff":
-        state = DiffState(grid)
-    else:
-        state = SimState(grid, par)
+    # State object (unified SimState for all modes)
+    state = SimState(grid, par)
 
     grid, state, par, eos = initial_model(grid, state, par)
 
@@ -161,6 +159,8 @@ def main():
 
     # --- Variable to visualise ---
     var_to_plot = state.T if par.mode == "diff" else state.dens
+
+
 
     # --- Run simulation ---
     nsteps_visual = 10
