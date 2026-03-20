@@ -108,7 +108,7 @@ class Grid:
 
         # Face coordinates
         self.fx1 = np.zeros((Nx1 + Ngc * 2 + 1, Nx2 + Ngc * 2), dtype=np.double)
-        self.fx2 = np.zeros((Nx2 + Ngc * 2 + 1, Nx2 + Ngc * 2), dtype=np.double)
+        self.fx2 = np.zeros((Nx1 + Ngc * 2, Nx2 + Ngc * 2 + 1), dtype=np.double)
 
         # Cell center coordinates
         self.cx1 = np.zeros((Nx1 + Ngc * 2, Nx2 + Ngc * 2), dtype=np.double)
@@ -193,8 +193,8 @@ class Grid:
         self.ax2 = self.cx2
 
         # Face areas
-        self.fS1[:, :] = (self.fx2[Ngc:-Ngc+1, Ngc+1:-Ngc] - self.fx2[Ngc:-Ngc+1, Ngc:-Ngc-1])
-        self.fS2[:, :] = (self.fx1[Ngc+1:-Ngc, Ngc:-Ngc+1] - self.fx1[Ngc:-Ngc-1, Ngc:-Ngc+1])
+        self.fS1[:, :] = (self.fx2[Ngc:Nx1+Ngc+1, Ngc+1:-Ngc] - self.fx2[Ngc:Nx1+Ngc+1, Ngc:-Ngc-1])
+        self.fS2[:, :] = (self.fx1[Ngc+1:-Ngc, Ngc:Nx2+Ngc+1] - self.fx1[Ngc:-Ngc-1, Ngc:Nx2+Ngc+1])
         self.fS3[:, :] = self.dx1[Ngc:-Ngc, Ngc:-Ngc] * self.dx2[Ngc:-Ngc, Ngc:-Ngc]
         # Cell volumes
         self.cVol[:, :] = self.dx1[Ngc:-Ngc, Ngc:-Ngc] * self.dx2[Ngc:-Ngc, Ngc:-Ngc]
