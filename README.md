@@ -2,10 +2,12 @@
 # Piastra
 
 **Piastra** is a teaching-oriented framework for solving:
-- Linear advection 
-- Inviscid compressible hydrodynamics (HD)  
-- Ideal Magnetohydrodynamics (MHD)  
-within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time integration** and **limited high-order spatial reconstruction**. The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.  
+- Linear advection
+- Inviscid compressible hydrodynamics (HD)
+- Special-relativistic hydrodynamics (rHD)
+- Ideal Magnetohydrodynamics (MHD)
+- Thermal diffusion (explicit and RKL2 super time-stepping)
+within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time integration** and **limited high-order spatial reconstruction**. The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.
 
 ---
 
@@ -18,12 +20,20 @@ within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time 
   - HLL (Harten–Lax–van Leer, 1983)  
   - HLLC (Toro et al., 1994)  
   - Roe (Roe, 1981)  
+- **Special-relativistic HD solvers** (rHD):
+  - LLF, HLL, HLLC (Mignone & Bodo, 2005)
+  - 4-velocity reconstruction (guarantees |v| < 1 at cell faces)
+  - Newton-Raphson conservative-to-primitive inversion
 - **MHD solvers**:
   - LLF, HLL, HLLD (Miyoshi and Kusano, 2005)
-  - Divergence control:  
-    - Powell 8-wave method (Powell 1994, 1999; Tóth 2000)  
-    - Constrained Transport (Flux-CT; Balsara & Spicer 1999)  
-- **Advection**: high-order RK with exact Riemann solver or Lax–Wendroff scheme  
+  - Divergence control:
+    - Powell 8-wave method (Powell 1994, 1999; Tóth 2000)
+    - Constrained Transport (Flux-CT; Balsara & Spicer 1999)
+- **Thermal diffusion**:
+  - Explicit forward Euler
+  - RKL2 super time-stepping (Meyer, Balsara & Aslam 2014) with configurable stages
+  - Geometry-aware FV Laplacian (Cartesian, cylindrical, polar)
+- **Advection**: high-order RK with exact Riemann solver or Lax–Wendroff scheme
 - **Reconstruction methods**:  
   - PCM (piecewise constant)  
   - PLM (piecewise linear with slope limiter, 2nd order)  
@@ -41,10 +51,10 @@ within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time 
   - `sim_state.py`: storage for fluid variables
   - `boundaries.py`: boundary conditions handling for scalar and vector variables
   - `helpers.py`: initial condition dispatch and simulation loop  
-  - `advection_one_step.py`, `hydro_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`: solver backends
-  - `hydro_phys.py`, `MHD_phys.py`: supplementary modules  
-  - `visualization.py`: plotting utilities  
-  - `advection_init_cond.py`, `hydro_init_cond.py`, `MHD_init_cond.py`: initial conditions
+  - `advection_one_step.py`, `hydro_one_step.py`, `rHD_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`, `diffusion_one_step.py`: solver backends
+  - `hydro_phys.py`, `rHD_phys.py`, `MHD_phys.py`: supplementary modules
+  - `visualization.py`: plotting utilities
+  - `advection_init_cond.py`, `hydro_init_cond.py`, `rHD_init_cond.py`, `MHD_init_cond.py`, `diffusion_init_cond.py`: initial conditions
   - `main.py`: launcher (alternatively can be run via Jupyter notebook **main.ipynb**)
 ---
 
@@ -85,7 +95,7 @@ All parameters are stored in the Parameters class. Defaults are applied automati
 
 ## Required:
 
-- mode: 'adv', 'HD', or 'MHD'
+- mode: 'adv', 'HD', 'rHD', 'MHD', or 'diff'
 
 - problem: name of the test problem
 
@@ -109,7 +119,11 @@ Advection: smooth/discontinuous 1D/2D tests
 
 Hydrodynamics: Sod shock tubes, strong shocks, Kelvin–Helmholtz, Rayleigh–Taylor, Sedov blast waves
 
+Relativistic HD: Mignone & Bodo (2005) Riemann problems (RP1–RP5), 2D Riemann problem, relativistic Rayleigh–Taylor instability
+
 MHD: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
+
+Diffusion: 2D Gaussian pulse, crossed Gaussian ridges, annular ring, 1D Gaussian
 
 ## References
 
@@ -118,6 +132,10 @@ MHD: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
 - D. S. Balsara, Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods, Living Rev Comput Astrophys 3:2 (2017)
 
 - G. Tóth, The ∇·B constraint in shock-capturing MHD codes, JCP 161, 605 (2000)
+
+- A. Mignone & G. Bodo, An HLLC Riemann solver for relativistic flows, MNRAS 364, 126 (2005)
+
+- C. D. Meyer, D. S. Balsara & T. D. Aslam, A stabilized Runge–Kutta–Legendre method for explicit super-time-stepping of parabolic and mixed equations, JCP 257, 594 (2014)
 
 - M. Zingale, Introduction to Computational Astrophysical Hydrodynamics (2015+)
 
@@ -136,9 +154,11 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
 # Piastra
 
 **Piastra** — учебный код для моделирования:
-- Линейного уравнения переноса (адвекции)  
-- Сжимаемой невязкой гидродинамики (HD)  
-- Идеальной магнитной гидродинамики (MHD)  
+- Линейного уравнения переноса (адвекции)
+- Сжимаемой невязкой гидродинамики (HD)
+- Специально-релятивистской гидродинамики (rHD)
+- Идеальной магнитной гидродинамики (MHD)
+- Теплопроводности (явная схема и RKL2 super time-stepping)
 в рамках **метода конечных объемов Годуновского типа** с **TVD методами Рунге–Кутты** для интегрирования по времени и **ограниченной кусочно-полиномиальной реконструкцией высокого порядка по пространству**. Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
 
 ---
@@ -175,10 +195,10 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
   - `sim_state.py`: хранение переменных жидкости  
   - `helpers.py`: диспетчер начальных условий и основной цикл симуляции
   - `boundaries.py`: учет граничных условий на сетке для скалярных и векторых функций
-  - `advection_one_step.py`, `hydro_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`: бэкенды решателей  
-  - `hydro_phys.py`, `MHD_phys.py`: вспомогательные модули  
-  - `visualization.py`: функции визуализации  
-  - `advection_init_cond.py`, `hydro_init_cond.py`, `MHD_init_cond.py`: начальные условия  
+  - `advection_one_step.py`, `hydro_one_step.py`, `rHD_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`, `diffusion_one_step.py`: бэкенды решателей
+  - `hydro_phys.py`, `rHD_phys.py`, `MHD_phys.py`: вспомогательные модули
+  - `visualization.py`: функции визуализации
+  - `advection_init_cond.py`, `hydro_init_cond.py`, `rHD_init_cond.py`, `MHD_init_cond.py`, `diffusion_init_cond.py`: начальные условия
   - `main.py`: запуск симуляции (можно запускать также через Jupyter notebook **main.ipynb**)  
 
 ---
@@ -220,7 +240,7 @@ simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.den
 
 ## Необходимые:
 
-- mode: 'adv', 'HD', или 'MHD'
+- mode: 'adv', 'HD', 'rHD', 'MHD', или 'diff'
 
 - problem: название тестовой задачи
 
@@ -244,7 +264,11 @@ simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.den
 
 Газовая динамика: Sod shock tubes, strong shocks, Kelvin–Helmholtz, Rayleigh–Taylor, Sedov blast waves
 
+Релятивистская гидродинамика: задачи Римана Mignone & Bodo (2005) (RP1–RP5), 2D задача Римана, релятивистская неустойчивость Рэлея–Тейлора
+
 МГД: Brio–Wu shock, Tóth problem, blast wave, Orszag–Tang vortex
+
+Диффузия: 2D гауссов импульс, перекрёстные гауссовы гребни, кольцевой импульс, 1D гауссов импульс
 
 ## Ссылки
 

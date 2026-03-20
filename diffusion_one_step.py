@@ -45,7 +45,7 @@ operator is automatically geometry-aware.
 
 Variable diffusivity
 --------------------
-``kappa`` in DiffState may be a scalar or a 2-D cell-centred array
+``kappa`` in SimState may be a scalar or a 2-D cell-centred array
 (shape grid.grid_shape).  Face-centred values are obtained by arithmetic
 averaging of the two neighbouring cells.
 
@@ -55,8 +55,8 @@ Boundary conditions are applied through ``apply_bc_scalar`` from
 ``boundaries.py``.  The four-element array ``par.BC`` encodes:
 
     BC[0] : x1 inner (left / bottom-R)
-    BC[1] : x1 outer (right / top-R)
-    BC[2] : x2 inner (bottom / inner-Z)
+    BC[1] : x2 inner (bottom / inner-Z)
+    BC[2] : x1 outer (right / top-R)
     BC[3] : x2 outer (top / outer-Z)
 
 Supported types: ``'free'`` (zero-gradient), ``'wall'`` (identical to
@@ -64,23 +64,23 @@ Supported types: ``'free'`` (zero-gradient), ``'wall'`` (identical to
 
 Usage
 -----
->>> from grid_setup       import Grid
->>> from diffusion_state  import DiffState
+>>> from grid_setup         import Grid
+>>> from sim_state          import SimState
 >>> from diffusion_one_step import Diffusion2D
 >>>
 >>> g   = Grid(128, 128, 2)
 >>> g.CartesianGrid(0.0, 1.0, 0.0, 1.0)
->>> dfs = DiffState(g, kappa=0.1)
->>> # … fill dfs.T with initial condition …
+>>> state = SimState(g, par)          # par.mode == 'diff'
+>>> # … fill state.T with initial condition …
 >>>
 >>> par.timenow = 0.0
 >>> par.timefin = 1.0
 >>> par.CFL     = 0.9
 >>> par.BC      = np.array(['free', 'free', 'free', 'free'])
 >>>
->>> solver = Diffusion2D(g, dfs, par, solver='rkl2', rkl2_stages=16)
+>>> solver = Diffusion2D(g, state, par, solver='rkl2', rkl2_stages=16)
 >>> while par.timenow < par.timefin:
-...     dfs = solver.step_RK()
+...     state = solver.step_RK()
 
 Author: mrkondratyev
 """
@@ -110,8 +110,8 @@ class Diffusion2D:
     g : Grid
         Grid object with attributes Nx1, Nx2, Ngc, dx1uc, dx2uc,
         fS1, fS2, cVol.
-    diff : DiffState
-        Diffusion state container with arrays T and kappa.
+    diff : SimState
+        State container with arrays T and kappa (mode='diff').
     par : object
         Parameters object.  Must expose:
         ``timenow`` (float), ``timefin`` (float),
@@ -126,7 +126,7 @@ class Diffusion2D:
     Attributes
     ----------
     g    : Grid
-    diff : DiffState
+    diff : SimState
     par  : parameters
     """
 
@@ -156,7 +156,7 @@ class Diffusion2D:
 
         Returns
         -------
-        diff : DiffState
+        diff : SimState
             Updated diffusion state.
         """
         dt_cfl = _CFL_condition_diff(self.g, self.diff, self.par.CFL)
@@ -192,7 +192,7 @@ def _CFL_condition_diff(g, diff, CFL):
     Parameters
     ----------
     g    : Grid
-    diff : DiffState
+    diff : SimState
     CFL  : float
         Safety factor (< 1).
 
@@ -223,13 +223,13 @@ def _apply_bc_diff(g, diff, par):
     Parameters
     ----------
     g    : Grid
-    diff : DiffState  (modified in place)
+    diff : SimState  (modified in place)
     par  : parameters  (par.BC[0..3])
     """
     Ngc = g.Ngc
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[0], axis=1, side='inner')
-    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[1], axis=1, side='outer')
-    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[2], axis=2, side='inner')
+    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[1], axis=2, side='inner')
+    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[2], axis=1, side='outer')
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[3], axis=2, side='outer')
     return diff
 
@@ -284,7 +284,7 @@ def _spatial_operator_diff(g, diff):
     Parameters
     ----------
     g    : Grid
-    diff : DiffState
+    diff : SimState
 
     Returns
     -------
@@ -330,13 +330,13 @@ def _explicit_step_diff(g, diff, par, dt):
     Parameters
     ----------
     g    : Grid
-    diff : DiffState
+    diff : SimState
     par  : parameters
     dt   : float
 
     Returns
     -------
-    diff : DiffState
+    diff : SimState
         Updated state (T modified in place).
     """
     Ngc = g.Ngc
@@ -407,7 +407,7 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
     Parameters
     ----------
     g              : Grid
-    diff           : DiffState
+    diff           : SimState
     par            : parameters
     dt             : float    (super-step size)
     b, mu, nu,
@@ -416,7 +416,7 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
 
     Returns
     -------
-    diff : DiffState
+    diff : SimState
         Updated state.
     """
     Ngc = g.Ngc
