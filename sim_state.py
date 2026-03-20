@@ -3,18 +3,21 @@
 sim_state.py
 
 This module defines a unified class for storing the state of advection,
-compressible hydrodynamics (HD), and magnetohydrodynamics (MHD) on a 2D
-computational grid. It is designed for frameworks that compare numerical
-methods and solvers across different physics modules.
+compressible hydrodynamics (HD), special-relativistic hydrodynamics (rHD),
+magnetohydrodynamics (MHD), and thermal diffusion on a 2D computational grid.
+It is designed for frameworks that compare numerical methods and solvers across
+different physics modules.
 
 The SimState (simulated state) class allocates arrays according to the selected mode:
 
-- 'adv' : scalar field(s) for linear advection, plus optional advection
+- 'adv'  : scalar field(s) for linear advection, plus optional advection
   velocities.
-- 'HD'  : compressible hydrodynamics with primitive and conservative
+- 'HD'   : compressible hydrodynamics with primitive and conservative
   variables, plus optional source terms.
-- 'MHD' : HD arrays plus magnetic fields, staggered magnetic fields,
+- 'rHD'  : special-relativistic hydrodynamics; same arrays as HD.
+- 'MHD'  : HD arrays plus magnetic fields, staggered magnetic fields,
   divergence-cleaning arrays, and conservative magnetic fluxes.
+- 'diff' : scalar temperature field T and thermal diffusivity kappa.
 
 Primitive variables include ghost cells to simplify boundary condition
 handling, while conservative variables and source terms are defined only
@@ -53,7 +56,7 @@ class SimState:
         `grid.grid_shape`, `grid.Nx1`, and `grid.Nx2`.
     par : parameters
         Simulation parameters object with attribute `mode` that can be
-        'adv', 'HD', or 'MHD'. Determines which arrays are allocated.
+        'adv', 'HD', 'rHD', 'MHD', or 'diff'. Determines which arrays are allocated.
 
     Attributes
     ----------
@@ -91,19 +94,29 @@ class SimState:
     divB : ndarray
         Divergence of magnetic field (MHD only).
     F1, F2 : ndarray
-        User-defined source terms (HD/MHD only, e.g., gravity).
+        User-defined source terms (HD/rHD/MHD only, e.g., gravity).
+
+    # Diffusion (diff mode only)
+    T : ndarray
+        Temperature field.
+    kappa : float
+        Thermal diffusivity (uniform).
     """
 
 
     def __init__(self, grid, par):
-        
+
         if par.mode == 'adv':
             self.dens = np.zeros(grid.grid_shape, dtype=np.double)
             # Advection velocities (they are constant by now)
             self.vel1 = 0.0
             self.vel2 = 0.0
-        
-        if par.mode == 'HD' or par.mode == 'MHD': 
+
+        if par.mode == 'diff':
+            self.T     = np.zeros(grid.grid_shape, dtype=np.double)
+            self.kappa = 1.0
+
+        if par.mode == 'HD' or par.mode == 'MHD' or par.mode == 'rHD':
             # Primitive variables (with ghost cells)
             self.dens = np.zeros(grid.grid_shape, dtype=np.double)
             self.vel1 = np.zeros(grid.grid_shape, dtype=np.double)

@@ -2,7 +2,7 @@
 """
 main.py
 
-Main driver for advection/fluid/MHD simulations.
+Main driver for advection/fluid/MHD/rHD/diffusion simulations.
 
 This script handles:
 - Grid construction
@@ -15,46 +15,34 @@ Available modes:
 ---------------
 - 'adv'  : Linear advection problems
 - 'HD'   : Hydrodynamics problems
+- 'rHD'  : Special-relativistic hydrodynamics problems
 - 'MHD'  : Magnetohydrodynamics problems
 - 'diff' : 2D thermal diffusion (explicit or RKL2 super time-stepping)
 
 Available problems (examples):
 ------------------------------
 Advection (see advection_init_cond.py):
-    - "smooth1D": IC_advection1D_smooth,
-    - "disc1D": IC_advection1D_disc,
-    - "smooth2D": IC_advection2D_smooth,
-    - "disc2D": IC_advection2D_disc,
-    - "user_defined": IC_advection_user_defined,
+    - "smooth1D", "disc1D", "smooth2D", "disc2D", "user_defined"
 Hydrodynamics (see hydro_init_cond.py):
-    - "sod1Dcart": lambda g, s, p: IC_hydro1D_Sod(g, s, p, "cart"),
-    - "sod1Dcyl": lambda g, s, p: IC_hydro1D_Sod(g, s, p, "cyl"),
-    - "sod1Dpol": lambda g, s, p: IC_hydro1D_Sod(g, s, p, "pol"),
-    - "strong1D": IC_hydro1D_strong_shock,
-    - "DBW1D": IC_hydro1D_DBW,
-    - "KHI": IC_hydro2D_KHI,
-    - "RTI": IC_hydro2D_RTI,
-    - "sod2Dcart": IC_hydro2D_Sod,
-    - "sedov2Dcart": IC_hydro2D_Sedov_cart,
-    - "sedov2Dcyl": IC_hydro2D_Sedov_cyl,
-    - "user_defined": IC_hydro_user_defined. 
+    - "sod1Dcart", "sod1Dcyl", "sod1Dpol", "strong1D", "DBW1D",
+    - "KHI", "RTI", "sod2Dcart", "sedov2Dcart", "sedov2Dcyl",
+    - "user_defined"
+Relativistic HD (see rHD_init_cond.py):
+    - "RP1"  : Mignone & Bodo (2005) RP1 (moving fluid, v=0.9)
+    - "RP3"  : strong relativistic shock
+    - "RP4"  : ultra-relativistic blast wave (p=1000)
+    - "RP5"  : tangential velocity test
+    - "RP2D" : 2D relativistic Riemann problem
+    - "RTI"  : relativistic Rayleigh-Taylor instability
+    - "user_defined"
 Magnetohydrodynamics (see MHD_init_cond.py):
-    - "BW1D": IC_MHD1D_BW,
-    - "toth1D": IC_MHD1D_Toth,
-    - "blast-cart": IC_MHD2D_blast_cart,
-    - "blast-cyl": IC_MHD2D_blast_cyl,
-    - "OT2D": IC_MHD2D_OT,
-    - "user_defined": IC_MHD_user_defined,
+    - "BW1D", "toth1D", "blast-cart", "blast-cyl", "OT2D", "user_defined"
 Diffusion (see diffusion_init_cond.py):
-    - "gauss2D":      IC_diffusion2D_gaussian  (2D Gaussian pulse, Cartesian)
-    - "cross2D":      IC_diffusion2D_cross      (crossed Gaussian ridges, Cartesian)
-    - "ring2D":       IC_diffusion2D_ring       (annular hot ring, Cartesian)
-    - "gauss1D":      IC_diffusion1D_gaussian   (1D Gaussian, Nx2=1, Cartesian)
-    - "user_defined": IC_diffusion_user_defined
+    - "gauss2D", "cross2D", "ring2D", "gauss1D", "user_defined"
 
 Parameters (in Parameters class):
 --------------------------------
-- mode       : str   -- Simulation type ('adv', 'HD', 'MHD')
+- mode       : str   -- Simulation type ('adv', 'HD', 'rHD', 'MHD', 'diff')
 - problem    : str   -- Problem name (depends on mode)
 - Nx1, Nx2   : int   -- Grid resolution
 - flux_type  : str   -- Flux solver type ('adv', 'HLLC', 'HLLD', etc.)
@@ -102,11 +90,11 @@ import numpy as np
 
 from grid_setup import Grid
 from sim_state import SimState
-from diffusion_state import DiffState
 from parameters import Parameters
 from MHD_one_step_CT import MHD2D_CT
 from MHD_one_step_8wave import MHD2D_8wave
 from hydro_one_step import Hydro2D
+from rHD_one_step import rHD2D
 from advection_one_step import Advection2D
 from diffusion_one_step import Diffusion2D
 from helpers import run_simulation, initial_model
@@ -117,6 +105,7 @@ from visualization import plot_setup
 SOLVER_DISPATCH = {
     "adv":  lambda grid, state, eos, par: Advection2D(grid, state, par),
     "HD":   lambda grid, state, eos, par: Hydro2D(grid, state, eos, par),
+    "rHD":  lambda grid, state, eos, par: rHD2D(grid, state, eos, par),
     "MHD":  lambda grid, state, eos, par: (
         MHD2D_CT(grid, state, eos, par)
         if par.divb_tr == "CT" else
@@ -148,11 +137,8 @@ def main():
     grid = Grid(par.Nx1, par.Nx2, par.Ngc)
     print(par)  # show setup
 
-    # State object depends on the mode
-    if par.mode == "diff":
-        state = DiffState(grid)
-    else:
-        state = SimState(grid, par)
+    # State object (unified SimState for all modes)
+    state = SimState(grid, par)
 
     grid, state, par, eos = initial_model(grid, state, par)
 
@@ -161,6 +147,8 @@ def main():
 
     # --- Variable to visualise ---
     var_to_plot = state.T if par.mode == "diff" else state.dens
+
+
 
     # --- Run simulation ---
     nsteps_visual = 10

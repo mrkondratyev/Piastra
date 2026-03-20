@@ -38,7 +38,7 @@ def IC_diffusion_user_defined(grid, diff, par):
     Parameters
     ----------
     grid : Grid
-    diff : DiffState
+    diff : SimState
     par  : Parameters
 
     Returns
@@ -89,7 +89,7 @@ def IC_diffusion2D_gaussian(grid, diff, par):
     Parameters
     ----------
     grid : Grid
-    diff : DiffState
+    diff : SimState
     par  : Parameters
 
     Returns
@@ -135,7 +135,7 @@ def IC_diffusion2D_cross(grid, diff, par):
     Parameters
     ----------
     grid : Grid
-    diff : DiffState
+    diff : SimState
     par  : Parameters
 
     Returns
@@ -193,7 +193,7 @@ def IC_diffusion2D_ring(grid, diff, par):
     Parameters
     ----------
     grid : Grid
-    diff : DiffState
+    diff : SimState
     par  : Parameters
 
     Returns
@@ -239,7 +239,7 @@ def IC_diffusion1D_gaussian(grid, diff, par):
     Parameters
     ----------
     grid : Grid  (must be created with Nx2 = 1)
-    diff : DiffState
+    diff : SimState
     par  : Parameters
 
     Returns

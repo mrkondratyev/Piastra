@@ -5,14 +5,14 @@ parameters.py
 ===============================================================================
 
 Central module for storing simulation parameters for different
-fluid dynamics solvers: advection, hydrodynamics (HD), and 
-magnetohydrodynamics (MHD).
+fluid dynamics solvers: advection, hydrodynamics (HD), special-relativistic
+hydrodynamics (rHD), magnetohydrodynamics (MHD), and thermal diffusion.
 
 The Parameters class:
 - Defines defaults for numerical schemes
 - Stores boundary conditions, CFL, and timing info
 - Provides validation for mode and scheme selection
-- Supports modes: 'adv', 'HD', 'MHD', 'diff'
+- Supports modes: 'adv', 'HD', 'rHD', 'MHD', 'diff'
 
 Author: mrkondratyev
 """
@@ -42,7 +42,7 @@ class Parameters:
     Parameters
     ----------
     mode : str
-        Simulation module ('adv', 'HD', 'MHD').
+        Simulation module ('adv', 'HD', 'rHD', 'MHD', 'diff').
     problem : str
         Name of the initial problem (used by initial condition setup).
     Nx1 : int, optional
@@ -91,7 +91,8 @@ class Parameters:
     # Default flux mapping per module
     _default_flux = {
         "adv": "adv",
-        "HD": "HLLC",
+        "HD":  "HLLC",
+        "rHD": "HLLC",
         "MHD": "HLLD",
     }
 
@@ -109,8 +110,8 @@ class Parameters:
                  rkl2_stages: int = 10):
 
         # Simulation mode
-        if mode not in ["adv", "HD", "MHD", "diff"]:
-            raise ValueError(f"Unknown mode: {mode}. Expected one of ['adv', 'HD', 'MHD', 'diff'].")
+        if mode not in ["adv", "HD", "rHD", "MHD", "diff"]:
+            raise ValueError(f"Unknown mode: {mode}. Expected one of ['adv', 'HD', 'rHD', 'MHD', 'diff'].")
         self.mode = mode
         self.problem = problem
 
@@ -162,6 +163,16 @@ class Parameters:
         self.rkl2_stages = None
 
         # Magnetic boundary conditions and divB treatment (MHD only)
+        if mode == "rHD":
+            # rHD shares the same flux interface as HD, valid options differ
+            valid_rHD = ["LLF", "HLL", "HLLC"]
+            if self.flux_type not in valid_rHD:
+                raise ValueError(
+                    f"Invalid flux_type '{self.flux_type}' for rHD. "
+                    f"Expected one of {valid_rHD}.")
+            self.BCm     = None
+            self.divb_tr = None
+
         if mode == "MHD":
             self.BCm = np.array(["wall", "wall", "wall", "wall"], dtype=str)
             if divb_tr not in ["CT", "8wave"]:
@@ -192,4 +203,6 @@ class Parameters:
             ]
             if self.mode == "MHD":
                 lines.append(f"divB treatment    : {self.divb_tr}")
+            if self.mode == "rHD":
+                lines.append("Relativistic      : yes")
         return "\n".join(lines)
