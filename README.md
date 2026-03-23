@@ -7,7 +7,8 @@
 - Special-relativistic hydrodynamics (rHD)
 - Ideal Magnetohydrodynamics (MHD)
 - Thermal diffusion (explicit and RKL2 super time-stepping)
-within a **finite-volume Godunov-type framework** with **TVD Runge–Kutta time integration** and **limited high-order spatial reconstruction**. The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.
+  
+within a **finite-volume framework**. The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.
 
 ---
 
