@@ -138,17 +138,17 @@ def prim2cons_sr_MHD(dens, vel1, vel2, vel3, pres, B1, B2, B3, eos):
     B1,B2,B3 : ndarray  unchanged (passed through for convenience)
     """
     W    = _lorentz(vel1, vel2, vel3)
+    W2 = W**2
     enth = 1.0 + pres / (dens + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
 
     b2, vdB, Bsq = _b_squared(W, vel1, vel2, vel3, B1, B2, B3)
-    vsq           = vel1**2 + vel2**2 + vel3**2
-    vcrossB_sq    = np.maximum(Bsq * vsq - vdB**2, 0.0)   # |v×B|²  ≥ 0
+    vsq  = vel1**2 + vel2**2 + vel3**2
 
     D  = dens * W
-    S1 = (dens * enth * W**2 + Bsq) * vel1 - vdB * B1
-    S2 = (dens * enth * W**2 + Bsq) * vel2 - vdB * B2
-    S3 = (dens * enth * W**2 + Bsq) * vel3 - vdB * B3
-    E  = dens * enth * W**2 - pres + 0.5 * (Bsq + vcrossB_sq)
+    S1 = (dens * enth * W2 + Bsq) * vel1 - vdB * B1
+    S2 = (dens * enth * W2 + Bsq) * vel2 - vdB * B2
+    S3 = (dens * enth * W2 + Bsq) * vel3 - vdB * B3
+    E  = dens * enth * W2 - pres + 0.5 * (Bsq + Bsq * vsq - vdB**2)
 
     return D, S1, S2, S3, E
 
@@ -157,30 +157,23 @@ def prim2cons_sr_MHD(dens, vel1, vel2, vel3, pres, B1, B2, B3, eos):
 # Conservative → primitive  (STUB — fill in your inversion scheme)
 # ============================================================================
 
-def cons2prim_sr_MHD(D, S1, S2, S3, E, B1, B2, B3, pres_init, eos):
+def cons2prim_sr_MHD(mass, mom1, mom2, mom3, ener, B1, B2, B3, x_init, eos):
     """
     Recover primitive variables from conservative variables for SRMHD.
 
     THIS FUNCTION IS A STUB.
     ----------------------------------
     The con→prim inversion in SRMHD is a non-trivial implicit problem.
-    The standard approach (see Noble et al. 2006; Mignone & McKinney 2007):
+    We use the scalar solver for ideal-gas EOS, written in 
+    Mignone & Bodo 2005 (see also Noble et al. 2006):
 
-      1.  Define  z ≡ ρhW² + B²  (unknown scalar).
+      1.  Define  x ≡ ρhW²  (unknown scalar).
 
       2.  From the momentum equations:
               (v·B) = S·B / (z - B²)
-              v_i   = [S_i + (v·B) B_i] / z
 
-      3.  Express  W²  and  ρ  in terms of  z:
-              v²  = [S² + (v·B)²(2z - B²)] / z²   (with S·B from step 2)
-              W   = 1 / sqrt(1 - v²)
-              ρ   = D / W
 
-      4.  Solve the nonlinear equation for  z  (or equivalently for  p):
-              E  = z - p - (b⁰)²   where  b⁰ = W(v·B)  and  p is given by EOS.
-
-      A single Newton-Raphson iteration in  z  (or in  p) converges quickly
+      A single Newton-Raphson iteration in x converges quickly
       for typical astrophysical conditions.
 
     Parameters
@@ -194,17 +187,128 @@ def cons2prim_sr_MHD(D, S1, S2, S3, E, B1, B2, B3, pres_init, eos):
     -------
     dens,vel1,vel2,vel3,pres,B1,B2,B3 : ndarray  primitive variables
     """
-    # ------------------------------------------------------------------ #
-    # TODO: implement Newton-Raphson inversion here.                       #
-    #       Suggested structure:                                           #
-    #         z   = _newton_z_sr_MHD(pres_init, D, S1, S2, S3, E, B1, B2, B3, eos)
-    #         ... recover dens, vel1-3, pres from z                       #
-    # ------------------------------------------------------------------ #
-    raise NotImplementedError(
-        "cons2prim_sr_MHD: primitive-variable recovery is not yet implemented.\n"
-        "Please implement a Newton-Raphson solver following Noble et al. (2006)\n"
-        "or Mignone & McKinney (2007)."
-    )
+    
+    msqr = mom1**2 + mom2**2 + mom3**2
+    S = mom1 * B1 + mom2 * B2 + mom3 * B3
+    Bsqr = B1**2 + B2**2 + B3**2     
+    Ssqr = S**2
+    gamma_r = eos.GAMMA/(eos.GAMMA-1.0)    
+    
+    x = _newton_rMHD(x_init, mass, etot, Ssqr, msqr, Bsqr, gamma_r)
+    
+    #Lorentz factor 
+    W =  np.sqrt(np.maximum( 1.0/(1.0 - \
+        (Ssqr * (2.0 * x + Bsqr) + msqr * x**2) / \
+        (x**2 + Bsqr)**2 / x**2), 1.0 ))
+            
+    #number density conservation 
+    dens = mass / W
+    #energy conervation
+    pres = (x - mass * W)/(gamma_r * W**2)
+    
+    #from the momentum eqn:
+    # v_i   = [mom_i + (v·B) B_i / x] / [x + B^2]
+    vel1 = (mom1 + S * B1/x)/(x + Bsqr)  
+    vel1 = (mom2 + S * B2/x)/(x + Bsqr) 
+    vel1 = (mom3 + S * B3/x)/(x + Bsqr) 
+
+    return dens,vel1,vel2,vel3,pres,B1,B2,B3
+
+# ============================================================================
+#   Nonlinear rMHD solver (Newton-Raphson)
+# ============================================================================
+
+def _x_eqn_rMHD(x, mass, etot, S2, m2, B2, gamma_r):
+    """
+    Nonlinear equation f(x) = 0 whose root gives the x = ρ h W².
+    
+    Here we follow the approach from Mignone & Bodo (2005)
+
+    Parameters and Returns: arrays of same shape as `x`.
+    
+    """
+    
+    GAMMA2 = np.maximum( 1.0/(1.0 - \
+        (S2 * (2.0 * x + B2) + m2 * x**2) / \
+        (x**2 + B2)**2 / x**2), 1.0 )
+    GAMMA = np.sqrt(GAMMA2)
+    
+    pg = (x - mass*GAMMA)/(gamma_r*GAMMA2)
+    
+    func = x - pg + (1.0 - 1.0/2.0/GAMMA2)*B2 - S2/2.0/x**2 - etot
+    
+    return func
+    
+    
+def _x_der_rMHD(x, mass, etot, S2, B2, gamma_r):
+    """
+    Derivative  df(x)/dx for root finding procedure in rMHD.
+
+    Parameters and Returns: arrays of same shape as `pres`.
+    """
+    
+    GAMMA2 = np.maximum( 1.0/(1.0 - \
+        (S2 * (2.0 * x + B2) + m2 * x**2) / \
+        (x**2 + B2)**2 / x**2), 1.0 )
+    GAMMA = np.sqrt(GAMMA2)
+    
+    dgammadx = -GAMMA**3 * (2.0 * S2 * (3.0 * x**2 + 3 * x * B2 + B2**2) + \
+        m2 * x**3 )/(2.0 * x**3 * (x + B2)**3
+        
+    dpgdx = (GAMMA * (1.0 + mass * dgammadx) - 2.0 * x * dgammadx)/ \
+        gamma_r / GAMMA**3
+    
+    der = 1.0 - dpgdx + B2 * dgammadx / GAMMA**3 + S2 / x**3
+    
+    return der
+
+
+def _newton_rMHD(x_init, mass, etot, S2, m2, B2, gamma_r):
+    """
+    Newton-Raphson iteration to solve f(x) = 0 for x = ρhW²
+
+    Convergence is declared when both the residual max-norm and the relative
+    update are below `tol`.
+
+    Parameters
+    ----------
+    pres_init : ndarray   –  initial pressure guess
+    mass, mom1, mom2, mom3, etot : ndarray  –  conservative state
+    GAMMA : float
+
+    Returns
+    -------
+    pres : ndarray   –  converged pressure field
+    """
+    tol    = 1.0e-8
+    maxitr = 100
+
+    x_init = np.maximum(x_init, 1.0e-14)
+
+    res   = _x_eqn_rMHD(x_init, mass, etot, S2, m2, B2, gamma_r)
+    eps1  = np.max(np.abs(res))
+    eps2  = 1.0
+
+    for itr in range(maxitr):
+        if eps1 <= tol and eps2 <= tol:
+            break
+
+        f0    = _x_eqn_rMHD(x, mass, etot, S2, m2, B2, gamma_r)
+        der = _x_der_rMHD(x, mass, etot, S2, B2, gamma_r)
+
+        update = f0 / (der + 1.0e-28)
+        x   = x - update
+        x   = np.maximum(x, 1.0e-14)
+
+        res  = _x_eqn_rMHD(x, mass, etot, S2, m2, B2, gamma_r)
+        eps1 = np.max(np.abs(res))
+        eps2 = np.max(np.abs(update / (pres + 1.0e-28)))
+    else:
+        print(f"[rHD] pressure Newton solver: did not converge after {maxitr} iterations "
+              f"(residual = {eps1:.3e})")
+
+    return x
+    
 
 
 # ============================================================================
@@ -307,35 +411,36 @@ def Riemann_sr_MHD(rhol, rhor,
         vxl, vxr, vyl, vyr = vyl, vyr, -vxl, -vxr
         bxl, bxr, byl, byr = byl, byr, -bxl, -bxr
 
+    # Normal B-field: use arithmetic average (as in NR CT-MHD)
+    Bxn  = 0.5 * (bxl + bxr)
+
     # ----------------------------------------------------------------
     # Derived quantities (left state)
     # ----------------------------------------------------------------
     Wl    = _lorentz(vxl, vyl, vzl)
     enthl = 1.0 + pl / (rhol + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-    vdBl  = vxl * bxl + vyl * byl + vzl * bzl
-    Bsql  = bxl**2 + byl**2 + bzl**2
+    b2l, vdBl, Bsql = _b_squared(Wl, vxl, vyl, vzl, Bxn, byl, bzl)
     vsql  = vxl**2 + vyl**2 + vzl**2
-    vcBsql = np.maximum(Bsql * vsql - vdBl**2, 0.0)
 
-    # Normal B-field: use arithmetic average (as in NR CT-MHD)
-    Bxn  = 0.5 * (bxl + bxr)
-
-    # Left conservative state (use Bxn for normal component)
+    # Left conservative state
     zl    = rhol * enthl * Wl**2 + Bsql
     Dl    = rhol * Wl
     S1l   = zl * vxl - vdBl * Bxn
     S2l   = zl * vyl - vdBl * byl
     S3l   = zl * vzl - vdBl * bzl
-    El    = rhol * enthl * Wl**2 - pl + 0.5 * (Bsql + vcBsql)
-    b2l, _, _ = _b_squared(Wl, vxl, vyl, vzl, Bxn, byl, bzl)
+    El    = rhol * enthl * Wl**2 - pl + 0.5 * (Bsql + Bsql * vsql - vdBl**2)
     ptotl = pl + 0.5 * b2l
-
+    zl = (rhol * enthl + b2l) * Wl**2 #rewrite it, now for fluxes 
+    bbxl = bxn / Wl + Wl * vdBl * vxl
+    bbyl = byl / Wl + Wl * vdBl * vyl
+    bbzl = bzl / Wl + Wl * vdBl * vzl
+    
     # Left physical fluxes (x-direction)
     FDl   = Dl  * vxl
-    FS1l  = S1l * vxl - Bxn**2  + ptotl
-    FS2l  = S2l * vxl - Bxn * byl
-    FS3l  = S3l * vxl - Bxn * bzl
-    FEl   = (El + ptotl) * vxl - Bxn * vdBl
+    FS1l  = zl * vxl**2 - bbxl**2 + ptotl
+    FS2l  = zl * vxl * vyl - bbxl * bbyl
+    FS3l  = zl * vxl * vzl - bbxl * bbzl
+    FEl   = S1l
     FByl  = byl * vxl - Bxn * vyl
     FBzl  = bzl * vxl - Bxn * vzl
 
@@ -344,25 +449,27 @@ def Riemann_sr_MHD(rhol, rhor,
     # ----------------------------------------------------------------
     Wr    = _lorentz(vxr, vyr, vzr)
     enthr = 1.0 + pr / (rhor + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-    vdBr  = vxr * bxr + vyr * byr + vzr * bzr
-    Bsqr  = bxr**2 + byr**2 + bzr**2
+    b2r, vdBr, Bsqr = _b_squared(Wr, vxr, vyr, vzr, Bxn, byr, bzr)
     vsqr  = vxr**2 + vyr**2 + vzr**2
-    vcBsqr = np.maximum(Bsqr * vsqr - vdBr**2, 0.0)
-
+    
     zr    = rhor * enthr * Wr**2 + Bsqr
     Dr    = rhor * Wr
     S1r   = zr * vxr - vdBr * Bxn
     S2r   = zr * vyr - vdBr * byr
     S3r   = zr * vzr - vdBr * bzr
-    Er    = rhor * enthr * Wr**2 - pr + 0.5 * (Bsqr + vcBsqr)
-    b2r, _, _ = _b_squared(Wr, vxr, vyr, vzr, Bxn, byr, bzr)
+    Er    = rhor * enthr * Wr**2 - pr + 0.5 * (Bsqr + Bsqr * vsqr - vdBr**2)
     ptotr = pr + 0.5 * b2r
-
+    zr = (rhor * enthr + b2r) * Wr**2 #rewrite it, now for fluxes 
+    bbxr = bxn / Wr + Wr * vdBr * vxr
+    bbyr = byr / Wr + Wr * vdBr * vyr
+    bbzr = bzr / Wr + Wr * vdBr * vzr
+    
+    # Right physical fluxes (x-direction)
     FDr   = Dr  * vxr
-    FS1r  = S1r * vxr - Bxn**2  + ptotr
-    FS2r  = S2r * vxr - Bxn * byr
-    FS3r  = S3r * vxr - Bxn * bzr
-    FEr   = (Er + ptotr) * vxr - Bxn * vdBr
+    FS1r  = zr * vxr**2 - bbxr**2 + ptotr
+    FS2r  = zr * vxr * vyr - bbxr * bbyr
+    FS3r  = zr * vxr * vzr - bbxr * bbzr
+    FEr   = S1r
     FByr  = byr * vxr - Bxn * vyr
     FBzr  = bzr * vxr - Bxn * vzr
 
@@ -374,9 +481,9 @@ def Riemann_sr_MHD(rhol, rhor,
     cfr = fast_magnetosonic_speed_sr(rhor, pr, vxr, vyr, vzr, Bxn, byr, bzr, eos)
 
     # Relativistic signal speeds (Mignone & Bodo 2005 / PLUTO-style estimate)
-    Sl_m = np.minimum((vxl - cfl) / (1.0 - vxl * cfl + 1e-14),
+    Sl = np.minimum((vxl - cfl) / (1.0 - vxl * cfl + 1e-14),
                       (vxr - cfr) / (1.0 - vxr * cfr + 1e-14))
-    Sr_p = np.maximum((vxl + cfl) / (1.0 + vxl * cfl + 1e-14),
+    Sr = np.maximum((vxl + cfl) / (1.0 + vxl * cfl + 1e-14),
                       (vxr + cfr) / (1.0 + vxr * cfr + 1e-14))
 
     # ----------------------------------------------------------------
@@ -384,7 +491,7 @@ def Riemann_sr_MHD(rhol, rhor,
     # ----------------------------------------------------------------
     if flux_type == 'LLF':
 
-        lam   = np.maximum(np.abs(Sl_m), np.abs(Sr_p))
+        lam = np.maximum(np.abs(Sl), np.abs(Sr))
 
         Fmass = 0.5 * (FDl  + FDr  - lam * (Dr  - Dl ))
         Fmom1 = 0.5 * (FS1l + FS1r - lam * (S1r - S1l))
@@ -400,18 +507,17 @@ def Riemann_sr_MHD(rhol, rhor,
     # ----------------------------------------------------------------
     elif flux_type == 'HLL':
 
-        Sl_m = np.minimum(Sl_m, 0.0)
-        Sr_p = np.maximum(Sr_p, 0.0)
-        dS   = Sr_p - Sl_m + 1e-14
+        Sl = np.minimum(Sl, 0.0)
+        Sr = np.maximum(Sr, 0.0)
 
-        Fmass = (Sr_p * FDl  - Sl_m * FDr  + Sr_p * Sl_m * (Dr  - Dl )) / dS
-        Fmom1 = (Sr_p * FS1l - Sl_m * FS1r + Sr_p * Sl_m * (S1r - S1l)) / dS
-        Fmom2 = (Sr_p * FS2l - Sl_m * FS2r + Sr_p * Sl_m * (S2r - S2l)) / dS
-        Fmom3 = (Sr_p * FS3l - Sl_m * FS3r + Sr_p * Sl_m * (S3r - S3l)) / dS
-        Fetot = (Sr_p * FEl  - Sl_m * FEr  + Sr_p * Sl_m * (Er  - El )) / dS
+        Fmass = (Sr * FDl  - Sl * FDr  + Sr * Sl * (Dr  - Dl )) / (Sr - Sl)
+        Fmom1 = (Sr * FS1l - Sl * FS1r + Sr * Sl * (S1r - S1l)) / (Sr - Sl)
+        Fmom2 = (Sr * FS2l - Sl * FS2r + Sr * Sl * (S2r - S2l)) / (Sr - Sl)
+        Fmom3 = (Sr * FS3l - Sl * FS3r + Sr * Sl * (S3r - S3l)) / (Sr - Sl)
+        Fetot = (Sr * FEl  - Sl * FEr  + Sr * Sl * (Er  - El )) / (Sr - Sl)
         Fbfix = np.zeros_like(Fmass)
-        Fbfiy = (Sr_p * FByl - Sl_m * FByr + Sr_p * Sl_m * (byr - byl)) / dS
-        Fbfiz = (Sr_p * FBzl - Sl_m * FBzr + Sr_p * Sl_m * (bzr - bzl)) / dS
+        Fbfiy = (Sr * FByl - Sl * FByr + Sr * Sl * (byr - byl)) / (Sr - Sl)
+        Fbfiz = (Sr * FBzl - Sl * FBzr + Sr * Sl * (bzr - bzl)) / (Sr - Sl)
 
     else:
         raise ValueError(
