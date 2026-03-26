@@ -1,8 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Sep 15 14:18:25 2025
+helpers.py
 
-@author: mrkondratyev
+Helper routines for the Piastra simulation framework.
+
+Provides:
+  - run_simulation : main time-stepping loop with periodic visualisation
+  - initial_model  : dispatcher that selects the correct initial-condition
+                     function based on (mode, problem)
+
+Supported modes: 'adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff'.
+
+Author: mrkondratyev
 """
 
 import time
@@ -13,33 +22,29 @@ def run_simulation(grid, state, par, solver, var_to_plot, n_plot):
     """
     Advance the numerical simulation in time.
 
-    This function runs the main time-integration loop. It uses the provided
-    solver object to advance the system, produces periodic plots of the
-    selected variable, and reports timing information.
+    Runs the main time-integration loop, calling ``solver.step_RK()``
+    each timestep.  Produces periodic plots of the selected variable
+    and reports timing information.
 
     Parameters
     ----------
-    grid : object
-        Grid object containing geometry and resolution information.
-    state : object
+    grid : Grid
+        Grid object with geometry and resolution information.
+    state : SimState
         State container for the physical variables.
-    par : object
-        Parameters object, must include:
-        - mode      : problem type ('adv', 'HD', 'rHD', 'MHD', 'diff')
-        - rec_type  : reconstruction type (not used for 'diff')
-        - RK_order  : Runge–Kutta order (not used for 'diff')
-        - timenow   : current simulation time
-        - timefin   : final simulation time
+    par : Parameters
+        Simulation parameters.  Must include timenow, timefin, mode,
+        and (for non-diffusion modes) rec_type and RK_order.
     solver : object
-        Numerical solver providing the method `step_RK()`.
-    var_to_plot : str
-        Variable name to visualize during the run (e.g. "density").
+        Numerical solver providing the method ``step_RK()``.
+    var_to_plot : ndarray
+        2-D array (with ghost cells) of the variable to visualise.
     n_plot : int
-        Interval (in timesteps) between visualization updates.
+        Interval (in timesteps) between visualisation updates.
 
     Returns
     -------
-    state : object
+    state : SimState
         Updated simulation state at final time.
     timenow : float
         Final physical time reached by the simulation.
@@ -136,28 +141,40 @@ from rHD_init_cond import (
     IC_rHD2D_RP,
     IC_rHD2D_RTI,
 )
+from rMHD_init_cond import (
+    IC_rMHD1D_blast,
+    IC_rMHD2D_rotor,
+    IC_rMHD_user_defined,
+)
 
 
 def initial_model(grid, state, par):
     """
     Initialize the chosen test problem based on simulation mode and problem name.
 
+    Dispatches to the appropriate IC function which sets up grid geometry,
+    primitive variables, boundary conditions, final time, and EOS.
+
     Parameters
     ----------
-    grid : object
+    grid : Grid
         Grid object containing mesh geometry and metric information.
-    state : object
-        Simulation state object (e.g., Advection, Fluid2D, MHD2D).
-    par : object
+    state : SimState
+        Simulation state container.
+    par : Parameters
         Parameters object containing simulation settings, including
-        mode ('adv', 'HD', 'rHD', 'MHD', 'diff') and problem name.
+        mode ('adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff') and problem name.
 
     Returns
     -------
-    tuple
-        Depending on the mode:
-        - (grid, state, par) for Advection
-        - (grid, state, par, eos) for HD and MHD
+    grid : Grid
+        Grid with geometry initialised.
+    state : SimState
+        State with primitive variables set.
+    par : Parameters
+        Parameters with timefin, BC, etc. configured.
+    eos : EOSdata or None
+        Equation of state (None for advection and diffusion modes).
     """
 
     # --- dispatch dictionaries ---
@@ -210,6 +227,12 @@ def initial_model(grid, state, par):
         "user_defined": IC_rHD_user_defined,
     }
 
+    rmhd_dispatch = {
+        "blast1D":      IC_rMHD1D_blast,
+        "rotor2D":      IC_rMHD2D_rotor,
+        "user_defined": IC_rMHD_user_defined,
+    }
+
     # --- mode selection ---
     if par.mode == "diff":
         try:
@@ -258,10 +281,19 @@ def initial_model(grid, state, par):
                 f"Available: {list(rhd_dispatch.keys())}"
             )
 
+    elif par.mode == "rMHD":
+        try:
+            grid, state, par, eos = rmhd_dispatch[par.problem](grid, state, par)
+        except KeyError:
+            raise ValueError(
+                f"Invalid rMHD problem '{par.problem}'. "
+                f"Available: {list(rmhd_dispatch.keys())}"
+            )
+
     else:
         raise ValueError(
             f"Invalid simulation mode '{par.mode}'. "
-            f"Expected one of ['adv', 'HD', 'rHD', 'MHD', 'diff']."
+            f"Expected one of ['adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff']."
         )
         
     return grid, state, par, eos

@@ -17,6 +17,7 @@ Available modes:
 - 'HD'   : Hydrodynamics problems
 - 'rHD'  : Special-relativistic hydrodynamics problems
 - 'MHD'  : Magnetohydrodynamics problems
+- 'rMHD' : Special-relativistic magnetohydrodynamics problems
 - 'diff' : 2D thermal diffusion (explicit or RKL2 super time-stepping)
 
 Available problems (examples):
@@ -37,12 +38,16 @@ Relativistic HD (see rHD_init_cond.py):
     - "user_defined"
 Magnetohydrodynamics (see MHD_init_cond.py):
     - "BW1D", "toth1D", "blast-cart", "blast-cyl", "OT2D", "user_defined"
+Relativistic MHD (see rMHD_init_cond.py):
+    - "blast1D" : 1D relativistic MHD blast wave (Mignone & Bodo 2006)
+    - "rotor2D" : 2D relativistic rotor (Del Zanna et al. 2003)
+    - "user_defined"
 Diffusion (see diffusion_init_cond.py):
     - "gauss2D", "cross2D", "ring2D", "gauss1D", "user_defined"
 
 Parameters (in Parameters class):
 --------------------------------
-- mode       : str   -- Simulation type ('adv', 'HD', 'rHD', 'MHD', 'diff')
+- mode       : str   -- Simulation type ('adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff')
 - problem    : str   -- Problem name (depends on mode)
 - Nx1, Nx2   : int   -- Grid resolution
 - flux_type  : str   -- Flux solver type ('adv', 'HLLC', 'HLLD', etc.)
@@ -77,6 +82,11 @@ all modes :
     divb_tr = 'CT', '8wave'
     CFL = integer < 1
 
+'rMHD' :
+    flux_type = 'LLF', 'HLL'
+    divb_tr = 'CT' (only CT is supported)
+    CFL = float < 1
+
 'diff' :
     diff_solver = 'expl', 'rkl2'
     rkl2_stages = integer >= 2   (only for rkl2)
@@ -95,6 +105,7 @@ from MHD_one_step_CT import MHD2D_CT
 from MHD_one_step_8wave import MHD2D_8wave
 from hydro_one_step import Hydro2D
 from rHD_one_step import rHD2D
+from rMHD_one_step import rMHD2D_CT
 from advection_one_step import Advection2D
 from diffusion_one_step import Diffusion2D
 from helpers import run_simulation, initial_model
@@ -111,6 +122,7 @@ SOLVER_DISPATCH = {
         if par.divb_tr == "CT" else
         MHD2D_8wave(grid, state, eos, par)
     ),
+    "rMHD": lambda grid, state, eos, par: rMHD2D_CT(grid, state, eos, par),
     "diff": lambda grid, state, eos, par: Diffusion2D(
         grid, state, par,
         solver=par.diff_solver,
