@@ -16,6 +16,7 @@ uniform Cartesian grids and includes the following reconstruction schemes:
     3. WENO   : Weighted Essentially Non-Oscillatory (3rd or 5th order)
     4. PPMorig: Standard Piecewise Parabolic Method (3rd order)
     5. PPM    : Fifth-order improved PPM (Mignone 2014)
+    6. MP5    : Fifth-order monotonicity preserving scheme (Suresh & Huynh 1997)
 
 Key routines
 ------------
@@ -25,11 +26,12 @@ Key routines
 - rec_WENO       : WENO/CWENO reconstruction for high-order accuracy
 - rec_PPMorig    : Standard PPM reconstruction (3rd order)
 - rec_PPM5       : Fifth-order PPM reconstruction
+- rec_MP5       : Fifth-order MP5 reconstruction
 
 Notes
 -----
 - All routines assume the presence of ghost cells (Ngc ≥ 2 for PLM/PCM,
-  Ngc ≥ 3 for PPM/WENO).
+  Ngc ≥ 3 for PPM/WENO/MP5).
 - Designed for modular integration into finite-volume fluid solvers.
 
 References
@@ -42,6 +44,8 @@ References
 - Balsara, D. S. (2017). Higher-order accurate space-time schemes for
   computational astrophysics—Part I: finite volume methods.
   Living Rev Comput Astrophys 3:2.
+- Suresh, A., & Huynh, H.T. (1997). Accurate Monotonicity-Preserving Schemes
+  with Runge-Kutta Time Stepping. Journal of Computational Physics, 136, 83-99.
 
 Author: mrkondratyev
 ===============================================================================
@@ -53,7 +57,7 @@ import numpy as np
 
 # ─── Module-level constants ───────────────────────────────────────────────────
 
-# Fifth-order PPM interpolation coefficients (Mignone 2014)
+# Fifth-order PPM/MP5 interpolation coefficients (Mignone 2014)
 _PPM5_COEFFS = np.array([2.0, -13.0, 47.0, 27.0, -3.0]) / 60.0
 
 # Legendre polynomial shift for cell-average-preserving reconstruction:
@@ -82,6 +86,7 @@ def VarReconstruct(var, grid, rec_type, dim):
         - 'WENO'  : Weighted ENO (3rd order for CWENO or 5th order for WENO5)
         - 'PPMorig': Standard PPM (3rd order)
         - 'PPM'   : Fifth-order PPM (Mignone 2014)
+        - 'MP5'   : Fifth-order MP5
     dim : int
         Dimension along which to perform the reconstruction (1 or 2).
     
