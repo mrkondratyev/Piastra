@@ -46,11 +46,12 @@ within a **finite-volume framework**. The code is written in **Python** with ext
   - PLM (piecewise linear with slope limiter, 2nd order)  
   - PPM (Colella & Woodward 1984, Mignone 2014)  
   - PPMorig (original Colella & Woodward version)  
-  - WENO5 (5th order, Jiang & Shu 1996)  
+  - WENO5 (5th order, Jiang & Shu 1996)
+  - MP5 (Suresh & Huynh 1997) 
 - **Time integration**:  
   - RK1 (Euler)  
   - RK2, RK3 (TVD Runge–Kutta; Shu & Osher 1988)  
-- **Ghost cells**: automatically adjusted (2 for PLM/PCM, 3 for PPM/WENO)  
+- **Ghost cells**: automatically adjusted (2 for PLM/PCM, 3 for PPM/WENO/MP5)  
 - **Simulation control** through the `Parameters` class with defaults and validation  
 - **Modular design**:
   - `parameters.py`: central parameter container  
@@ -58,7 +59,7 @@ within a **finite-volume framework**. The code is written in **Python** with ext
   - `grid_misc.py`: grid utility functions (divergence, gradient, norms)
   - `sim_state.py`: storage for fluid variables
   - `boundaries.py`: boundary conditions handling for scalar and vector variables
-  - `high_order_rec.py`: spatial reconstruction routines (PCM/PLM/PPM/WENO)
+  - `high_order_rec.py`: spatial reconstruction routines (PCM/PLM/PPM/WENO/MP5)
   - `helpers.py`: initial condition dispatch and simulation loop  
   - `advection_one_step.py`, `hydro_one_step.py`, `rHD_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`, `rMHD_one_step.py`, `diffusion_one_step.py`: solver backends
   - `hydro_phys.py`, `rHD_phys.py`, `MHD_phys.py`, `rMHD_phys.py`: supplementary physics modules
@@ -214,11 +215,12 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
   - PLM (кусочно-линейная с ограничителем наклона, 2-й порядок)  
   - PPM (Colella & Woodward 1984, Mignone 2014)  
   - PPMorig (оригинальная версия Colella & Woodward)  
-  - WENO5 (5-й порядок, Jiang & Shu 1996)  
+  - WENO5 (5-й порядок, Jiang & Shu 1996)
+  - MP5 (Suresh & Huynh 1997)
 - **Интегрирование по времени**:  
   - RK1 (Эйлер)  
   - RK2, RK3 (TVD Runge–Kutta; Shu & Osher 1988)  
-- **Призрачные ячейки (ghost cells)**: подбираются автоматически (2 для PLM/PCM, 3 для PPM/WENO)  
+- **Призрачные ячейки (ghost cells)**: подбираются автоматически (2 для PLM/PCM, 3 для PPM/WENO/MP5)  
 - **Управление симуляцией** через класс `Parameters` с установкой значений по умолчанию и проверкой корректности  
 - **Модульная структура**:
   - `parameters.py`: центральный контейнер параметров  
@@ -226,7 +228,7 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
   - `grid_misc.py`: вспомогательные функции сетки (дивергенция, градиент, нормы)
   - `sim_state.py`: хранение переменных жидкости  
   - `boundaries.py`: учет граничных условий на сетке для скалярных и векторных функций
-  - `high_order_rec.py`: алгоритмы реконструкции (PCM/PLM/PPM/WENO)
+  - `high_order_rec.py`: алгоритмы реконструкции (PCM/PLM/PPM/WENO/MP5)
   - `helpers.py`: диспетчер начальных условий и основной цикл симуляции
   - `advection_one_step.py`, `hydro_one_step.py`, `rHD_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`, `rMHD_one_step.py`, `diffusion_one_step.py`: бэкенды решателей
   - `hydro_phys.py`, `rHD_phys.py`, `MHD_phys.py`, `rMHD_phys.py`: вспомогательные физические модули
