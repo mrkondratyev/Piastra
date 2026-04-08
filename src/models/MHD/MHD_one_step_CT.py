@@ -35,11 +35,11 @@ Features
     mrkondratyev
 """
 
-from MHD_phys import *
-from reconstruction import VarReconstruct 
+from src.models.MHD.MHD_phys import *
+from src.common.high_order_rec import VarReconstruct 
 import numpy as np 
 import copy 
-from grid_misc import interp_face_to_cell, div_face_vector
+from src.grid.grid_misc import interp_face_to_cell, div_face_vector
 
 
 class MHD2D_CT:
@@ -125,7 +125,10 @@ def CFLcondition_MHD(grid, MHD, eos, CFL):
     
     #fast magnetosonic speed calculation for whole domain 
     cfast = max_wavespeed_MHD(csound, \
-        MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc], MHD.dens[Ngc:-Ngc, Ngc:-Ngc])
+        MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc], \
+        MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], \
+        MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc], \
+        MHD.dens[Ngc:-Ngc, Ngc:-Ngc])
     
     #FIRST APPROACH
     #dt1 = np.min( grid.dx1[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + cfast) )
@@ -135,6 +138,7 @@ def CFLcondition_MHD(grid, MHD, eos, CFL):
     #SECOND APPROACH 
     dt_inv = np.max((np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + cfast)/grid.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
         (np.abs(MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + cfast)/grid.dx2[Ngc:-Ngc, Ngc:-Ngc])
+        
     return CFL/dt_inv
 
 
@@ -186,39 +190,45 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
     #here we define the copy for the auxilary fluid state
     MHD_h = copy.deepcopy(MHD)
     
-    #conservative variables at the beginning of timestep
-    MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot, MHD.bcon1, MHD.bcon2, MHD.bcon3 = \
-        prim2cons_nr_MHD(MHD.dens[Ngc:-Ngc,Ngc:-Ngc], 
-        MHD.vel1[Ngc:-Ngc,Ngc:-Ngc], MHD.vel2[Ngc:-Ngc,Ngc:-Ngc],  
-        MHD.vel3[Ngc:-Ngc,Ngc:-Ngc], MHD.pres[Ngc:-Ngc,Ngc:-Ngc], 
-        MHD.bfi1[Ngc:-Ngc,Ngc:-Ngc], MHD.bfi2[Ngc:-Ngc,Ngc:-Ngc], 
-        MHD.bfi3[Ngc:-Ngc,Ngc:-Ngc], eos)
+    # ---- prim -> cons at beginning of timestep --------------------------
+    (MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot,
+     MHD.bcon1, MHD.bcon2, MHD.bcon3) = \
+        prim2cons_nr_MHD(
+            MHD.dens[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.vel1[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.vel2[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.vel3[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.pres[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc],
+            eos)
     
     #residuals for conservative variables calculation
     #1st Runge-Kutta iteration - predictor stage
     ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_CT(grid, MHD, par, eos)
     
     # Conservative update - 1st RK stage (predictor)
-    MHD_h.mass = MHD.mass - dt * ResM 
-    MHD_h.mom1 = MHD.mom1 - dt * ResV1 
-    MHD_h.mom2 = MHD.mom2 - dt * ResV2 
-    MHD_h.mom3 = MHD.mom3 - dt * ResV3 
-    MHD_h.etot = MHD.etot - dt * ResE 
-    MHD_h.fb1 = MHD.fb1 - dt * ResB1
-    MHD_h.fb2 = MHD.fb2 - dt * ResB2
+    MHD_h.mass  = MHD.mass  - dt * ResM 
+    MHD_h.mom1  = MHD.mom1  - dt * ResV1 
+    MHD_h.mom2  = MHD.mom2  - dt * ResV2 
+    MHD_h.mom3  = MHD.mom3  - dt * ResV3 
+    MHD_h.etot  = MHD.etot  - dt * ResE 
+    MHD_h.fb1   = MHD.fb1   - dt * ResB1
+    MHD_h.fb2   = MHD.fb2   - dt * ResB2
     MHD_h.bcon3 = MHD.bcon3 - dt * ResB3
     
     #first order Runge-Kutta scheme
     if (par.RK_order == 'RK1'): 
         
         #simply rewrite the conservative state here for clarity
-        MHD.mass = MHD_h.mass
-        MHD.mom1 = MHD_h.mom1
-        MHD.mom2 = MHD_h.mom2
-        MHD.mom3 = MHD_h.mom3
-        MHD.etot = MHD_h.etot
-        MHD.fb1 = MHD_h.fb1
-        MHD.fb2 = MHD_h.fb2
+        MHD.mass  = MHD_h.mass
+        MHD.mom1  = MHD_h.mom1
+        MHD.mom2  = MHD_h.mom2
+        MHD.mom3  = MHD_h.mom3
+        MHD.etot  = MHD_h.etot
+        MHD.fb1   = MHD_h.fb1
+        MHD.fb2   = MHD_h.fb2
         MHD.bcon3 = MHD_h.bcon3
     
     #second-order Runge-Kutta scheme
@@ -229,25 +239,21 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
         
         #Primitive variables recovery after predictor stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
-        MHD_h.dens[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.pres[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-            MHD_h.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_nr_MHD(MHD_h.mass, MHD_h.mom1, MHD_h.mom2, MHD_h.mom3, MHD_h.etot, \
-            MHD_h.bcon1, MHD_h.bcon2, MHD_h.bcon3, eos) 
+        _prim_recovery(MHD_h, Ngc, eos)
             
         #2nd Runge-Kutta stage - corrector
-        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_CT(grid, MHD_h, par, eos)
+        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
+            flux_calc_MHD_CT(grid, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy
-        MHD.mass = (MHD_h.mass + MHD.mass) / 2.0 - dt * ResM / 2.0
-        MHD.mom1 = (MHD_h.mom1 + MHD.mom1) / 2.0 - dt * ResV1 / 2.0 
-        MHD.mom2 = (MHD_h.mom2 + MHD.mom2) / 2.0 - dt * ResV2 / 2.0 
-        MHD.mom3 = (MHD_h.mom3 + MHD.mom3) / 2.0 - dt * ResV3 / 2.0  
-        MHD.etot = (MHD_h.etot + MHD.etot) / 2.0 - dt * ResE / 2.0 
-        MHD.fb1 = (MHD_h.fb1 + MHD.fb1) / 2.0 - dt * ResB1 / 2.0 
-        MHD.fb2 = (MHD_h.fb2 + MHD.fb2) / 2.0 - dt * ResB2 / 2.0 
+        MHD.mass  = (MHD_h.mass + MHD.mass) / 2.0   - dt * ResM  / 2.0
+        MHD.mom1  = (MHD_h.mom1 + MHD.mom1) / 2.0   - dt * ResV1 / 2.0 
+        MHD.mom2  = (MHD_h.mom2 + MHD.mom2) / 2.0   - dt * ResV2 / 2.0 
+        MHD.mom3  = (MHD_h.mom3 + MHD.mom3) / 2.0   - dt * ResV3 / 2.0  
+        MHD.etot  = (MHD_h.etot + MHD.etot) / 2.0   - dt * ResE  / 2.0 
+        MHD.fb1   = (MHD_h.fb1 + MHD.fb1) / 2.0     - dt * ResB1 / 2.0 
+        MHD.fb2   = (MHD_h.fb2 + MHD.fb2) / 2.0     - dt * ResB2 / 2.0 
         MHD.bcon3 = (MHD_h.bcon3 + MHD.bcon3) / 2.0 - dt * ResB3 / 2.0  
         
     if (par.RK_order == 'RK3'):
@@ -257,25 +263,21 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
         
         #Primitive variables recovery after predictor stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
-        MHD_h.dens[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.pres[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-            MHD_h.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_nr_MHD(MHD_h.mass, MHD_h.mom1, MHD_h.mom2, MHD_h.mom3, MHD_h.etot, \
-            MHD_h.bcon1, MHD_h.bcon2, MHD_h.bcon3, eos) 
+        _prim_recovery(MHD_h, Ngc, eos)
             
         #2nd Runge-Kutta stage
-        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_CT(grid, MHD_h, par, eos)
+        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
+            flux_calc_MHD_CT(grid, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy
-        MHD_h.mass = (MHD_h.mass + 3.0 * MHD.mass) / 4.0 - dt * ResM / 4.0
-        MHD_h.mom1 = (MHD_h.mom1 + 3.0 * MHD.mom1) / 4.0 - dt * ResV1 / 4.0 
-        MHD_h.mom2 = (MHD_h.mom2 + 3.0 * MHD.mom2) / 4.0 - dt * ResV2 / 4.0 
-        MHD_h.mom3 = (MHD_h.mom3 + 3.0 * MHD.mom3) / 4.0 - dt * ResV3 / 4.0  
-        MHD_h.etot = (MHD_h.etot + 3.0 * MHD.etot) / 4.0 - dt * ResE / 4.0 
-        MHD_h.fb1 = (MHD_h.fb1 + 3.0 * MHD.fb1) / 4.0 - dt * ResB1 / 4.0 
-        MHD_h.fb2 = (MHD_h.fb2 + 3.0 * MHD.fb2) / 4.0 - dt * ResB2 / 4.0 
+        MHD_h.mass  = (MHD_h.mass + 3.0 * MHD.mass) / 4.0   - dt * ResM  / 4.0
+        MHD_h.mom1  = (MHD_h.mom1 + 3.0 * MHD.mom1) / 4.0   - dt * ResV1 / 4.0 
+        MHD_h.mom2  = (MHD_h.mom2 + 3.0 * MHD.mom2) / 4.0   - dt * ResV2 / 4.0 
+        MHD_h.mom3  = (MHD_h.mom3 + 3.0 * MHD.mom3) / 4.0   - dt * ResV3 / 4.0  
+        MHD_h.etot  = (MHD_h.etot + 3.0 * MHD.etot) / 4.0   - dt * ResE  / 4.0 
+        MHD_h.fb1   = (MHD_h.fb1 + 3.0 * MHD.fb1) / 4.0     - dt * ResB1 / 4.0 
+        MHD_h.fb2   = (MHD_h.fb2 + 3.0 * MHD.fb2) / 4.0     - dt * ResB2 / 4.0 
         MHD_h.bcon3 = (MHD_h.bcon3 + 3.0 * MHD.bcon3) / 4.0 - dt * ResB3 / 4.0  
         
         #interpolation from staggererd to cell-centered fields
@@ -283,25 +285,21 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
         
         # Primitive variables recovery after the second stage
         #density, 3 components of velocity and pressure are evaluated 
-        MHD_h.dens[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.pres[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-            MHD_h.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_nr_MHD(MHD_h.mass, MHD_h.mom1, MHD_h.mom2, MHD_h.mom3, MHD_h.etot, \
-            MHD_h.bcon1, MHD_h.bcon2, MHD_h.bcon3, eos) 
+        _prim_recovery(MHD_h, Ngc, eos) 
         
         #3rd Runge-Kutta stage
-        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_CT(grid, MHD_h, par, eos)
+        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
+            flux_calc_MHD_CT(grid, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, 3 components of momentum, total energy and 3 comps of magnetic field
-        MHD.mass = (2.0 * MHD_h.mass + MHD.mass) / 3.0 - 2.0 * dt * ResM / 3.0
-        MHD.mom1 = (2.0 * MHD_h.mom1 + MHD.mom1) / 3.0 - 2.0 * dt * ResV1 / 3.0 
-        MHD.mom2 = (2.0 * MHD_h.mom2 + MHD.mom2) / 3.0 - 2.0 * dt * ResV2 / 3.0 
-        MHD.mom3 = (2.0 * MHD_h.mom3 + MHD.mom3) / 3.0 - 2.0 * dt * ResV3 / 3.0  
-        MHD.etot = (2.0 * MHD_h.etot + MHD.etot) / 3.0 - 2.0 * dt * ResE / 3.0 
-        MHD.fb1 = (2.0 * MHD_h.fb1 + MHD.fb1) / 3.0 - 2.0 * dt * ResB1 / 3.0 
-        MHD.fb2 = (2.0 * MHD_h.fb2 + MHD.fb2) / 3.0 - 2.0 * dt * ResB2 / 3.0 
+        MHD.mass  = (2.0 * MHD_h.mass + MHD.mass) / 3.0   - 2.0 * dt * ResM  / 3.0
+        MHD.mom1  = (2.0 * MHD_h.mom1 + MHD.mom1) / 3.0   - 2.0 * dt * ResV1 / 3.0 
+        MHD.mom2  = (2.0 * MHD_h.mom2 + MHD.mom2) / 3.0   - 2.0 * dt * ResV2 / 3.0 
+        MHD.mom3  = (2.0 * MHD_h.mom3 + MHD.mom3) / 3.0   - 2.0 * dt * ResV3 / 3.0  
+        MHD.etot  = (2.0 * MHD_h.etot + MHD.etot) / 3.0   - 2.0 * dt * ResE  / 3.0 
+        MHD.fb1   = (2.0 * MHD_h.fb1 + MHD.fb1) / 3.0     - 2.0 * dt * ResB1 / 3.0 
+        MHD.fb2   = (2.0 * MHD_h.fb2 + MHD.fb2) / 3.0     - 2.0 * dt * ResB2 / 3.0 
         MHD.bcon3 = (2.0 * MHD_h.bcon3 + MHD.bcon3) / 3.0 - 2.0 * dt * ResB3 / 3.0  
         
     #interpolation from staggererd to cell-centered fields
@@ -309,17 +307,41 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
     
     # Primitive variables recovery at the end of the timestep
     #density, 3 components of velocity and pressure are evaluated 
-    MHD.dens[Ngc:-Ngc, Ngc:-Ngc], MHD.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.pres[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-        MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-        cons2prim_nr_MHD(MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot, \
-        MHD.bcon1, MHD.bcon2, MHD.bcon3, eos) 
+    _prim_recovery(MHD, Ngc, eos)
     
     MHD.divB = div_face_vector(grid, MHD.fb1, MHD.fb2)
     
     #return the updated class object of the fluid state on the next timestep 
     return MHD
+
+
+# ============================================================================
+# Helper: call cons2prim_nr_MHD for a SimState object
+# ============================================================================
+
+def _prim_recovery(state, Ngc, eos):
+    """
+    Call cons2prim_nr_MHD and write results back into
+    state.{dens,vel*,pres,bfi*}.
+
+    Parameters
+    ----------
+    state   : SimState  with conservative vars populated
+    Ngc     : int       number of ghost cells
+    eos     : EOSdata
+    """
+    (state.dens[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel1[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel2[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel3[Ngc:-Ngc, Ngc:-Ngc],
+     state.pres[Ngc:-Ngc, Ngc:-Ngc],
+     state.bfi1[Ngc:-Ngc, Ngc:-Ngc],
+     state.bfi2[Ngc:-Ngc, Ngc:-Ngc],
+     state.bfi3[Ngc:-Ngc, Ngc:-Ngc]) = \
+        cons2prim_nr_MHD(
+            state.mass, state.mom1, state.mom2, state.mom3, state.etot,
+            state.bcon1, state.bcon2, state.bcon3, eos)
+
 
 
 
@@ -458,12 +480,23 @@ def flux_calc_MHD_CT(grid, MHD, par, eos):
         ResE += ( Fetot[:,1:]*grid.fS2[:,1:] - Fetot[:,:-1]*grid.fS2[:,:-1] ) / grid.cVol[:,:]
         ResB3 += ( Fbfi3[:,1:]*grid.edg1[:,1:] - Fbfi3[:,:-1]*grid.edg1[:,:-1] ) / grid.fS3[:,:]
      
+    # ----------------------------------------------------------------
+    # CT: electric field at cell corners  E_3 = -(v x B)_3
+    # ----------------------------------------------------------------
     #apply ghost cells for electric field 
     fluxB21, fluxB12 = boundCond_electric_field(grid, fluxB21, fluxB12, par.BC)
     
-    #electric field on the edges
-    Efld3 = -(fluxB21[Ngc:Nx1r+1,Ngc-1:Nx2r] + fluxB21[Ngc:Nx1r+1,Ngc:Nx2r+1])/4.0 + \
-        (fluxB12[Ngc-1:Nx1r,Ngc:Nx2r+1] + fluxB12[Ngc:Nx1r+1,Ngc:Nx2r+1])/4.0
+    #arithemtic average in 2D and 1D 
+    if ((grid.Nx1 > 1) & (grid.Nx2 > 1)):
+        ave = 4.0
+    else: 
+        ave = 2.0
+    
+    #average electric field on the edges
+    Efld3 = (
+        -(fluxB21[Ngc:Nx1r+1, Ngc-1:Nx2r  ] + fluxB21[Ngc:Nx1r+1, Ngc:Nx2r+1]) / ave
+        + (fluxB12[Ngc-1:Nx1r,  Ngc:Nx2r+1] + fluxB12[Ngc:Nx1r+1, Ngc:Nx2r+1]) / ave
+        )
        
     #residual update 
     ResB1 = (Efld3[:,1:]*grid.edg3[:,1:] - Efld3[:,:-1]*grid.edg3[:,:-1])/(grid.fS1[:,:]+1e-30)
