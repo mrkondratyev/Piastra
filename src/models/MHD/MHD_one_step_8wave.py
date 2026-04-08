@@ -33,9 +33,9 @@ Features
     mrkondratyev
 """
 
-from MHD_phys import *
-from grid_misc import div_cell_vector 
-from reconstruction import VarReconstruct 
+from src.models.MHD.MHD_phys import *
+from src.grid.grid_misc import div_cell_vector 
+from src.common.high_order_rec import VarReconstruct 
 import numpy as np 
 import copy 
 
@@ -123,7 +123,10 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     
     #fast magnetosonic speed calculation for whole domain 
     cfast = max_wavespeed_MHD(csound, \
-        MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc], MHD.dens[Ngc:-Ngc, Ngc:-Ngc])
+        MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc], \
+        MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], \
+        MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc], \
+        MHD.dens[Ngc:-Ngc, Ngc:-Ngc])
     
     #FIRST APPROACH
     #dt1 = np.min( g.dx1[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + cfast) )
@@ -133,6 +136,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     #SECOND APPROACH 
     dt_inv = np.max((np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + cfast)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
         (np.abs(MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + cfast)/g.dx2[Ngc:-Ngc, Ngc:-Ngc])
+        
     return CFL/dt_inv
 
 
@@ -204,23 +208,30 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
     MHD_h = copy.deepcopy(MHD)
     
     #conservative variables at the beginning of timestep
-    MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot,  MHD.bcon1, MHD.bcon2, MHD.bcon3 = \
-        prim2cons_nr_MHD(MHD.dens[Ngc:-Ngc,Ngc:-Ngc], 
-        MHD.vel1[Ngc:-Ngc,Ngc:-Ngc], MHD.vel2[Ngc:-Ngc,Ngc:-Ngc],  
-        MHD.vel3[Ngc:-Ngc,Ngc:-Ngc], MHD.pres[Ngc:-Ngc,Ngc:-Ngc], 
-        MHD.bfi1[Ngc:-Ngc,Ngc:-Ngc], MHD.bfi2[Ngc:-Ngc,Ngc:-Ngc], 
-        MHD.bfi3[Ngc:-Ngc,Ngc:-Ngc], eos)
+    (MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot,
+     MHD.bcon1, MHD.bcon2, MHD.bcon3) = \
+        prim2cons_nr_MHD(
+            MHD.dens[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.vel1[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.vel2[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.vel3[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.pres[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc],
+            MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc],
+            eos)
     
     #residuals for conservative variables calculation
     #1st Runge-Kutta iteration - predictor stage
-    ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_8wave(g, MHD, par, eos)
+    ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
+        flux_calc_MHD_8wave(g, MHD, par, eos)
     
     # Conservative update - 1st RK stage (predictor)
-    MHD_h.mass = MHD.mass - dt * ResM 
-    MHD_h.mom1 = MHD.mom1 - dt * ResV1 
-    MHD_h.mom2 = MHD.mom2 - dt * ResV2 
-    MHD_h.mom3 = MHD.mom3 - dt * ResV3 
-    MHD_h.etot = MHD.etot - dt * ResE 
+    MHD_h.mass  = MHD.mass  - dt * ResM 
+    MHD_h.mom1  = MHD.mom1  - dt * ResV1 
+    MHD_h.mom2  = MHD.mom2  - dt * ResV2 
+    MHD_h.mom3  = MHD.mom3  - dt * ResV3 
+    MHD_h.etot  = MHD.etot  - dt * ResE 
     MHD_h.bcon1 = MHD.bcon1 - dt * ResB1
     MHD_h.bcon2 = MHD.bcon2 - dt * ResB2
     MHD_h.bcon3 = MHD.bcon3 - dt * ResB3
@@ -229,11 +240,11 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
     if (par.RK_order == 'RK1'): 
         
         #simply rewrite the conservative state here for clarity
-        MHD.mass = MHD_h.mass
-        MHD.mom1 = MHD_h.mom1
-        MHD.mom2 = MHD_h.mom2
-        MHD.mom3 = MHD_h.mom3
-        MHD.etot = MHD_h.etot
+        MHD.mass  = MHD_h.mass
+        MHD.mom1  = MHD_h.mom1
+        MHD.mom2  = MHD_h.mom2
+        MHD.mom3  = MHD_h.mom3
+        MHD.etot  = MHD_h.etot
         MHD.bcon1 = MHD_h.bcon1
         MHD.bcon2 = MHD_h.bcon2
         MHD.bcon3 = MHD_h.bcon3
@@ -244,23 +255,19 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
         
         #Primitive variables recovery after predictor stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
-        MHD_h.dens[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.pres[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-            MHD_h.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_nr_MHD(MHD_h.mass, MHD_h.mom1, MHD_h.mom2, MHD_h.mom3, MHD_h.etot, \
-            MHD_h.bcon1, MHD_h.bcon2, MHD_h.bcon3, eos) 
+        _prim_recovery(MHD_h, Ngc, eos)
             
         #2nd Runge-Kutta stage - corrector
-        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_8wave(g, MHD_h, par, eos)
+        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
+            flux_calc_MHD_8wave(g, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy
-        MHD.mass = (MHD_h.mass + MHD.mass) / 2.0 - dt * ResM / 2.0
-        MHD.mom1 = (MHD_h.mom1 + MHD.mom1) / 2.0 - dt * ResV1 / 2.0 
-        MHD.mom2 = (MHD_h.mom2 + MHD.mom2) / 2.0 - dt * ResV2 / 2.0 
-        MHD.mom3 = (MHD_h.mom3 + MHD.mom3) / 2.0 - dt * ResV3 / 2.0  
-        MHD.etot = (MHD_h.etot + MHD.etot) / 2.0 - dt * ResE / 2.0 
+        MHD.mass  = (MHD_h.mass + MHD.mass) / 2.0   - dt * ResM  / 2.0
+        MHD.mom1  = (MHD_h.mom1 + MHD.mom1) / 2.0   - dt * ResV1 / 2.0 
+        MHD.mom2  = (MHD_h.mom2 + MHD.mom2) / 2.0   - dt * ResV2 / 2.0 
+        MHD.mom3  = (MHD_h.mom3 + MHD.mom3) / 2.0   - dt * ResV3 / 2.0  
+        MHD.etot  = (MHD_h.etot + MHD.etot) / 2.0   - dt * ResE  / 2.0 
         MHD.bcon1 = (MHD_h.bcon1 + MHD.bcon1) / 2.0 - dt * ResB1 / 2.0 
         MHD.bcon2 = (MHD_h.bcon2 + MHD.bcon2) / 2.0 - dt * ResB2 / 2.0 
         MHD.bcon3 = (MHD_h.bcon3 + MHD.bcon3) / 2.0 - dt * ResB3 / 2.0  
@@ -269,63 +276,78 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
         
         #Primitive variables recovery after predictor stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
-        MHD_h.dens[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.pres[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-            MHD_h.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_nr_MHD(MHD_h.mass, MHD_h.mom1, MHD_h.mom2, MHD_h.mom3, MHD_h.etot, \
-            MHD_h.bcon1, MHD_h.bcon2, MHD_h.bcon3, eos) 
+        _prim_recovery(MHD_h, Ngc, eos)
             
         #2nd Runge-Kutta stage
-        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_8wave(g, MHD_h, par, eos)
+        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
+            flux_calc_MHD_8wave(g, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy
-        MHD_h.mass = (MHD_h.mass + 3.0 * MHD.mass) / 4.0 - dt * ResM / 4.0
-        MHD_h.mom1 = (MHD_h.mom1 + 3.0 * MHD.mom1) / 4.0 - dt * ResV1 / 4.0 
-        MHD_h.mom2 = (MHD_h.mom2 + 3.0 * MHD.mom2) / 4.0 - dt * ResV2 / 4.0 
-        MHD_h.mom3 = (MHD_h.mom3 + 3.0 * MHD.mom3) / 4.0 - dt * ResV3 / 4.0  
-        MHD_h.etot = (MHD_h.etot + 3.0 * MHD.etot) / 4.0 - dt * ResE / 4.0 
+        MHD_h.mass  = (MHD_h.mass + 3.0 * MHD.mass) / 4.0   - dt * ResM  / 4.0
+        MHD_h.mom1  = (MHD_h.mom1 + 3.0 * MHD.mom1) / 4.0   - dt * ResV1 / 4.0 
+        MHD_h.mom2  = (MHD_h.mom2 + 3.0 * MHD.mom2) / 4.0   - dt * ResV2 / 4.0 
+        MHD_h.mom3  = (MHD_h.mom3 + 3.0 * MHD.mom3) / 4.0   - dt * ResV3 / 4.0  
+        MHD_h.etot  = (MHD_h.etot + 3.0 * MHD.etot) / 4.0   - dt * ResE  / 4.0 
         MHD_h.bcon1 = (MHD_h.bcon1 + 3.0 * MHD.bcon1) / 4.0 - dt * ResB1 / 4.0 
         MHD_h.bcon2 = (MHD_h.bcon2 + 3.0 * MHD.bcon2) / 4.0 - dt * ResB2 / 4.0 
         MHD_h.bcon3 = (MHD_h.bcon3 + 3.0 * MHD.bcon3) / 4.0 - dt * ResB3 / 4.0  
         
         # Primitive variables recovery after the second stage
         #density, 3 components of velocity and pressure are evaluated 
-        MHD_h.dens[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            MHD_h.pres[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-            MHD_h.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD_h.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_nr_MHD(MHD_h.mass, MHD_h.mom1, MHD_h.mom2, MHD_h.mom3, MHD_h.etot, \
-            MHD_h.bcon1, MHD_h.bcon2, MHD_h.bcon3, eos) 
+        _prim_recovery(MHD_h, Ngc, eos)
         
         #3rd Runge-Kutta stage
-        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = flux_calc_MHD_8wave(g, MHD_h, par, eos)
+        ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
+            flux_calc_MHD_8wave(g, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, 3 components of momentum, total energy and 3 comps of magnetic field
-        MHD.mass = (2.0 * MHD_h.mass + MHD.mass) / 3.0 - 2.0 * dt * ResM / 3.0
-        MHD.mom1 = (2.0 * MHD_h.mom1 + MHD.mom1) / 3.0 - 2.0 * dt * ResV1 / 3.0 
-        MHD.mom2 = (2.0 * MHD_h.mom2 + MHD.mom2) / 3.0 - 2.0 * dt * ResV2 / 3.0 
-        MHD.mom3 = (2.0 * MHD_h.mom3 + MHD.mom3) / 3.0 - 2.0 * dt * ResV3 / 3.0  
-        MHD.etot = (2.0 * MHD_h.etot + MHD.etot) / 3.0 - 2.0 * dt * ResE / 3.0 
+        MHD.mass  = (2.0 * MHD_h.mass + MHD.mass) / 3.0   - 2.0 * dt * ResM  / 3.0
+        MHD.mom1  = (2.0 * MHD_h.mom1 + MHD.mom1) / 3.0   - 2.0 * dt * ResV1 / 3.0 
+        MHD.mom2  = (2.0 * MHD_h.mom2 + MHD.mom2) / 3.0   - 2.0 * dt * ResV2 / 3.0 
+        MHD.mom3  = (2.0 * MHD_h.mom3 + MHD.mom3) / 3.0   - 2.0 * dt * ResV3 / 3.0  
+        MHD.etot  = (2.0 * MHD_h.etot + MHD.etot) / 3.0   - 2.0 * dt * ResE  / 3.0 
         MHD.bcon1 = (2.0 * MHD_h.bcon1 + MHD.bcon1) / 3.0 - 2.0 * dt * ResB1 / 3.0 
         MHD.bcon2 = (2.0 * MHD_h.bcon2 + MHD.bcon2) / 3.0 - 2.0 * dt * ResB2 / 3.0 
         MHD.bcon3 = (2.0 * MHD_h.bcon3 + MHD.bcon3) / 3.0 - 2.0 * dt * ResB3 / 3.0  
         
     # Primitive variables recovery at the end of the timestep
     #density, 3 components of velocity and pressure are evaluated 
-    MHD.dens[Ngc:-Ngc, Ngc:-Ngc], MHD.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.vel2[Ngc:-Ngc, Ngc:-Ngc], MHD.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.pres[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc],  \
-        MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc] = \
-        cons2prim_nr_MHD(MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot, \
-        MHD.bcon1, MHD.bcon2, MHD.bcon3, eos) 
+    _prim_recovery(MHD, Ngc, eos)
     
     MHD.divB = div_cell_vector(g, MHD.bfi1, MHD.bfi2)
     
     #return the updated class object of the fluid state on the next timestep 
     return MHD
+
+
+# ============================================================================
+# Helper: call cons2prim_nr_MHD for a SimState object
+# ============================================================================
+
+def _prim_recovery(state, Ngc, eos):
+    """
+    Call cons2prim_nr_MHD and write results back into
+    state.{dens,vel*,pres,bfi*}.
+
+    Parameters
+    ----------
+    state   : SimState  with conservative vars populated
+    Ngc     : int       number of ghost cells
+    eos     : EOSdata
+    """
+    (state.dens[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel1[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel2[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel3[Ngc:-Ngc, Ngc:-Ngc],
+     state.pres[Ngc:-Ngc, Ngc:-Ngc],
+     state.bfi1[Ngc:-Ngc, Ngc:-Ngc],
+     state.bfi2[Ngc:-Ngc, Ngc:-Ngc],
+     state.bfi3[Ngc:-Ngc, Ngc:-Ngc]) = \
+        cons2prim_nr_MHD(
+            state.mass, state.mom1, state.mom2, state.mom3, state.etot,
+            state.bcon1, state.bcon2, state.bcon3, eos)
 
 
 
@@ -419,11 +441,11 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
         
         #residuals calculation for mass, 3 components of momentum, 
         #total energy and 3 component of magnetic field in 1-dim
-        ResM = ( Fmass[1:,:]*g.fS1[1:,:] - Fmass[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
+        ResM  = ( Fmass[1:,:]*g.fS1[1:,:] - Fmass[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         ResV1 = ( Fmom1[1:,:]*g.fS1[1:,:] - Fmom1[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         ResV2 = ( Fmom2[1:,:]*g.fS1[1:,:] - Fmom2[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         ResV3 = ( Fmom3[1:,:]*g.fS1[1:,:] - Fmom3[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
-        ResE = ( Fetot[1:,:]*g.fS1[1:,:] - Fetot[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
+        ResE  = ( Fetot[1:,:]*g.fS1[1:,:] - Fetot[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         #ResB1 = ( Fbfi1[1:,:]*g.fS1[1:,:] - Fbfi1[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         ResB2 = ( Fbfi2[1:,:]*g.fS1[1:,:] - Fbfi2[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         ResB3 = ( Fbfi3[1:,:]*g.fS1[1:,:] - Fbfi3[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
@@ -456,11 +478,11 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
         #residuals calculation for mass, 3 components of momentum, 
         #total energy and 3 components of magnetic field in 2-dim
         #here we add the fluxes differences to the residuals after 1-dim calculation
-        ResM += ( Fmass[:,1:]*g.fS2[:,1:] - Fmass[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
+        ResM  += ( Fmass[:,1:]*g.fS2[:,1:] - Fmass[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         ResV1 += ( Fmom1[:,1:]*g.fS2[:,1:] - Fmom1[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         ResV2 += ( Fmom2[:,1:]*g.fS2[:,1:] - Fmom2[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         ResV3 += ( Fmom3[:,1:]*g.fS2[:,1:] - Fmom3[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
-        ResE += ( Fetot[:,1:]*g.fS2[:,1:] - Fetot[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
+        ResE  += ( Fetot[:,1:]*g.fS2[:,1:] - Fetot[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         ResB1 += ( Fbfi1[:,1:]*g.fS2[:,1:] - Fbfi1[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         #ResB2 += ( Fbfi2[:,1:]*g.fS2[:,1:] - Fbfi2[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         ResB3 += ( Fbfi3[:,1:]*g.fS2[:,1:] - Fbfi3[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
@@ -473,7 +495,7 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
     #we add forces in momentum res, while in energy we add Power = Force*Vel 
     ResV1 += - MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * MHD.F1 
     ResV2 += - MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * MHD.F2 
-    ResE += - MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * (MHD.F1 * MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] + \
+    ResE  += - MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * (MHD.F1 * MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] + \
         MHD.F2 * MHD.vel2[Ngc:-Ngc, Ngc:-Ngc])
     
     #curvature source terms 
@@ -483,7 +505,7 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
     ResV1 += MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc] * MHD.divB - STv1
     ResV2 += MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc] * MHD.divB - STv2
     ResV3 += MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc] * MHD.divB - STv3
-    ResE += MHD.divB * (MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] * MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc] + \
+    ResE  += MHD.divB * (MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] * MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc] + \
         MHD.vel2[Ngc:-Ngc, Ngc:-Ngc] * MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc] + \
         MHD.vel3[Ngc:-Ngc, Ngc:-Ngc] * MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc])
     ResB1 += MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] * MHD.divB - STm1
