@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Nov 14 20:00:11 2023
+boundaries.py
+=============
 
 Boundary condition module for 2D hydrodynamics, diffusion, and MHD simulations.
 
@@ -9,9 +10,10 @@ Supported boundary types:
     'free'  - non-reflective (zero-gradient) boundary
     'wall'  - reflective (normal component flips) boundary
     'peri'  - periodic boundary
-    'axis'  - axis boundary
+    'axis'  - axis boundary (normal and azimuthal components flip)
 
-Functions:
+Functions
+---------
 - apply_bc_scalar(var, Ngc, BC_type, axis=1, side='inner'):
       Fill ghost cells for a scalar field along a given axis.
 - apply_bc_vector(V1, V2, V3, Ngc, BC_type, axis=1, side='inner'):
@@ -19,22 +21,20 @@ Functions:
 
 Ghost Cell Implementation Note
 ------------------------------
+The approach separates scalar and vector fields for clarity and correctness:
 
-This module provides routines to fill ghost cells for 2D hydrodynamic
-and MHD simulations. The approach separates scalar, vector, and face-centered
-fields for clarity and correctness:
-
-1. apply_bc_scalar(var, ...)  
-   - For scalar quantities (e.g., density, pressure).  
+1. ``apply_bc_scalar(var, ...)``
+   - For scalar quantities (e.g., density, pressure, temperature).
    - Fills ghost cells along the specified axis according to BC_type.
 
-2. apply_bc_vector(V1, V2, V3, ...)  
-   - For 3-component vector quantities (e.g., velocity, cell-centered magnetic field).  
+2. ``apply_bc_vector(V1, V2, V3, ...)``
+   - For 3-component vector quantities (e.g., velocity, cell-centered magnetic field).
    - Treats the normal component differently for reflective (wall) boundaries
      while leaving tangential components unchanged.
 
-Face-centered third component of the electric field (Efld3 along x1/x2), needed for CT MHD 
-is implmeneted as a separate function boundCond_electric_field in corresponding MHD modules 
+The face-centered z-electric field (Efld3 along x1/x2) needed for CT MHD is
+implemented as a separate function ``boundCond_electric_field`` in the
+corresponding MHD solver modules (MHD_one_step_CT.py, rMHD_one_step.py).
 
 Author: mrkondratyev
 """
@@ -53,7 +53,7 @@ def apply_bc_scalar(var, Ngc, BC_type, axis=1, side='inner'):
     Ngc : int
         Number of ghost cells.
     BC_type : str
-        Boundary type: 'free', 'wall', 'peri', 'axis.
+        Boundary type: 'free', 'wall', 'peri', 'axis'.
     axis : int
         Axis along which to apply BC (1 for x1, 2 for x2).
     side : str
