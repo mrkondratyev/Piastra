@@ -52,7 +52,7 @@ mrkondratyev
 """
 
 import numpy as np
-from boundaries import apply_bc_scalar, apply_bc_vector
+from src.common.boundaries import apply_bc_scalar, apply_bc_vector
 
 
 # ============================================================================
