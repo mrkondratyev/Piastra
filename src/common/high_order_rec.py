@@ -1,6 +1,6 @@
 """
 ===============================================================================
-reconstruction.py
+high_order_rec.py
 ===============================================================================
 
 High-order reconstruction routines for finite-volume fluid solvers in 2D.
@@ -11,36 +11,39 @@ These routines compute the left and right states of a fluid variable at cell
 faces, ready for flux evaluation by a Riemann solver. The module supports
 uniform Cartesian grids and includes the following reconstruction schemes:
 
-    1. PCM   : Piecewise-constant (1st order, no slope limiting)
-    2. PLM   : Piecewise-linear (2nd order, monotonicity-limited)
-    3. WENO  : Weighted Essentially Non-Oscillatory (3rd or 5th order)
+    1. PCM    : Piecewise-constant (1st order, no slope limiting)
+    2. PLM    : Piecewise-linear (2nd order, monotonicity-limited)
+    3. WENO   : Weighted Essentially Non-Oscillatory (3rd or 5th order)
     4. PPMorig: Standard Piecewise Parabolic Method (3rd order)
-    5. PPM   : Fifth-order improved PPM (Mignone 2014)
+    5. PPM    : Fifth-order improved PPM (Mignone 2014)
 
 Key routines
--------------
-- rec_PLM   : Limited piecewise-linear reconstruction
-- limiter   : Slope limiter for PLM and PPM schemes
-- rec_WENO  : WENO/CWENO reconstruction for high-order accuracy
-- rec_PPMorig: Standard PPM reconstruction (3rd order)
-- rec_PPM5  : Fifth-order PPM reconstruction
+------------
 - VarReconstruct : Unified interface for selecting reconstruction type
-
-References
-----------
-- Collela, P., & Woodward, P.R. (1984). The Piecewise Parabolic Method (PPM)
-  for Gas-Dynamical Simulations.
-- Mignone, A. (2014). High-order conservative reconstruction schemes 
-  for finite volume methods in cylindrical and spherical coordinates,, Journal of Computational Physics.
-- D.S. Balsara, "Higher-order accurate space-time schemes for computational
-  astrophysics—Part I: finite volume methods", Living Rev Comput Astrophys (2017) 3:2.
-
-Author: mrkondratyev 
+- rec_PLM        : Limited piecewise-linear reconstruction
+- limiter        : Slope limiter for PLM and PPM schemes
+- rec_WENO       : WENO/CWENO reconstruction for high-order accuracy
+- rec_PPMorig    : Standard PPM reconstruction (3rd order)
+- rec_PPM5       : Fifth-order PPM reconstruction
 
 Notes
 -----
-- All routines assume the presence of ghost cells.
+- All routines assume the presence of ghost cells (Ngc ≥ 2 for PLM/PCM,
+  Ngc ≥ 3 for PPM/WENO).
 - Designed for modular integration into finite-volume fluid solvers.
+
+References
+----------
+- Colella, P. & Woodward, P. R. (1984). The Piecewise Parabolic Method (PPM)
+  for gas-dynamical simulations. JCP 54, 174.
+- Mignone, A. (2014). High-order conservative reconstruction schemes for
+  finite volume methods in cylindrical and spherical coordinates.
+  JCP 270, 784.
+- Balsara, D. S. (2017). Higher-order accurate space-time schemes for
+  computational astrophysics—Part I: finite volume methods.
+  Living Rev Comput Astrophys 3:2.
+
+Author: mrkondratyev
 ===============================================================================
 """
 
