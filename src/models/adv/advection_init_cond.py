@@ -52,8 +52,8 @@ def IC_advection_user_defined(grid, adv, par):
     par.timefin = 1.0
     par.timenow = 0.0
 
-    x0 = 0.5
-    y0 = 0.5
+    x0 = x1ini + 0.5 * (x1fin - x1ini)
+    y0 = x2ini + 0.5 * (x2fin - x2ini)
 
     adv.vel1 = 1.0
     adv.vel2 = 1.0
@@ -124,8 +124,8 @@ def IC_advection1D_smooth(grid, adv, par):
     #profile width
     delta = 0.1
     
-    #предполагаем что наша область периодическая, 
-    #т.е. вещество, что выходит с одной стороны, сразу входит в область с другой стороны с сохранением параметров
+    #assume periodic domain,
+    # i.e. matter, which leaves the domain, enters it from the other side
     x = x0 - np.floor(x0/Len) * Len
 
     for i in range(grid.Ngc, grid.Nx1r):
@@ -234,8 +234,8 @@ def IC_advection2D_smooth(grid, adv, par):
     par.timefin = 1.0
     par.timenow = 0.0
 
-    x0 = 0.5
-    y0 = 0.5
+    x0 = x1ini + 0.5 * (x1fin - x1ini)
+    y0 = x2ini + 0.5 * (x2fin - x2ini)
 
     delta = 0.1
     
