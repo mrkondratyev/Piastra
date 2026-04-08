@@ -17,15 +17,16 @@ Available modes:
 - 'HD'   : Hydrodynamics problems
 - 'rHD'  : Special-relativistic hydrodynamics problems
 - 'MHD'  : Magnetohydrodynamics problems
+- 'rMHD' : Special-relativistic magnetohydrodynamics problems
 - 'diff' : 2D thermal diffusion (explicit or RKL2 super time-stepping)
 
-Available problems (examples):
+Available problems (examples, see models and src/common/helper.py for more):
 ------------------------------
 Advection (see advection_init_cond.py):
     - "smooth1D", "disc1D", "smooth2D", "disc2D", "user_defined"
 Hydrodynamics (see hydro_init_cond.py):
     - "sod1Dcart", "sod1Dcyl", "sod1Dpol", "strong1D", "DBW1D",
-    - "KHI", "RTI", "sod2Dcart", "sedov2Dcart", "sedov2Dcyl",
+    - "KHI", "RTI", "sod2Dcart", "sedov2Dcart", "sedov2Dcyl"
     - "user_defined"
 Relativistic HD (see rHD_init_cond.py):
     - "RP1"  : Mignone & Bodo (2005) RP1 (moving fluid, v=0.9)
@@ -36,13 +37,18 @@ Relativistic HD (see rHD_init_cond.py):
     - "RTI"  : relativistic Rayleigh-Taylor instability
     - "user_defined"
 Magnetohydrodynamics (see MHD_init_cond.py):
-    - "BW1D", "toth1D", "blast-cart", "blast-cyl", "OT2D", "user_defined"
+    - "BW1D", "toth1D", "blast-cart", "blast-cyl", "OT2D", "rotor2D"
+    - "user_defined"
+Relativistic MHD (see rMHD_init_cond.py):
+    - "BW1D", "RP2", "RP3", "RP4", "blast2D", "rotor2D" (Mignone & Bodo 2006)
+    - "user_defined"
 Diffusion (see diffusion_init_cond.py):
-    - "gauss2D", "cross2D", "ring2D", "gauss1D", "user_defined"
+    - "gauss2D", "cross2D", "ring2D", "gauss1D"
+    - "user_defined"
 
 Parameters (in Parameters class):
 --------------------------------
-- mode       : str   -- Simulation type ('adv', 'HD', 'rHD', 'MHD', 'diff')
+- mode       : str   -- Simulation type ('adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff')
 - problem    : str   -- Problem name (depends on mode)
 - Nx1, Nx2   : int   -- Grid resolution
 - flux_type  : str   -- Flux solver type ('adv', 'HLLC', 'HLLD', etc.)
@@ -77,6 +83,11 @@ all modes :
     divb_tr = 'CT', '8wave'
     CFL = integer < 1
 
+'rMHD' :
+    flux_type = 'LLF', 'HLL'
+    divb_tr = 'CT' (only CT is supported)
+    CFL = float < 1
+
 'diff' :
     diff_solver = 'expl', 'rkl2'
     rkl2_stages = integer >= 2   (only for rkl2)
@@ -88,17 +99,18 @@ Author: mrkondratyev
 import matplotlib.pyplot as plt
 import numpy as np
 
-from grid_setup import Grid
-from sim_state import SimState
-from parameters import Parameters
-from MHD_one_step_CT import MHD2D_CT
-from MHD_one_step_8wave import MHD2D_8wave
-from hydro_one_step import Hydro2D
-from rHD_one_step import rHD2D
-from advection_one_step import Advection2D
-from diffusion_one_step import Diffusion2D
-from helpers import run_simulation, initial_model
-from visualization import plot_setup
+from src.grid.grid_setup import Grid
+from src.sim_state import SimState
+from src.parameters import Parameters
+from src.models.MHD.MHD_one_step_CT import MHD2D_CT
+from src.models.MHD.MHD_one_step_8wave import MHD2D_8wave
+from src.models.HD.hydro_one_step import Hydro2D
+from src.models.rHD.rHD_one_step import rHD2D
+from src.models.rMHD.rMHD_one_step import rMHD2D_CT
+from src.models.adv.advection_one_step import Advection2D
+from src.models.diff.diffusion_one_step import Diffusion2D
+from src.misc.helpers import run_simulation, initial_model
+from src.misc.io_visual import plot_setup
 
 
 # --- Solver dispatch dictionary ---
@@ -111,6 +123,7 @@ SOLVER_DISPATCH = {
         if par.divb_tr == "CT" else
         MHD2D_8wave(grid, state, eos, par)
     ),
+    "rMHD": lambda grid, state, eos, par: rMHD2D_CT(grid, state, eos, par),
     "diff": lambda grid, state, eos, par: Diffusion2D(
         grid, state, par,
         solver=par.diff_solver,
@@ -125,12 +138,15 @@ def main():
     # --- Define main simulation parameters ---
     par = Parameters(
         mode="diff",
-        problem="gauss2D",
-        Nx1=128,
-        Nx2=128,
-        diff_solver="rkl2",
-        rkl2_stages=20,
-        CFL=0.9,
+        problem="gauss1D",
+        diff_solver='rkl2',
+        divb_tr='CT',
+        Nx1=512,
+        Nx2=1,
+        rec_type = "PLM",
+        RK_order = 'RK3',
+        rkl2_stages = 20,
+        CFL=0.4,
     )
 
     # --- Initialize grid and state ---
@@ -151,13 +167,13 @@ def main():
 
 
     # --- Run simulation ---
-    nsteps_visual = 10
+    nsteps_visual = 20
     state, par.timenow = run_simulation(
         grid, state, par, solver, var_to_plot, nsteps_visual
     )
 
-    # --- Final visualization (optional) ---
-    if par.mode == "MHD":
+    # --- Final visualization of B-divergence for MHD (optional) ---
+    if (par.mode == "MHD" or par.mode == "rMHD") & (par.Nx1 > 1) & (par.Nx2 > 1):
         line, ax, fig, im = plot_setup(grid, state.divB, par.timenow)
         plt.show()
 
