@@ -4,26 +4,31 @@
 grid_misc.py
 ===============================================================================
 
-@author: mrkondratyev
-
-Utility functions for finite-volume grid solvers
-=============================================================
+Utility functions for finite-volume grid solvers.
 
 This module provides helper routines for working with structured 2D grids,
-including interpolation between staggered (face-centered) and cell-centered
-quantities, and difference operators.
+including:
+  - Interpolation from staggered (face-centered) to cell-centered fields
+  - Divergence operators for face-centered and cell-centered vector fields
+  - Cell-centred gradient operator with geometry-aware metric factors
+  - L-n norm and volume-integral helpers for convergence testing
+  - Central finite-difference helpers (private: ``_ddx1``, ``_ddx2``)
 
-The routines assume the grid object `grid` contains:
-    - grid.Ngc:   number of ghost cells
-    - grid.Nx1, grid.Nx2: total number of cells in x1/x2 directions
-    - grid.Nx1r, grid.Nx2r: indices of the last real (non-ghost) cells
-    - grid.cx1, grid.cx2: cell-centered coordinates
-    - grid.fx1, grid.fx2: face-centered coordinates
-    - grid.dx1, grid.dx2: cell widths in x1/x2 directions
-    - grid.fS1, grid.fS2: face areas in x1/x2 directions
-    - grid.cVol:  cell volumes
+The routines assume the grid object ``grid`` provides:
+    - grid.Ngc          : number of ghost cells
+    - grid.Nx1, Nx2     : number of real cells in x1 / x2 directions
+    - grid.Nx1r, Nx2r   : last real-cell indices (= Nx + Ngc)
+    - grid.cx1, cx2     : cell-centred coordinates
+    - grid.fx1, fx2     : face-centred coordinates
+    - grid.dx1, dx2     : cell widths
+    - grid.fS1, fS2     : face areas perpendicular to x1 / x2
+    - grid.cVol         : cell volumes
+    - grid.geom         : geometry marker ('cart', 'cyl', 'pol')
 
-All operations are consistent with a finite-volume discretization.
+All operations are consistent with a finite-volume discretization on
+Cartesian, cylindrical (R,Z), or polar (R,φ) geometries.
+
+Author: mrkondratyev
 """
 
 import numpy as np
