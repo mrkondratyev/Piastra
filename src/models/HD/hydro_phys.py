@@ -29,7 +29,7 @@ mrkondratyev
 """
 
 import numpy as np
-from boundaries import apply_bc_scalar, apply_bc_vector
+from src.common.boundaries import apply_bc_scalar, apply_bc_vector
 
 
 def prim2cons_nr_hydro(dens, vel1, vel2, vel3, pres, eos):
