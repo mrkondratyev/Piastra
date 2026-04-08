@@ -2,7 +2,7 @@
 """
 Created on Tue Nov 14 20:00:11 2023
 
-Boundary condition module for 2D hydrodynamics and MHD simulations.
+Boundary condition module for 2D hydrodynamics, diffusion, and MHD simulations.
 
 This module provides functions to fill ghost cells for scalar and vector fields.
 Supported boundary types:
@@ -16,13 +16,6 @@ Functions:
       Fill ghost cells for a scalar field along a given axis.
 - apply_bc_vector(V1, V2, V3, Ngc, BC_type, axis=1, side='inner'):
       Fill ghost cells for a 3-component vector field along a given axis.
-- boundCond_hydro(grid, BC, fluid):
-      Apply BCs to hydrodynamic variables (density, pressure, velocities).
-- boundCond_mhd(grid, BC, fluid):
-      Apply BCs to MHD variables (density, pressure, velocities, magnetic fields).
-- boundCond_electric_field:
-      Fill ghost cells for face-centered electric field E3 along x1 and x2.
-      (E3 = Ez for MHD in 2D XY coordinates, for instance)
 
 Ghost Cell Implementation Note
 ------------------------------
@@ -40,10 +33,8 @@ fields for clarity and correctness:
    - Treats the normal component differently for reflective (wall) boundaries
      while leaving tangential components unchanged.
 
-3. Face-centered third component of the electric field (Efld3 along x1/x2)  
-   - needed for CT MHD 
-   - Separate function boundCond_electric_field
-     to handle this explicitly.
+Face-centered third component of the electric field (Efld3 along x1/x2), needed for CT MHD 
+is implmeneted as a separate function boundCond_electric_field in corresponding MHD modules 
 
 Author: mrkondratyev
 """
