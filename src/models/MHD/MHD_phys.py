@@ -42,7 +42,7 @@ mrkondratyev, 2024–2025
 """
 
 import numpy as np
-from boundaries import apply_bc_scalar, apply_bc_vector
+from src.common.boundaries import apply_bc_scalar, apply_bc_vector
 
 
 
@@ -272,7 +272,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     momy_L = rhol * vyl
     momz_L = rhol * vzl
     etot_L = pl / (eos.GAMMA - 1.0) + rhol * ( vxl * vxl + vyl * vyl + vzl * vzl ) / 2.0 + b2l / 2.0
-    bfix_L = bxn
+    #bfix_L = bxn
     bfiy_L = byl
     bfiz_L = bzl
     
@@ -282,7 +282,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     momy_R = rhor * vyr
     momz_R = rhor * vzr
     etot_R = pr / (eos.GAMMA - 1.0) + rhor * ( vxr * vxr + vyr * vyr + vzr * vzr ) / 2.0 + b2r / 2.0
-    bfix_R = bxn
+    #bfix_R = bxn
     bfiy_R = byr
     bfiz_R = bzr
     
@@ -292,7 +292,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     Fmomy_L = rhol * vyl * vxl - byl * bxn
     Fmomz_L = rhol * vzl * vxl - bzl * bxn
     Fetot_L = vxl * (ptot_L + etot_L) - bxn * (bxn*vxl + byl*vyl + bzl*vzl)
-    Fbfix_L = 0.0
+    #Fbfix_L = 0.0
     Fbfiy_L = vxl * byl - vyl * bxn
     Fbfiz_L = vxl * bzl - vzl * bxn
     
@@ -302,7 +302,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     Fmomy_R = rhor * vyr * vxr - byr * bxn
     Fmomz_R = rhor * vzr * vxr - bzr * bxn
     Fetot_R = vxr * (ptot_R + etot_R) - bxn * (bxn*vxr + byr*vyr + bzr*vzr)
-    Fbfix_R = 0.0
+    #Fbfix_R = 0.0
     Fbfiy_R = vxr * byr - vyr * bxn
     Fbfiz_R = vxr * bzr - vzr * bxn
 
@@ -386,10 +386,10 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         Ssr = Sm + np.abs(bxn)/sqrt_rhosr
         
         #LEFT STARRED STATE 
-        vysl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, vyl - bxn*byl*(Sm - vxl)/( Jl*(Sl - Sm) - bxn**2 ), vyl)
-        vzsl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, vzl - bxn*bzl*(Sm - vxl)/( Jl*(Sl - Sm) - bxn**2 ), vzl)
-        bysl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, byl*( Jl*(Sl - vxl) - bxn**2 )/( Jl*(Sl - Sm) - bxn**2 ), byl)
-        bzsl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, bzl*( Jl*(Sl - vxl) - bxn**2 )/( Jl*(Sl - Sm) - bxn**2 ), bzl)
+        vysl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, vyl - bxn*byl*(Sm - vxl)/( Jl*(Sl - Sm) - bxn**2 + 1e-30), vyl)
+        vzsl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, vzl - bxn*bzl*(Sm - vxl)/( Jl*(Sl - Sm) - bxn**2 + 1e-30), vzl)
+        bysl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, byl*( Jl*(Sl - vxl) - bxn**2 )/( Jl*(Sl - Sm) - bxn**2 + 1e-30), byl)
+        bzsl = np.where(np.abs( Jl*(Sl - Sm) - bxn**2 ) > 1e-12, bzl*( Jl*(Sl - vxl) - bxn**2 )/( Jl*(Sl - Sm) - bxn**2 + 1e-30), bzl)
         
         #conservative state inside the star region (L)
         massS_L = rhosl
@@ -398,15 +398,15 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         momzS_L = rhosl*vzsl
         etotS_L = ( (Sl - vxl)*etot_L - ptot_L*vxl + pts*Sm + \
             bxn*(vxl*bxn + vyl*byl + vzl*bzl - Sm*bxn - vysl*bysl - vzsl*bzsl) )/(Sl - Sm )
-        bfixS_L = bxn
+        #bfixS_L = bxn
         bfiyS_L = bysl
         bfizS_L = bzsl
 
         #RIGHT STARRED STATE 
-        vysr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, vyr - bxn*byr*(Sm - vxr)/( Jr*(Sr - Sm) - bxn**2 ), vyr)
-        vzsr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, vzr - bxn*bzr*(Sm - vxr)/( Jr*(Sr - Sm) - bxn**2 ), vzr)
-        bysr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, byr*( Jr*(Sr - vxr) - bxn**2 )/( Jr*(Sr - Sm) - bxn**2 ), byr)
-        bzsr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, bzr*( Jr*(Sr - vxr) - bxn**2 )/( Jr*(Sr - Sm) - bxn**2 ), bzr)
+        vysr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, vyr - bxn*byr*(Sm - vxr)/( Jr*(Sr - Sm) - bxn**2 + 1e-30), vyr)
+        vzsr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, vzr - bxn*bzr*(Sm - vxr)/( Jr*(Sr - Sm) - bxn**2 + 1e-30), vzr)
+        bysr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, byr*( Jr*(Sr - vxr) - bxn**2 )/( Jr*(Sr - Sm) - bxn**2 + 1e-30), byr)
+        bzsr = np.where(np.abs( Jr*(Sr - Sm) - bxn**2 ) > 1e-12, bzr*( Jr*(Sr - vxr) - bxn**2 )/( Jr*(Sr - Sm) - bxn**2 + 1e-30), bzr)
         
         #conservative state inside the star region (R)
         massS_R = rhosr
@@ -415,7 +415,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         momzS_R = rhosr*vzsr
         etotS_R = ( (Sr - vxr)*etot_R - ptot_R*vxr + pts*Sm + \
             bxn*(vxr*bxn + vyr*byr + vzr*bzr - Sm*bxn - vysr*bysr - vzsr*bzsr) )/(Sr - Sm )
-        bfixS_R = bxn
+        #bfixS_R = bxn
         bfiyS_R = bysr
         bfizS_R = bzsr
         
@@ -431,7 +431,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         momySS_L = rhosl*vyss
         momzSS_L = rhosl*vzss
         etotSS_L = etotS_L - sqrt_rhosl*( Sm*bxn + vysl*bysl + vzsl*bzsl - Sm*bxn - vyss*byss - vzss*bzss )*sgnBx
-        bfixSS_L = bxn
+        #bfixSS_L = bxn
         bfiySS_L = byss
         bfizSS_L = bzss
         
@@ -441,7 +441,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         momySS_R = rhosr*vyss
         momzSS_R = rhosr*vzss
         etotSS_R = etotS_R + sqrt_rhosr*( Sm*bxn + vysr*bysr + vzsr*bzsr - Sm*bxn - vyss*byss - vzss*bzss )*sgnBx
-        bfixSS_R = bxn
+        #bfixSS_R = bxn
         bfiySS_R = byss
         bfizSS_R = bzss
         
