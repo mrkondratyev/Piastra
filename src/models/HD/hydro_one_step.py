@@ -46,8 +46,8 @@ Example usage
 
 import numpy as np
 import copy
-from hydro_phys import *
-from reconstruction import VarReconstruct
+from src.models.HD.hydro_phys import *
+from src.common.high_order_rec import VarReconstruct
 
 
 class Hydro2D:
@@ -213,10 +213,13 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
     HD_h = copy.deepcopy(HD)
     
     #conservative variables at the beginning of timestep
-    HD.mass, HD.mom1, HD.mom2, HD.mom3, HD.etot = \
-        prim2cons_nr_hydro(HD.dens[Ngc:-Ngc,Ngc:-Ngc], 
-        HD.vel1[Ngc:-Ngc,Ngc:-Ngc], HD.vel2[Ngc:-Ngc,Ngc:-Ngc], 
-        HD.vel3[Ngc:-Ngc,Ngc:-Ngc], HD.pres[Ngc:-Ngc,Ngc:-Ngc], eos)
+    (HD.mass, HD.mom1, HD.mom2, HD.mom3, HD.etot) = \
+        prim2cons_nr_hydro(
+            HD.dens[Ngc:-Ngc,Ngc:-Ngc], 
+            HD.vel1[Ngc:-Ngc,Ngc:-Ngc], 
+            HD.vel2[Ngc:-Ngc,Ngc:-Ngc], 
+            HD.vel3[Ngc:-Ngc,Ngc:-Ngc], 
+            HD.pres[Ngc:-Ngc,Ngc:-Ngc], eos)
     
     #residuals for conservative variables calculation
     #1st Runge-Kutta iteration - predictor stage
@@ -244,10 +247,12 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
         
         #Primitive variables recovery after predictor stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
-        HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.pres[Ngc:-Ngc, Ngc:-Ngc] = cons2prim_nr_hydro(HD_h.mass, 
-            HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot, eos) 
+        (HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.pres[Ngc:-Ngc, Ngc:-Ngc]) = cons2prim_nr_hydro(
+            HD_h.mass, HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot, eos) 
             
         #2nd Runge-Kutta iteration - corrector stage
         ResM, Res1, Res2, Res3, ResE = flux_calc_hydro(g, HD_h, par, eos)
@@ -264,10 +269,12 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
         
         #Primitive variables recovery after 1st RK stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
-        HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.pres[Ngc:-Ngc, Ngc:-Ngc] = cons2prim_nr_hydro(HD_h.mass, 
-            HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot, eos) 
+        (HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.pres[Ngc:-Ngc, Ngc:-Ngc]) = cons2prim_nr_hydro(
+            HD_h.mass, HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot, eos)
         
         #residuals for conservative variables calculation
         #2nd Runge-Kutta iteration 
@@ -283,10 +290,12 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
     
         # Primitive variables recovery after second stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
-        HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.pres[Ngc:-Ngc, Ngc:-Ngc] = cons2prim_nr_hydro(HD_h.mass, 
-            HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot, eos)
+        (HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], 
+         HD_h.pres[Ngc:-Ngc, Ngc:-Ngc]) = cons2prim_nr_hydro(
+            HD_h.mass, HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot, eos)
         
         ResM, Res1, Res2, Res3, ResE = flux_calc_hydro(g, HD_h, par, eos)
         
@@ -300,10 +309,12 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
         
     # Primitive variables recovery at the end of the timestep
     #density, 3 components of velocity and pressure are evaluated 
-    HD.dens[Ngc:-Ngc, Ngc:-Ngc], HD.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-        HD.vel2[Ngc:-Ngc, Ngc:-Ngc], HD.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-        HD.pres[Ngc:-Ngc, Ngc:-Ngc] = cons2prim_nr_hydro(HD.mass, 
-        HD.mom1, HD.mom2, HD.mom3, HD.etot, eos)
+    (HD.dens[Ngc:-Ngc, Ngc:-Ngc], 
+     HD.vel1[Ngc:-Ngc, Ngc:-Ngc], 
+     HD.vel2[Ngc:-Ngc, Ngc:-Ngc], 
+     HD.vel3[Ngc:-Ngc, Ngc:-Ngc], 
+     HD.pres[Ngc:-Ngc, Ngc:-Ngc]) = cons2prim_nr_hydro(
+        HD.mass, HD.mom1, HD.mom2, HD.mom3, HD.etot, eos)
     
     #return the updated class object of the HDuid state on the next timestep 
     return HD
