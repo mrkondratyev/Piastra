@@ -6,12 +6,12 @@ grid_misc.py
 
 @author: mrkondratyev
 
-Utility functions for finite-volume hydrodynamics/MHD solvers
+Utility functions for finite-volume grid solvers
 =============================================================
 
 This module provides helper routines for working with structured 2D grids,
 including interpolation between staggered (face-centered) and cell-centered
-quantities, and divergence operators.
+quantities, and difference operators.
 
 The routines assume the grid object `grid` contains:
     - grid.Ngc:   number of ghost cells
@@ -57,11 +57,17 @@ def interp_face_to_cell(grid, fV1, fV2):
     """
     Ngc = grid.Ngc 
 
-    V1 = (fV1[1:, :]  * (grid.cx1[Ngc:-Ngc, Ngc:-Ngc] - grid.fx1[Ngc:-Ngc-1, Ngc:-Ngc]) +
+    if grid.Nx1 == 1:
+        V1 = fV1[1:, :]
+    else:  
+        V1 = (fV1[1:, :]  * (grid.cx1[Ngc:-Ngc, Ngc:-Ngc] - grid.fx1[Ngc:-Ngc-1, Ngc:-Ngc]) +
           fV1[:-1, :] * (grid.fx1[Ngc+1:-Ngc, Ngc:-Ngc] - grid.cx1[Ngc:-Ngc, Ngc:-Ngc])
          ) / grid.dx1[Ngc:-Ngc, Ngc:-Ngc]
-
-    V2 = (fV2[:, 1:]  * (grid.cx2[Ngc:-Ngc, Ngc:-Ngc] - grid.fx2[Ngc:-Ngc, Ngc:-Ngc-1]) +
+    
+    if grid.Nx2 == 1:
+        V2 = fV2[:, 1:]
+    else:
+        V2 = (fV2[:, 1:]  * (grid.cx2[Ngc:-Ngc, Ngc:-Ngc] - grid.fx2[Ngc:-Ngc, Ngc:-Ngc-1]) +
           fV2[:, :-1] * (grid.fx2[Ngc:-Ngc, Ngc+1:-Ngc] - grid.cx2[Ngc:-Ngc, Ngc:-Ngc])
          ) / grid.dx2[Ngc:-Ngc, Ngc:-Ngc]
 
@@ -198,4 +204,93 @@ def integral_over_grid(grid, var):
         integral value
     """
     return np.sum( grid.cVol[:,:]*var[grid.Ngc:-grid.Ngc, grid.Ngc:-grid.Ngc] )
+
+
+
+
+# ============================================================================
+# Helper: central finite differences on cell-centered data
+# ============================================================================
+
+def _ddx1(grid, f):
+    """
+    Central ∂f/∂x1 on real cells using ghost-zone data.
+
+    Parameters
+    ----------
+    grid : Grid
+    f : ndarray, shape grid.grid_shape
+        Cell-centered scalar field (including ghost zones).
+
+    Returns
+    -------
+    ndarray, shape (grid.Nx1, grid.Nx2)
+    """
+    Ngc, Nx1r, Nx2r = grid.Ngc, grid.Nx1r, grid.Nx2r
+    return (f[Ngc+1:Nx1r+1, Ngc:Nx2r] - f[Ngc-1:Nx1r-1, Ngc:Nx2r]) / \
+           (grid.cx1[Ngc+1:Nx1r+1, Ngc:Nx2r] - grid.cx1[Ngc-1:Nx1r-1, Ngc:Nx2r])
+
+
+def _ddx2(grid, f):
+    """
+    Central ∂f/∂x2 on real cells using ghost-zone data.
+
+    Parameters
+    ----------
+    grid : Grid
+    f : ndarray, shape grid.grid_shape
+        Cell-centered scalar field (including ghost zones).
+
+    Returns
+    -------
+    ndarray, shape (grid.Nx1, grid.Nx2)
+    """
+    Ngc, Nx1r, Nx2r = grid.Ngc, grid.Nx1r, grid.Nx2r
+    return (f[Ngc:Nx1r, Ngc+1:Nx2r+1] - f[Ngc:Nx1r, Ngc-1:Nx2r-1]) / \
+           (grid.cx2[Ngc:Nx1r, Ngc+1:Nx2r+1] - grid.cx2[Ngc:Nx1r, Ngc-1:Nx2r-1])
+
+
+# ============================================================================
+# Gradient
+# ============================================================================
+
+def gradient(grid, f):
+    """
+    Compute the gradient of a cell-centered scalar field.
+
+    Uses second-order central differences.  For curvilinear grids the
+    metric scale factors are included so that the result represents the
+    *physical* gradient components.
+
+    Coordinate conventions
+    ----------------------
+    - Cartesian  (cart): ∇f = (∂f/∂x, ∂f/∂y)
+    - Cylindrical (cyl): ∇f = (∂f/∂R, ∂f/∂Z)          [h_R=1, h_Z=1]
+    - Polar       (pol): ∇f = (∂f/∂R, (1/R) ∂f/∂φ)     [h_R=1, h_φ=R]
+
+    Parameters
+    ----------
+    grid : Grid
+        Grid object (must have ``geom`` attribute set).
+    f : ndarray, shape grid.grid_shape
+        Cell-centered scalar field (including ghost zones).
+
+    Returns
+    -------
+    g1 : ndarray, shape (grid.Nx1, grid.Nx2)
+        x1-component of the gradient on real cells.
+    g2 : ndarray, shape (grid.Nx1, grid.Nx2)
+        x2-component of the gradient on real cells.
+    """
+    g1 = _ddx1(grid, f) if grid.Nx1 > 1 else np.zeros((grid.Nx1, grid.Nx2))
+    g2 = _ddx2(grid, f) if grid.Nx2 > 1 else np.zeros((grid.Nx1, grid.Nx2))
+
+    # Polar: x2 = φ, h2 = R  →  (∇f)_φ = (1/R) ∂f/∂φ
+    if grid.geom == 'pol' and grid.Nx2 > 1:
+        Ngc = grid.Ngc
+        R = grid.cx1[Ngc:-Ngc, Ngc:-Ngc]
+        g2 /= np.where(np.abs(R) > 1e-30, R, 1e-30)
+
+    return g1, g2
+
 
