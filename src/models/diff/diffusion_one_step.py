@@ -88,7 +88,7 @@ Author: mrkondratyev
 import numpy as np
 import copy
 
-from boundaries import apply_bc_scalar
+from src.common.boundaries import apply_bc_scalar
 
 
 # ============================================================================
@@ -398,7 +398,7 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
 
         Y_j = μ_j · Y_{j-1} + ν_j · Y_{j-2}
               + w1·μ_j·dt · L(Y_{j-1})
-              + (1 − μ_j − ν_j) · T^n          ← always T^n, not Y_{j-2}
+              + (1 − μ_j − ν_j) · T^n
               + γ_j · dt · L(T^n)
 
     ``Y0`` in the loop carries Y_{j-2} (the two-stage-back value).
@@ -424,14 +424,23 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
 
     diff = _apply_bc_diff(g, diff, par)
 
+    # Keep a reference to the original T array so the final result can be
+    # written back in-place.  This makes RKL2 consistent with the explicit
+    # scheme (which also updates diff.T in-place) and ensures that any
+    # external reference to the T array (e.g. T = state.T captured before
+    # the time loop) sees the correct updated values.
+    T_out = diff.T
+
     # Save T^n; pre-compute L(T^n) once — both are reused at every stage.
     Tn  = diff.T.copy()                         # T^n, never modified
     LT0 = _spatial_operator_diff(g, diff)       # L(T^n), shape (Nx1, Nx2)
 
     # ---- stage 1 ----
+    # Pre-allocate three rotating buffers (avoids per-stage allocation)
     Y0 = Tn.copy()                              # Y_{j-2} initialised to T^n
     Y1 = Tn.copy()
     Y1[Ngc:-Ngc, Ngc:-Ngc] = Tn[Ngc:-Ngc, Ngc:-Ngc] + (w1 / 3.0) * dt * LT0
+    Y2 = np.empty_like(Tn)                      # scratch buffer, reused each stage
 
     # ---- stages 2 … s ----
     for j in range(2, s + 1):
@@ -443,7 +452,8 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
 
         LT1 = _spatial_operator_diff(g, diff)   # L(Y_{j-1})
 
-        Y2 = Y1.copy()
+        # Copy ghost cells from Y1 into scratch buffer, then overwrite interior
+        np.copyto(Y2, Y1)
         Y2[Ngc:-Ngc, Ngc:-Ngc] = (
               mu[j]                      * Y1[Ngc:-Ngc, Ngc:-Ngc]   # μ_j · Y_{j-1}
             + nu[j]                      * Y0[Ngc:-Ngc, Ngc:-Ngc]   # ν_j · Y_{j-2}
@@ -452,8 +462,10 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
             + gamma[j] * dt              * LT0                       # γ_j·dt·L(T^n)
         )
 
-        Y0 = Y1   # Y_{j-2} ← Y_{j-1}
-        Y1 = Y2   # Y_{j-1} ← Y_j
+        Y0, Y1, Y2 = Y1, Y2, Y0   # rotate buffers (no allocation)
 
-    diff.T = Y1
+    # Write the final stage result back into the original T array in-place,
+    # then restore diff.T to point to that array.
+    np.copyto(T_out, Y1)
+    diff.T = T_out
     return diff
