@@ -4,7 +4,8 @@ sim_state.py
 
 This module defines a unified class for storing the state of advection,
 compressible hydrodynamics (HD), special-relativistic hydrodynamics (rHD),
-magnetohydrodynamics (MHD), and thermal diffusion on a 2D computational grid.
+magnetohydrodynamics (MHD), special-relativistic magnetohydrodynamics (rMHD),
+and thermal diffusion on a 2D computational grid.
 It is designed for frameworks that compare numerical methods and solvers across
 different physics modules.
 
@@ -17,6 +18,7 @@ The SimState (simulated state) class allocates arrays according to the selected 
 - 'rHD'  : special-relativistic hydrodynamics; same arrays as HD.
 - 'MHD'  : HD arrays plus magnetic fields, staggered magnetic fields,
   divergence-cleaning arrays, and conservative magnetic fluxes.
+- 'rMHD' : same arrays as MHD (SR conservative/primitive + B-fields).
 - 'diff' : scalar temperature field T and thermal diffusivity kappa.
 
 Primitive variables include ghost cells to simplify boundary condition
@@ -56,7 +58,7 @@ class SimState:
         `grid.grid_shape`, `grid.Nx1`, and `grid.Nx2`.
     par : parameters
         Simulation parameters object with attribute `mode` that can be
-        'adv', 'HD', 'rHD', 'MHD', or 'diff'. Determines which arrays are allocated.
+        'adv', 'HD', 'rHD', 'MHD', 'rMHD', or 'diff'. Determines which arrays are allocated.
 
     Attributes
     ----------
@@ -116,7 +118,7 @@ class SimState:
             self.T     = np.zeros(grid.grid_shape, dtype=np.double)
             self.kappa = 1.0
 
-        if par.mode == 'HD' or par.mode == 'MHD' or par.mode == 'rHD':
+        if par.mode in ('HD', 'MHD', 'rHD', 'rMHD'):
             # Primitive variables (with ghost cells)
             self.dens = np.zeros(grid.grid_shape, dtype=np.double)
             self.vel1 = np.zeros(grid.grid_shape, dtype=np.double)
@@ -136,7 +138,7 @@ class SimState:
             self.F2 = np.zeros(shape, dtype=np.double)        
 
         # Magnetic fields
-        if par.mode == 'HD' or par.mode == 'MHD':
+        if par.mode in ('HD', 'MHD', 'rMHD'):
             # Primitive variables (with ghost cells)
             self.bfi1 = np.zeros(grid.grid_shape, dtype=np.double)
             self.bfi2 = np.zeros(grid.grid_shape, dtype=np.double)
