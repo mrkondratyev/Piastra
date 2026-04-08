@@ -32,14 +32,14 @@ mrkondratyev
 
 import numpy as np
 import copy
-from rHD_phys import (
+from src.models.rHD.rHD_phys import (
     prim2cons_sr_hydro,
     cons2prim_sr_hydro,
     sound_speed_sr,
     Riemann_sr_hydro,
     boundCond_rHD,
 )
-from reconstruction import VarReconstruct
+from src.common.high_order_rec import VarReconstruct
 
 
 class rHD2D:
