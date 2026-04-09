@@ -71,8 +71,16 @@ class Grid:
         Grid edges along the second dimension.
     edg3 : ndarray
         Grid edges along the third dimension (needed for CT MHD).
+    hx2 : ndarray, shape grid_shape
+        Lamé coefficient (metric scale factor) for the x2 coordinate
+        direction.  Equal to 1 for Cartesian and cylindrical grids where
+        the x2 coordinate already measures physical arc length; equal to
+        the radial coordinate `cx1` (R for polar, r for spherical-polar)
+        where the physical arc length is h₂ · dx2.  Using this array
+        allows geometry-aware operators to be written without branching:
+        ``∂f/∂(arc) = ∂f/∂x2 / hx2``.
     geom : str
-        Geometry marker: `'cart'`, `'cyl'`, or `'pol'`.
+        Geometry marker: `'cart'`, `'cyl'`, `'pol'`, or `'sph'`.
     """
 
 
@@ -126,6 +134,10 @@ class Grid:
         self.edg1 = np.zeros((Nx1, Nx2 + 1), dtype=np.double)
         self.edg2 = np.zeros((Nx1 + 1, Nx2), dtype=np.double)
         self.edg3 = np.zeros((Nx1 + 1, Nx2 + 1), dtype=np.double)
+
+        # Lamé coefficient for the x2 direction (= 1 for cart/cyl; set to
+        # cx1 by PolarGrid / SphericalPolarGrid after cx1 is constructed)
+        self.hx2 = np.ones((Nx1 + Ngc * 2, Nx2 + Ngc * 2), dtype=np.double)
 
 
 
@@ -358,4 +370,124 @@ class Grid:
         self.edg1[:, :] = self.dx1[Ngc:-Ngc, Ngc:Nx2+Ngc+1]
         self.edg2[:, :] = self.dx2[Ngc:Nx1+Ngc+1, Ngc:-Ngc]*self.fx1[Ngc:Nx1+Ngc+1,Ngc:-Ngc]
         self.edg3[:, :] = 1.0
-        
+
+        # Lamé coefficient: physical arc length per unit φ-coordinate is R
+        self.hx2 = self.cx1.copy()
+
+
+
+    def SphericalPolarGrid(self, x1ini, x1fin, x2ini, x2fin):
+        """
+        Construct a uniform spherical-polar (r, θ) grid.
+
+        Parameters
+        ----------
+        x1ini : float
+            Start of domain in radial direction (r).
+        x1fin : float
+            End of domain in radial direction (r).
+        x2ini : float
+            Start of domain in polar-angle direction (θ, from north pole).
+        x2fin : float
+            End of domain in polar-angle direction (θ).
+
+        Notes
+        -----
+        - 2π azimuthal symmetry is assumed; face areas and volumes are
+          integrated over the full φ ∈ [0, 2π) ring.
+        - Face areas and cell volumes use exact analytic integrals:
+          fS1[i,j] = 2π r_i² (cos θ_j − cos θ_{j+1})   (face ⟂ r)
+          fS2[i,j] = π sin(θ_j) (r_{i+1}² − r_i²)       (face ⟂ θ)
+          cVol[i,j] = 2π/3 (r_{i+1}³ − r_i³)(cos θ_j − cos θ_{j+1})
+        - Volumetric centroids in r: ax1 = 3(r_{i+1}⁴−r_i⁴) / (4(r_{i+1}³−r_i³))
+        - Volumetric centroids in θ: ax2 from ∫θ sin θ dθ / ∫sin θ dθ.
+
+        Examples
+        --------
+        >>> g = Grid(32, 64, 1)
+        >>> g.SphericalPolarGrid(1.0, 2.0, 0.0, np.pi)
+        >>> g.cVol[0, 0] > 0
+        True
+        """
+        # Geometry marker
+        self.geom = 'sph'
+        self.x1ini, self.x1fin = np.double(x1ini), np.double(x1fin)
+        self.x2ini, self.x2fin = np.double(x2ini), np.double(x2fin)
+
+        Nx1, Nx2, Ngc = self.Nx1, self.Nx2, self.Ngc
+
+        # Uniform resolution in (r, θ)
+        dx1uc = (x1fin - x1ini) / Nx1
+        dx2uc = (x2fin - x2ini) / Nx2
+        self.dx1uc, self.dx2uc = dx1uc, dx2uc
+        dx1 = np.full(Nx1 + Ngc * 2, dx1uc, dtype=np.double)
+        dx2 = np.full(Nx2 + Ngc * 2, dx2uc, dtype=np.double)
+        self.dx1 = np.tile(dx1, (Nx2 + Ngc * 2, 1)).T
+        self.dx2 = np.tile(dx2, (Nx1 + Ngc * 2, 1))
+
+        # Face coordinates
+        fx1 = np.linspace(x1ini - Ngc * dx1uc, x1fin + Ngc * dx1uc, Nx1 + Ngc * 2 + 1)
+        fx2 = np.linspace(x2ini - Ngc * dx2uc, x2fin + Ngc * dx2uc, Nx2 + Ngc * 2 + 1)
+        self.fx1 = np.tile(fx1, (Nx2 + Ngc * 2, 1)).T
+        self.fx2 = np.tile(fx2, (Nx1 + Ngc * 2, 1))
+
+        # Cell centers
+        cx1 = np.linspace(x1ini - (Ngc - 0.5) * dx1uc, x1fin + (Ngc - 0.5) * dx1uc, Nx1 + Ngc * 2)
+        cx2 = np.linspace(x2ini - (Ngc - 0.5) * dx2uc, x2fin + (Ngc - 0.5) * dx2uc, Nx2 + Ngc * 2)
+        self.cx1 = np.tile(cx1, (Nx2 + Ngc * 2, 1)).T
+        self.cx2 = np.tile(cx2, (Nx1 + Ngc * 2, 1))
+
+        # Volumetric centroid in r: ∫r·r²dr / ∫r²dr = 3(r⁴₊−r⁴₋) / (4(r³₊−r³₋))
+        r_lo = self.fx1[:-1, :]
+        r_hi = self.fx1[1:,  :]
+        self.ax1 = 3.0 * (r_hi**4 - r_lo**4) / (4.0 * (r_hi**3 - r_lo**3))
+
+        # Volumetric centroid in θ: ∫θ·sinθ dθ / ∫sinθ dθ
+        # Antiderivative of θ sinθ is sinθ − θ cosθ.
+        th_lo = self.fx2[:, :-1]
+        th_hi = self.fx2[:, 1:]
+        num_ax2 = (np.sin(th_hi) - th_hi * np.cos(th_hi)) - \
+                  (np.sin(th_lo) - th_lo * np.cos(th_lo))
+        den_ax2 = np.cos(th_lo) - np.cos(th_hi)
+        den_ax2 = np.where(np.abs(den_ax2) > 1e-14, den_ax2, 1e-14)
+        self.ax2 = num_ax2 / den_ax2
+
+        # Face areas and cell volumes
+        for i in range(Nx1 + 1):
+            for j in range(Nx2):
+                # radial face area: 2π r² ∫sinθ dθ = 2π r² (cosθ_j − cosθ_{j+1})
+                self.fS1[i, j] = (2.0 * np.pi * fx1[i + Ngc]**2 *
+                                  (np.cos(fx2[j + Ngc]) - np.cos(fx2[j + Ngc + 1])))
+
+        for i in range(Nx1):
+            for j in range(Nx2 + 1):
+                # polar-angle face area: 2π sinθ ∫r dr = π sinθ (r²₊ − r²₋)
+                self.fS2[i, j] = (np.pi * np.sin(fx2[j + Ngc]) *
+                                  (fx1[i + 1 + Ngc]**2 - fx1[i + Ngc]**2))
+
+        for i in range(Nx1):
+            for j in range(Nx2):
+                # cell volume: 2π/3 (r³₊−r³₋)(cosθ_j−cosθ_{j+1})
+                self.cVol[i, j] = (2.0 * np.pi / 3.0 *
+                                   (fx1[i + 1 + Ngc]**3 - fx1[i + Ngc]**3) *
+                                   (np.cos(fx2[j + Ngc]) - np.cos(fx2[j + Ngc + 1])))
+
+        # fS3: area of the azimuthal (r-θ) face, used by CT MHD as a placeholder
+        for i in range(Nx1):
+            for j in range(Nx2):
+                self.fS3[i, j] = 0.5 * (fx1[i + 1 + Ngc]**2 - fx1[i + Ngc]**2) * dx2uc
+
+        # Grid edges (for CT MHD)
+        # edg1: radial edge length (dr) at each (real cell, θ-face) point
+        self.edg1[:, :] = self.dx1[Ngc:-Ngc, Ngc:Nx2 + Ngc + 1]
+        # edg2: polar-arc edge length (r dθ) at each (r-face, real cell) point
+        self.edg2[:, :] = (self.dx2[Ngc:Nx1 + Ngc + 1, Ngc:-Ngc] *
+                           self.fx1[Ngc:Nx1 + Ngc + 1, Ngc:-Ngc])
+        # edg3: azimuthal circumference (2π r sinθ) at each grid node
+        self.edg3[:, :] = (2.0 * np.pi *
+                           self.fx1[Ngc:Nx1 + Ngc + 1, Ngc:Nx2 + Ngc + 1] *
+                           np.sin(self.fx2[Ngc:Nx1 + Ngc + 1, Ngc:Nx2 + Ngc + 1]))
+
+        # Lamé coefficient: physical arc length per unit θ-coordinate is r
+        self.hx2 = self.cx1.copy()
+
