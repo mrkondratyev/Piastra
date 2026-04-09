@@ -66,29 +66,71 @@ def plot_setup(grid, var, time):
         ax.set_title('sol at time = ' + str(np.round(time, 4)))
         ax.set_xlabel('x')
         ax.set_ylabel('solution')
-        plt.close()  
-    
+        plt.close()
+
     elif (grid.Nx1 == 1):  # 1D in y
         fig, ax = plt.subplots()
         line, = ax.plot(grid.cx2[Ng, Ng:-Ng], var[Ng, Ng:-Ng])
         ax.set_title('sol at time = ' + str(np.round(time, 4)))
         ax.set_xlabel('y')
         ax.set_ylabel('solution')
-        plt.close()  
-        
-    else:  # 2D case
+        plt.close()
+
+    elif grid.geom == 'pol':  # 2D polar (R, φ) — map to x-y plane
+        fig, ax = plt.subplots()
+        Nx1, Nx2 = grid.Nx1, grid.Nx2
+        # Build vertex arrays from interior face coordinates (shape Nx1+1 x Nx2+1)
+        fr = grid.fx1[Ng:Nx1 + Ng + 1, Ng:Nx2 + Ng + 1]
+        fp = grid.fx2[Ng:Nx1 + Ng + 1, Ng:Nx2 + Ng + 1]
+        X  = fr * np.cos(fp)
+        Y  = fr * np.sin(fp)
+        varmin = np.min(var[Ng:-Ng, Ng:-Ng])
+        varmax = np.max(var[Ng:-Ng, Ng:-Ng])
+        im = ax.pcolormesh(X, Y, var[Ng:-Ng, Ng:-Ng],
+                           cmap='plasma', vmin=varmin, vmax=varmax,
+                           shading='flat')
+        ax.set_aspect('equal')
+        ax.set_title('solution at time = ' + str(np.round(time, 2)))
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        plt.colorbar(im, ax=ax)
+        plt.ion()
+        plt.show()
+
+    elif grid.geom == 'sph':  # 2D spherical-polar (r, θ) — meridional cross-section
+        fig, ax = plt.subplots()
+        Nx1, Nx2 = grid.Nx1, grid.Nx2
+        # Build vertex arrays from interior face coordinates (shape Nx1+1 x Nx2+1)
+        fr = grid.fx1[Ng:Nx1 + Ng + 1, Ng:Nx2 + Ng + 1]
+        ft = grid.fx2[Ng:Nx1 + Ng + 1, Ng:Nx2 + Ng + 1]
+        X  = fr * np.sin(ft)   # cylindrical R
+        Z  = fr * np.cos(ft)   # z-axis
+        varmin = np.min(var[Ng:-Ng, Ng:-Ng])
+        varmax = np.max(var[Ng:-Ng, Ng:-Ng])
+        im = ax.pcolormesh(X, Z, var[Ng:-Ng, Ng:-Ng],
+                           cmap='plasma', vmin=varmin, vmax=varmax,
+                           shading='flat')
+        ax.set_aspect('equal')
+        ax.set_title('solution at time = ' + str(np.round(time, 2)))
+        ax.set_xlabel('r sin θ')
+        ax.set_ylabel('r cos θ')
+        plt.colorbar(im, ax=ax)
+        plt.ion()
+        plt.show()
+
+    else:  # 2D Cartesian / cylindrical — imshow
         fig, ax = plt.subplots()
         varmin = np.min(var[Ng:-Ng, Ng:-Ng])
         varmax = np.max(var[Ng:-Ng, Ng:-Ng])
-        
-        im = ax.imshow(var[Ng:-Ng, Ng:-Ng].T, 
+
+        im = ax.imshow(var[Ng:-Ng, Ng:-Ng].T,
                        origin='lower',
                        extent=[grid.x1ini, grid.x1fin, grid.x2ini, grid.x2fin],
                        cmap='plasma',
                        vmin=varmin, vmax=varmax)
-            
+
         ax.set_title('solution at time = ' + str(np.round(time, 2)))
-        ax.set_xlabel('x1') 
+        ax.set_xlabel('x1')
         ax.set_ylabel('x2')
         cbar = plt.colorbar(im, ax=ax)
         plt.ion()
@@ -139,23 +181,29 @@ def plotting(grid, var, time, line, ax, fig, im):
     
     if (grid.Nx2 == 1):  # 1D in x
         line.set_data(grid.cx1[Ng:-Ng, Ng], var[Ng:-Ng, Ng])
-        ax.set_title('solution at time = '+ str(np.round(time, 4)))
-        ax.relim()
-        ax.autoscale_view()        
-                
-    elif (grid.Nx1 == 1):  # 1D in y
-        line.set_data(grid.cx2[Ng, Ng:-Ng], var[Ng, Ng:-Ng])
-        ax.set_title('solution at time = '+ str(np.round(time, 4)))
+        ax.set_title('solution at time = ' + str(np.round(time, 4)))
         ax.relim()
         ax.autoscale_view()
-            
-    else:  # 2D case
+
+    elif (grid.Nx1 == 1):  # 1D in y
+        line.set_data(grid.cx2[Ng, Ng:-Ng], var[Ng, Ng:-Ng])
+        ax.set_title('solution at time = ' + str(np.round(time, 4)))
+        ax.relim()
+        ax.autoscale_view()
+
+    elif grid.geom in ('pol', 'sph'):  # 2D curvilinear (pcolormesh)
         varmin = np.min(var[Ng:-Ng, Ng:-Ng])
         varmax = np.max(var[Ng:-Ng, Ng:-Ng])
-        
-        im.set_data(var[Ng:-Ng, Ng:-Ng].T)  
+        im.set_array(var[Ng:-Ng, Ng:-Ng].ravel())
         im.set_clim(vmin=varmin, vmax=varmax)
-        ax.set_title('solution at time = '+ str(np.round(time, 4)))
-        
+        ax.set_title('solution at time = ' + str(np.round(time, 4)))
+
+    else:  # 2D Cartesian / cylindrical (imshow)
+        varmin = np.min(var[Ng:-Ng, Ng:-Ng])
+        varmax = np.max(var[Ng:-Ng, Ng:-Ng])
+        im.set_data(var[Ng:-Ng, Ng:-Ng].T)
+        im.set_clim(vmin=varmin, vmax=varmax)
+        ax.set_title('solution at time = ' + str(np.round(time, 4)))
+
     clear_output(wait=True)
     display(fig)
