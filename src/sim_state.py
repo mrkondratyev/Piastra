@@ -24,9 +24,7 @@ and source terms are interior-only arrays of shape ``(Nx1, Nx2)``.
 Notes
 -----
 - Magnetic field arrays (bfi*, fb*, bcon*, divB) are allocated for
-  modes 'MHD' and 'rMHD'.  They are also allocated in 'HD' mode to
-  allow unified array access in solver dispatch loops, but are not
-  used by the HD physics routines.
+  modes 'MHD' and 'rMHD'. 
 - This module does not implement any solvers; it is pure storage.
   External solver routines access the arrays consistently regardless
   of the mode.
@@ -136,7 +134,7 @@ class SimState:
             self.F2 = np.zeros(shape, dtype=np.double)        
 
         # Magnetic fields
-        if par.mode in ('HD', 'MHD', 'rMHD'):
+        if par.mode in ('MHD', 'rMHD'):
             # Primitive variables (with ghost cells)
             self.bfi1 = np.zeros(grid.grid_shape, dtype=np.double)
             self.bfi2 = np.zeros(grid.grid_shape, dtype=np.double)
