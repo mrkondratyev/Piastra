@@ -269,9 +269,13 @@ def gradient(grid, f):
 
     Coordinate conventions
     ----------------------
-    - Cartesian  (cart): ∇f = (∂f/∂x, ∂f/∂y)
-    - Cylindrical (cyl): ∇f = (∂f/∂R, ∂f/∂Z)          [h_R=1, h_Z=1]
-    - Polar       (pol): ∇f = (∂f/∂R, (1/R) ∂f/∂φ)     [h_R=1, h_φ=R]
+    - Cartesian  (cart): ∇f = (∂f/∂x, ∂f/∂y)               [hx2 = 1]
+    - Cylindrical (cyl): ∇f = (∂f/∂R, ∂f/∂Z)               [hx2 = 1]
+    - Polar       (pol): ∇f = (∂f/∂R, (1/R) ∂f/∂φ)          [hx2 = R]
+    - Spherical   (sph): ∇f = (∂f/∂r, (1/r) ∂f/∂θ)          [hx2 = r]
+
+    The metric scale factor ``grid.hx2`` (set for every geometry by the
+    Grid class) removes the need for any geometry branching here.
 
     Parameters
     ----------
@@ -290,11 +294,13 @@ def gradient(grid, f):
     g1 = _ddx1(grid, f) if grid.Nx1 > 1 else np.zeros((grid.Nx1, grid.Nx2))
     g2 = _ddx2(grid, f) if grid.Nx2 > 1 else np.zeros((grid.Nx1, grid.Nx2))
 
-    # Polar: x2 = φ, h2 = R  →  (∇f)_φ = (1/R) ∂f/∂φ
-    if grid.geom == 'pol' and grid.Nx2 > 1:
+    # Divide by hx2 to convert the coordinate x2-gradient to the physical
+    # gradient component.  For cart/cyl hx2 == 1 (no-op); for pol/sph
+    # hx2 == cx1 (= R or r), applying the metric factor in a single step.
+    if grid.Nx2 > 1:
         Ngc = grid.Ngc
-        R = grid.cx1[Ngc:-Ngc, Ngc:-Ngc]
-        g2 /= np.where(np.abs(R) > 1e-30, R, 1e-30)
+        h2  = grid.hx2[Ngc:-Ngc, Ngc:-Ngc]
+        g2 /= np.where(np.abs(h2) > 1e-30, h2, 1e-30)
 
     return g1, g2
 
