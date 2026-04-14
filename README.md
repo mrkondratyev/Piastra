@@ -7,7 +7,7 @@
 - Special-relativistic hydrodynamics (rHD)
 - Ideal Magnetohydrodynamics (MHD)
 - Special-relativistic Magnetohydrodynamics (rMHD)
-- Thermal diffusion (explicit and RKL2 super time-stepping)
+- Thermal diffusion (via explicit and RKL2 super time-stepping)
   
 within a **finite-volume framework**. The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.
 
@@ -21,7 +21,8 @@ within a **finite-volume framework**. The code is written in **Python** with ext
   - LLF (Rusanov, 1961)  
   - HLL (Harten–Lax–van Leer, 1983)  
   - HLLC (Toro et al., 1994)  
-  - Roe (Roe, 1981)  
+  - Roe (Roe, 1981)
+  - Exact Riemann (Godunov, 1959)  
 - **Special-relativistic HD solvers** (rHD):
   - LLF, HLL, HLLC (Mignone & Bodo, 2005)
   - 4-velocity reconstruction (guarantees |v| < 1 at cell faces)
@@ -161,7 +162,7 @@ Diffusion: 2D Gaussian pulse, crossed Gaussian ridges, annular ring, 1D Gaussian
 ## Additional notes
 
 The folder **notebooks** contains lightweight solvers in separate independent ipynb-files (with comments in Russian): 
-2D shallow water simulator, 1D hydrodynamics, 1D advection solver, and 1D diffusion equation. My lecture notes are provided as well (they are also in Russian, however. I plan to rewrite them soon).
+2D shallow water simulator, 1D hydrodynamics, 1D advection solver, and 1D diffusion equation. My lecture notes are provided as well in **pdf** folder (they are also in Russian, however. I plan to rewrite them soon).
 
 ---
 ---
@@ -178,7 +179,7 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
 - Идеальной магнитной гидродинамики (MHD)
 - Специально-релятивистской магнитной гидродинамики (rMHD)
 - Теплопроводности (явная схема и RKL2 super time-stepping)
-в рамках **метода конечных объемов Годуновского типа** с **TVD методами Рунге–Кутты** для интегрирования по времени и **ограниченной кусочно-полиномиальной реконструкцией высокого порядка по пространству**. Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
+в рамках **метода конечных объемов**. Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
 
 ---
 
@@ -190,11 +191,12 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
   - LLF (Русанов, 1961)  
   - HLL (Хартен–Лакс–ван Леер, 1983)  
   - HLLC (Toro et al., 1994)  
-  - Roe (Roe, 1981)  
+  - Roe (Roe, 1981)
+  - Точное решение задачи Римана (метод Годунова, 1959)  
 - **Решатели специально-релятивистской гидродинамики** (rHD):
   - LLF, HLL, HLLC (Mignone & Bodo, 2005)
   - Реконструкция 4-скорости (гарантирует |v| < 1 на гранях ячеек)
-  - Обращение консервативных переменных методом Ньютона–Рафсона
+  - Обращение консервативных переменных методом Ньютона
 - **Решатели МГД**:
   - LLF, HLL, HLLD (Miyoshi & Kusano, 2005)
   - Контроль дивергенции:  
@@ -202,14 +204,14 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
     - Constrained Transport (Flux-CT; Balsara & Spicer 1999)  
 - **Решатели специально-релятивистской МГД** (rMHD):
   - LLF, HLL
-  - Реконструкция 4-скорости для гарантированно досветовых состояний на гранях ячеек
-  - Обращение консервативных переменных методом Ньютона–Рафсона (Mignone & McKinney 2007)
-  - Constrained Transport (Flux-CT) для безывергентной эволюции магнитного поля
+  - Реконструкция 4-скорости (гарантирует |v| < 1 на гранях ячеек)
+  - Обращение консервативных переменных методом Ньютона (Mignone & McKinney 2007)
+  - Constrained Transport (Flux-CT) для бездивергентной эволюции магнитного поля
 - **Теплопроводность**:
   - Явная схема Эйлера
   - RKL2 super time-stepping (Meyer, Balsara & Aslam 2014) с настраиваемым числом стадий
   - Геометрически корректный лапласиан МКО (декартова, цилиндрическая, полярная геометрии)
-- **Перенос**: Методы Рунге-Кутты с точным решением Римана или схема Лакса–Вендроффа  
+- **Адвективный перенос**: Методы Рунге-Кутты с точным решением задачи Римана или схема Лакса–Вендроффа  
 - **Методы реконструкции**:  
   - PCM (кусочно-постоянная)  
   - PLM (кусочно-линейная с ограничителем наклона, 2-й порядок)  
@@ -220,7 +222,7 @@ The folder **notebooks** contains lightweight solvers in separate independent ip
 - **Интегрирование по времени**:  
   - RK1 (Эйлер)  
   - RK2, RK3 (TVD Runge–Kutta; Shu & Osher 1988)  
-- **Призрачные ячейки (ghost cells)**: подбираются автоматически (2 для PLM/PCM, 3 для PPM/WENO/MP5)  
+- **Фиктивные ячейки (ghost cells)**: подбираются автоматически (2 для PLM/PCM, 3 для PPM/WENO/MP5)  
 - **Управление симуляцией** через класс `Parameters` с установкой значений по умолчанию и проверкой корректности  
 - **Модульная структура**:
   - `parameters.py`: центральный контейнер параметров  
@@ -297,13 +299,13 @@ simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.den
 
 Адвекция: smooth/discontinuous 1D/2D тесты
 
-Газовая динамика: задача Зода, Но, сильный удар, Шу–Ошер, Эйнфельдт, Кельвин–Гельмгольц, Рэлей–Тейлор, взрывные волны Седова, двойное отражение Маха, сжатие, вихрь Грешо, удар–облако, диск с пробелом, цилиндрическая струя
+Газовая динамика:  ударные трубы Sod, Noh, strong shocks, Shu–Osher, Einfeldt; неустойчивости Кельвина-Гельмгольца, Рэлея-Тейлора; сильный взрыв (Седов); double Mach reflection, implosion, Gresho vortex, shock–cloud, gap-opening disk, cylindrical jet
 
-Релятивистская гидродинамика: задачи Римана Mignone & Bodo (2005) (RP1–RP5), 2D задача Римана, релятивистская неустойчивость Рэлея–Тейлора, возмущённый удар, нагрев ударной волной, релятивистская струя
+Релятивистская гидродинамика: задачи Римана из Mignone & Bodo (2005) (RP1–RP5), 2D задача Римана, релятивистская неустойчивость Рэлея–Тейлора, возмущённая УВ, нагрев ударной волной, релятивистская струя
 
-МГД: Брио–Ву, задача Тота, Рю–Джонс, волна Альвена, взрывная волна, вихрь Оршага–Танга, ротор, токовый лист, петля поля, диск, удар–облако
+МГД: Брио–Ву, задача Тота, Рю–Джонс, волна Альвена, взрывная волна, вихрь Орзага–Танга, ротор, токовый слой, петля поля, аккреционный диск, shock–cloud
 
-Релятивистская МГД: Брио–Ву 1D (rMHD), задачи Римана Mignone & Bodo (2006) (RP2–RP4), 2D взрывная волна, 2D релятивистский ротор
+Релятивистская МГД: Брио–Ву 1D (rMHD), задачи Римана из Mignone & Bodo (2006) (RP2–RP4), 2D взрывная волна, 2D релятивистский ротор
 
 Диффузия: 2D гауссов импульс, перекрёстные гауссовы гребни, кольцевой импульс, 1D гауссов импульс, 1D ступенька, 1D синус, цилиндрическая 2D
 
@@ -333,4 +335,4 @@ simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.den
 
 В папке **notebooks** представлены облегченнные решатели в отдельных ipynb-файлах с комментариями на русском: 
 2D симулятора уравнений мелкой воды, 1D газовая динамика, 1D решатель адвекции, и 1D модель диффузии. 
-Также в корневой папке лежат мои лекционные записи лекции для участников Третьей Школы НЦФМ "Экспериментальная и Лабораторная Астрофизика и Геофизика".
+Также в папке **pdf** лежат мои лекционные записи лекции для участников Третьей Школы НЦФМ "Экспериментальная и Лабораторная Астрофизика и Геофизика".
