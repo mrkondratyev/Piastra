@@ -13,6 +13,7 @@ hydrodynamics. Implemented solvers include:
 - HLL   : Harten-Lax-van Leer (1983)
 - HLLC  : HLL with contact restoration (Toro et al., 1994)
 - Roe   : Linearized Roe solver (Roe, 1981)
+- Exact : Exact Riemann solver / Godunov flux (Godunov, 1959; Toro, Ch. 4)
 
 All solvers assume an ideal gas equation of state with a gamma-law closure.
 
@@ -22,6 +23,8 @@ References
 - Toro, Spruce & Speares (1994), "Restoration of the contact surface in the HLL-Riemann solver"
 - Roe, P. L. (1981), "Approximate Riemann solvers, parameter vectors, and difference schemes"
 - Rusanov, V. V. (1961), "Calculation of interaction of non-steady shock waves with obstacles"
+- Godunov, S. K. (1959), "A difference method for the numerical computation of discontinuous
+  solutions of the equations of hydrodynamics"
 
 Author
 ------
@@ -30,6 +33,7 @@ mrkondratyev
 
 import numpy as np
 from src.common.boundaries import apply_bc_scalar, apply_bc_vector
+from src.models.HD.riemann_exact import exact_riemann_godunov_state
 
 
 def prim2cons_nr_hydro(dens, vel1, vel2, vel3, pres, eos):
@@ -166,7 +170,7 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
    eos : object
        Equation of state object with attribute `GAMMA`.
    flux_type : str
-       Type of flux solver: 'LLF', 'HLL', 'HLLC', 'Roe'.
+       Type of flux solver: 'LLF', 'HLL', 'HLLC', 'Roe', 'Exact'.
    dim : int
        Coordinate direction (1 or 2). Other directions obtained by rotation.
 
@@ -193,7 +197,7 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
     momy_L = rhol * vyl
     momz_L = rhol * vzl
     etot_L = pl / (eos.GAMMA - 1.0) + rhol * vxl * vxl / 2.0 + \
-        rhol * vyl * vyl / 2.0 + rhor * vzl * vzl / 2.0
+        rhol * vyl * vyl / 2.0 + rhol * vzl * vzl / 2.0
     
     #right conservative state
     mass_R = rhor
@@ -320,72 +324,86 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
         #Roe-averaged density
         rhos = np.sqrt(rhol*rhor)
         
+        #square roots of L/R densities 
+        sqrt_rhol = np.sqrt(rhol)
+        sqrt_rhor = np.sqrt(rhor)
+        
         #Roe-averaged velocity
-        vxs = (np.sqrt(rhol)*vxl + np.sqrt(rhor)*vxr)/(np.sqrt(rhol) + np.sqrt(rhor))
-        vys = (np.sqrt(rhol)*vyl + np.sqrt(rhor)*vyr)/(np.sqrt(rhol) + np.sqrt(rhor))
-        vzs = (np.sqrt(rhol)*vzl + np.sqrt(rhor)*vzr)/(np.sqrt(rhol) + np.sqrt(rhor))
+        vxs = (sqrt_rhol*vxl + sqrt_rhor*vxr)/(sqrt_rhol + sqrt_rhor)
+        vys = (sqrt_rhol*vyl + sqrt_rhor*vyr)/(sqrt_rhol + sqrt_rhor)
+        vzs = (sqrt_rhol*vzl + sqrt_rhor*vzr)/(sqrt_rhol + sqrt_rhor)
         
         #Roe-averaged enthalpy
-        ents = (np.sqrt(rhol)*entl + np.sqrt(rhor)*entr)/(np.sqrt(rhol) + np.sqrt(rhor))
+        ents = (sqrt_rhol*entl + sqrt_rhor*entr)/(sqrt_rhol + sqrt_rhor)
         
         #Roe-averaged sound speed 
         css = np.sqrt( (eos.GAMMA - 1.0)*(ents - (vxs**2 + vys**2 + vzs**2)/2.0) )
-        #ALTERNATIIVELY, WE CAN USE THE FOLLOWING PRESCRIPTION FOR SOUND SPEED
-        #css = np.sqrt( (np.sqrt(rhol)*csl**2 + np.sqrt(rhor)*csr**2)/(np.sqrt(rhol) + np.sqrt(rhor)) + \
-        #(eos.GAMMA - 1.0)*rhos/(np.sqrt(rhol) + np.sqrt(rhor))**2 * ((vxr-vxl)**2 + (vyr-vyl)**2 + (vzr-vzl)**2)/2.0 ) 
+        
+        # Alternatively, we can use the following prescription for css, 
+        # which does not use substraction of (possibly) two large numbers
+        #css = np.sqrt( (sqrt_rhol*csl**2 + \
+            #sqrt_rhor*csr**2)/(sqrt_rhol + sqrt_rhor) + \
+            #(eos.GAMMA - 1.0)*rhos/(sqrt_rhol + sqrt_rhor)**2 * \
+            #((vxr-vxl)**2 + (vyr-vyl)**2 + (vzr-vzl)**2)/2.0 ) 
         
         #arrays of right eugenvectors
-        rv = np.zeros((5,5,*rhos.shape))
+        rv = np.zeros((5, 5, *rhos.shape))
+        
+        #v - cs 
         rv[0,0,:,:] = np.ones_like(rhos)
         rv[0,1,:,:] = vxs - css
         rv[0,2,:,:] = vys
         rv[0,3,:,:] = vzs
         rv[0,4,:,:] = ents - vxs*css
         
+        # v (1)
         rv[1,0,:,:] = 2.0*np.ones_like(rhos)
         rv[1,1,:,:] = 2.0*vxs
         rv[1,2,:,:] = 2.0*vys
         rv[1,3,:,:] = 2.0*vzs
         rv[1,4,:,:] = vxs**2 + vys**2 + vzs**2
         
+        # v (2)
         rv[2,0,:,:] = np.zeros_like(rhos)
         rv[2,1,:,:] = np.zeros_like(rhos)
         rv[2,2,:,:] = 2.0*css
         rv[2,3,:,:] = np.zeros_like(rhos)
         rv[2,4,:,:] = 2.0*css*vys
         
+        # v (3)
         rv[3,0,:,:] = np.zeros_like(rhos)
         rv[3,1,:,:] = np.zeros_like(rhos)
         rv[3,2,:,:] = np.zeros_like(rhos)
         rv[3,3,:,:] = 2.0*css
         rv[3,4,:,:] = 2.0*css*vzs
         
+        # v + cs 
         rv[4,0,:,:] = np.ones_like(rhos)
         rv[4,1,:,:] = vxs + css
         rv[4,2,:,:] = vys
         rv[4,3,:,:] = vzs
         rv[4,4,:,:] = ents + vxs*css
         
-        #array of eugenvalues
+        #array of absolute value of eugenvalues
         eugen = np.zeros((5, *rhos.shape))
-        eugen[0,:,:] = np.abs(vxs - css)
+        eugen[0,:,:] = np.abs(np.minimum(vxs - css, vxl - csl)) # entropy fix
         eugen[1,:,:] = np.abs(vxs) 
         eugen[2,:,:] = np.abs(vxs) 
         eugen[3,:,:] = np.abs(vxs) 
-        eugen[4,:,:] = np.abs(vxs + css)
+        eugen[4,:,:] = np.abs(np.maximum(vxs + css, vxr + csr)) # entropy fix 
         
         #array of left eugenvectors residuals
         dS = np.zeros((5, *rhos.shape))
         dS[0,:,:] = ( (pr - pl) - rhos*css*(vxr - vxl) )/2.0/css**2
-        dS[1,:,:] = ( css**2*(rhor - rhos) - (pr - pl) )/2.0/css**2
-        dS[2,:,:] = rhos*css*(vyr - vyl)/2.0/css**2
-        dS[3,:,:] = rhos*css*(vzr - vzl)/2.0/css**2
+        dS[1,:,:] = ( css**2*(rhor - rhol) - (pr - pl) )/2.0/css**2
+        dS[2,:,:] = rhos*(vyr - vyl)/2.0/css
+        dS[3,:,:] = rhos*(vzr - vzl)/2.0/css
         dS[4,:,:] = ( (pr - pl) + rhos*css*(vxr - vxl) )/2.0/css**2
         
         #array of flux residuals
         dF = np.zeros((5, *rhos.shape))
         
-        # calculation of dF
+        # calculation of dF (basically, it is out numerical diffusion, which stabilizes the method)
         dF = np.sum(eugen[:, np.newaxis, :, :] * rv[:, :, :, :] * dS[:, np.newaxis, :, :], axis=0)
 
         #final values of conservative fluxes, obtained from linearized Riemann problem solution
@@ -404,10 +422,29 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
         #final energy flux
         Fetot = (Fetot_L + Fetot_R)/2.0 - dF[4,:,:]/2.0
 
+    elif flux_type == 'Exact':
+
+        #solve exact Riemann problem and sample Godunov state at x/t = 0
+        dens0, vel0, pres0, ustar = exact_riemann_godunov_state(
+            rhol, rhor, vxl, vxr, pl, pr, eos.GAMMA)
+
+        #tangential velocities from the upwind side of the contact wave
+        vy0 = np.where(ustar > 0.0, vyl, vyr)
+        vz0 = np.where(ustar > 0.0, vzl, vzr)
+
+        #compute Godunov fluxes from the exact sampled state
+        etot0 = pres0 / (eos.GAMMA - 1.0) + \
+            0.5 * dens0 * (vel0**2 + vy0**2 + vz0**2)
+        Fmass = dens0 * vel0
+        Fmomx = dens0 * vel0 * vel0 + pres0
+        Fmomy = dens0 * vy0 * vel0
+        Fmomz = dens0 * vz0 * vel0
+        Fetot = vel0 * (etot0 + pres0)
+
     else:
 
         #flux_type is incorrect
-        raise ValueError(f"Unknown flux_type: {flux_type}. Expected one of ['LLF', 'HLL', 'HLLC', 'Roe'].")
+        raise ValueError(f"Unknown flux_type: {flux_type}. Expected one of ['LLF', 'HLL', 'HLLC', 'Roe', 'Exact'].")
     
     
     #check in what direction we solve the problem
