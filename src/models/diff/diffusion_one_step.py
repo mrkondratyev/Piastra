@@ -89,6 +89,7 @@ import numpy as np
 import copy
 
 from src.common.boundaries import apply_bc_scalar
+from src.grid.grid_misc import *
 
 
 # ============================================================================
@@ -231,6 +232,7 @@ def _apply_bc_diff(g, diff, par):
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[1], axis=2, side='inner')
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[2], axis=1, side='outer')
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[3], axis=2, side='outer')
+    
     return diff
 
 
@@ -238,7 +240,7 @@ def _apply_bc_diff(g, diff, par):
 #   Spatial operator  L(T) = ∇·(κ ∇T)
 # ============================================================================
 
-def _face_kappa(kappa, Ngc, Nx1r, Nx2r, direction):
+def _face_kappa(kappa, Ngc, Nx1r, Nx2r):
     """
     Compute the arithmetic-mean face-centred diffusivity.
 
@@ -247,23 +249,19 @@ def _face_kappa(kappa, Ngc, Nx1r, Nx2r, direction):
     kappa     : float or ndarray of shape (Nx1+2*Ngc, Nx2+2*Ngc)
     Ngc       : int
     Nx1r, Nx2r: int  (= Nx1+Ngc, Nx2+Ngc)
-    direction : int  (1 → x1 faces, 2 → x2 faces)
 
     Returns
     -------
-    kf : float or ndarray of the appropriate face shape
+    kf1, kf2 : float or ndarray of the appropriate face shape
+        (either scalars or face arrays)
     """
     if np.isscalar(kappa):
-        return kappa
+        return kappa, kappa
 
-    if direction == 1:
-        # shape (Nx1+1, Nx2)
-        return 0.5 * (kappa[Ngc:Nx1r + 1, Ngc:Nx2r] +
-                      kappa[Ngc - 1:Nx1r,  Ngc:Nx2r])
-    else:
-        # shape (Nx1, Nx2+1)
-        return 0.5 * (kappa[Ngc:Nx1r, Ngc:Nx2r + 1] +
-                      kappa[Ngc:Nx1r, Ngc - 1:Nx2r])
+    kf1 = 0.5 * (kappa[Ngc:Nx1r+1, Ngc:Nx2r] + kappa[Ngc-1:Nx1r, Ngc:Nx2r])
+    kf2 = 0.5 * (kappa[Ngc:Nx1r, Ngc:Nx2r+1] + kappa[Ngc:Nx1r, Ngc-1:Nx2r])
+    
+    return kf1, kf2
 
 
 def _spatial_operator_diff(g, diff):
@@ -291,28 +289,19 @@ def _spatial_operator_diff(g, diff):
     LT : ndarray, shape (Nx1, Nx2)
         Rate-of-change contribution from diffusion on each interior cell.
     """
-    Ngc  = g.Ngc
-    Nx1r = g.Nx1r   # = Nx1 + Ngc
-    Nx2r = g.Nx2r   # = Nx2 + Ngc
-    T    = diff.T
+    Ngc  = g.Ngc; Nx1r = g.Nx1r; Nx2r = g.Nx2r # Nx1r=Nx1+Ngc, same for x2
 
     # Face-centred diffusivities
-    kf1 = _face_kappa(diff.kappa, Ngc, Nx1r, Nx2r, direction=1)  # (Nx1+1, Nx2)
-    kf2 = _face_kappa(diff.kappa, Ngc, Nx1r, Nx2r, direction=2)  # (Nx1, Nx2+1)
+    kf1, kf2 = _face_kappa(diff.kappa, Ngc, Nx1r, Nx2r)
+    
+    #temperature gradient at faces with dimensions (Nx1+1,Nx2) and (Nx1,Nx2+1)
+    g1, g2 = face_gradient(g, diff.T)
 
     # Diffusive fluxes (gradient × face diffusivity)
-    # x1: Nx1+1 faces for Nx2 real cells
-    flux1 = kf1 * (T[Ngc:Nx1r + 1, Ngc:Nx2r] -
-                   T[Ngc - 1:Nx1r,  Ngc:Nx2r]) / g.dx1uc   # (Nx1+1, Nx2)
+    flux1 = kf1 * g1; flux2 = kf2 * g2
 
-    # x2: Nx1 real cells by Nx2+1 faces
-    flux2 = kf2 * (T[Ngc:Nx1r, Ngc:Nx2r + 1] -
-                   T[Ngc:Nx1r, Ngc - 1:Nx2r]) / g.dx2uc   # (Nx1, Nx2+1)
-
-    # Finite-volume divergence
-    LT = ((flux1[1:, :] * g.fS1[1:, :] - flux1[:-1, :] * g.fS1[:-1, :]) +
-          (flux2[:, 1:] * g.fS2[:, 1:] - flux2[:, :-1] * g.fS2[:, :-1])
-          ) / g.cVol                                         # (Nx1, Nx2)
+    # Finite-volume divergence 
+    LT = div_face_vector(g, flux1, flux2)
 
     return LT
 
