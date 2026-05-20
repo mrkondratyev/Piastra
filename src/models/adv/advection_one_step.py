@@ -19,7 +19,7 @@ simulations of scalar or vector fields.
 
 Attributes
 ----------
-grid : object
+g : object
     Grid object containing domain size, spacing, face areas, cell volumes, and ghost cells.
 adv : object
     Advected state object containing:
@@ -44,6 +44,7 @@ Example usage
 import numpy as np
 import copy
 from src.common.high_order_rec import VarReconstruct
+from src.common.boundaries import apply_bc_scalar
 
 
 class Advection2D:
@@ -136,6 +137,7 @@ def oneStep_advection_RK(g, adv, par, dt):
     - Predictor-corrector logic is used for RK2 and RK3.
     - Lax-Wendroff flux is treated as a special case without RK iterations.
     """
+    
     Ngc = g.Ngc
     adv_h = copy.deepcopy(adv)
 
@@ -150,16 +152,30 @@ def oneStep_advection_RK(g, adv, par, dt):
     
     #Runge-Kutta multistage approach
     if par.RK_order == 'RK1':
+        
         adv.dens = adv_h.dens
+        
     elif par.RK_order == 'RK2':
+        
         Res = flux_adv(g, adv_h, par, dt)
-        adv.dens[Ngc:-Ngc, Ngc:-Ngc] = (adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 2.0 - dt * Res / 2.0
+        adv.dens[Ngc:-Ngc, Ngc:-Ngc] = \
+            (1.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
+             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 2.0 - 1.0 * dt * Res / 2.0
+    
     elif par.RK_order == 'RK3':
+        
         Res = flux_adv(g, adv_h, par, dt)
-        adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] = (adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + 3.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 4.0 - dt * Res / 4.0
+        adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] = \
+            (1.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
+             3.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 4.0 - 1.0 * dt * Res / 4.0
+        
         Res = flux_adv(g, adv_h, par, dt)
-        adv.dens[Ngc:-Ngc, Ngc:-Ngc] = (2.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 3.0 - 2.0 * dt * Res / 3.0
+        adv.dens[Ngc:-Ngc, Ngc:-Ngc] = \
+            (2.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
+             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 3.0 - 2.0 * dt * Res / 3.0
+    
     else:
+        
         raise ValueError("Wrong RK_order: choose 'RK1', 'RK2', or 'RK3'.")
 
     return adv
@@ -198,11 +214,10 @@ def CFLcondition_adv(g, adv, CFL):
     #return CFL * min(dt1, dt2)
     
     #SECOND APPROACH 
-    inv_dt = np.max(np.abs(adv.vel1)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
-        np.abs(adv.vel2)/g.dx2[Ngc:-Ngc, Ngc:-Ngc])
+    inv_dt = np.max(np.abs(adv.vel1) / g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
+        np.abs(adv.vel2) / g.dx2[Ngc:-Ngc, Ngc:-Ngc])
     
     return CFL / inv_dt 
-
 
 
 
@@ -241,45 +256,53 @@ def flux_adv(g, adv, par, dt):
     Nx1r = g.Nx1 + Ngc
     Nx2r = g.Nx2 + Ngc
 
-    # Apply periodic boundary conditions
-    for i in range(Ngc):
-        adv.dens[i, :] = adv.dens[Nx1r - Ngc + i, :]
-        adv.dens[Nx1r + i, :] = adv.dens[Ngc + i, :]
-        adv.dens[:, i] = adv.dens[:, Nx2r - Ngc + i]
-        adv.dens[:, Nx2r + i] = adv.dens[:, Ngc + i]
+    # Apply boundary conditions
+    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[0], axis=1, side='inner')
+    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[1], axis=2, side='inner')
+    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[2], axis=1, side='outer')
+    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[3], axis=2, side='outer')
 
     Res = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
 
     if par.flux_type == 'adv':
         if g.Nx1 > 1:
+            #piecewise polynomial reconstruction
             L, R = VarReconstruct(adv.dens, g, par.rec_type, 1)
+            #exact solution of the Riemann problem for advection
             flux = adv.vel1 * (L + R) / 2.0 - np.abs(adv.vel1) * (R - L) / 2.0
+            #conservative residual update
             Res = (flux[1:, :]*g.fS1[1:, :] - flux[:-1, :]*g.fS1[:-1, :]) / g.cVol[:, :]
 
         if g.Nx2 > 1:
+            #piecewise polynomial reconstruction
             L, R = VarReconstruct(adv.dens, g, par.rec_type, 2)
+            #exact solution of the Riemann problem for advection
             flux = adv.vel2 * (L + R) / 2.0 - np.abs(adv.vel2) * (R - L) / 2.0
             Res += (flux[:, 1:]*g.fS2[:, 1:] - flux[:, :-1]*g.fS2[:, :-1]) / g.cVol[:, :]
 
     elif par.flux_type == 'LW':
+        
+        if (g.geom != 'cart'): raise ValueError("'LW' for advection works only for CARTESIAN grids!") 
+        
         # Lax-Wendroff flux in x1
         if g.Nx1 > 1:
-            flux = adv.vel1 * (adv.dens[Ngc - 1:Nx1r, Ngc:-Ngc] + adv.dens[Ngc:Nx1r + 1, Ngc:-Ngc]) / 2.0 \
+            flux = adv.vel1 * (adv.dens[Ngc-1:Nx1r, Ngc:-Ngc] + adv.dens[Ngc:Nx1r+1, Ngc:-Ngc]) / 2.0 \
                    + adv.vel1 * (adv.vel1 * dt / g.dx1[Ngc:-Ngc, Ngc:-Ngc]) * \
-                   (adv.dens[Ngc - 1:Nx1r, Ngc:-Ngc] - adv.dens[Ngc:Nx1r + 1, Ngc:-Ngc]) / 2.0
+                   (adv.dens[Ngc-1:Nx1r, Ngc:-Ngc] - adv.dens[Ngc:Nx1r+1, Ngc:-Ngc]) / 2.0
             Res = (flux[1:, :] * g.fS1[1:, :] - flux[:-1, :] * g.fS1[:-1, :]) / g.cVol[:, :]
 
         # Lax-Wendroff flux in x2
         if g.Nx2 > 1:
-            flux = adv.vel2 * (adv.dens[Ngc:-Ngc, Ngc - 1:Nx2r] + adv.dens[Ngc:-Ngc, Ngc:Nx2r + 1]) / 2.0 \
+            flux = adv.vel2 * (adv.dens[Ngc:-Ngc, Ngc-1:Nx2r] + adv.dens[Ngc:-Ngc, Ngc:Nx2r+1]) / 2.0 \
                    + adv.vel2 * (adv.vel2 * dt / g.dx2[Ngc:-Ngc, Ngc:-Ngc]) * \
-                   (adv.dens[Ngc:-Ngc, Ngc - 1:Nx2r] - adv.dens[Ngc:-Ngc, Ngc:Nx2r + 1]) / 2.0
+                   (adv.dens[Ngc:-Ngc, Ngc - 1:Nx2r] - adv.dens[Ngc:-Ngc, Ngc:Nx2r+1]) / 2.0
             Res += (flux[:, 1:] * g.fS2[:, 1:] - flux[:, :-1] * g.fS2[:, :-1]) / g.cVol[:, :]
 
         # Multi-dimensional antidiffusion correction
-        Res -= dt * adv.vel1 * adv.vel2 * (
-                adv.dens[Ngc - 1:Nx1r - 1, Ngc - 1:Nx2r - 1] - adv.dens[Ngc - 1:Nx1r - 1, Ngc + 1:Nx2r + 1]
-                - adv.dens[Ngc + 1:Nx1r + 1, Ngc - 1:Nx2r - 1] + adv.dens[Ngc + 1:Nx1r + 1, Ngc + 1:Nx2r + 1]
-        ) / 4.0 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] / g.dx2[Ngc:-Ngc, Ngc:-Ngc]
+        if (g.Nx1 > 1 & g.Nx2 > 1):
+            Res -= dt * adv.vel1 * adv.vel2 * (
+                adv.dens[Ngc-1:Nx1r-1, Ngc-1:Nx2r-1] - adv.dens[Ngc-1:Nx1r-1, Ngc+1:Nx2r+1]
+                - adv.dens[Ngc+1:Nx1r+1, Ngc-1:Nx2r-1] + adv.dens[Ngc+1:Nx1r+1, Ngc+1:Nx2r+1]
+                ) / 4.0 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] / g.dx2[Ngc:-Ngc, Ngc:-Ngc]
 
     return Res
