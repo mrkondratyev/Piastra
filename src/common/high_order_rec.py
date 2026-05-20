@@ -67,7 +67,7 @@ _LEG_SHIFT = 1.0 / 6.0
 
 # ─── Public interface ─────────────────────────────────────────────────────────
 
-def VarReconstruct(var, grid, rec_type, dim):
+def VarReconstruct(var, grid, rec_type, dim, limiter_type=None):
     """
     High-order reconstruction of a fluid variable for use in finite-volume schemes.
     This routine reconstructs the state variable at the **faces of each cell** in a desired dimension
@@ -88,6 +88,9 @@ def VarReconstruct(var, grid, rec_type, dim):
         - 'PPM'   : Fifth-order PPM (Mignone 2014)
         - 'MP5'   : Fifth-order MP5
     dim : int
+    
+    limiter_type : str, optional
+        PLM slope limiter ('VL', 'MM', 'MC', 'KOR'). If None, uses 'VL' (default).
         Dimension along which to perform the reconstruction (1 or 2).
     
     Returns
@@ -108,7 +111,7 @@ def VarReconstruct(var, grid, rec_type, dim):
         return var_rec_L, var_rec_R
 
     elif rec_type == 'PLM':
-        return rec_PLM(grid, var, dim)
+        return rec_PLM(grid, var, dim, limiter_type=None)
 
     elif rec_type == 'WENO':
         Nr = grid.Nx1r if dim == 1 else grid.Nx2r
@@ -135,7 +138,7 @@ def VarReconstruct(var, grid, rec_type, dim):
 
 # ─── PLM reconstruction ──────────────────────────────────────────────────────
 
-def rec_PLM(grid, var, dim):
+def rec_PLM(grid, var, dim, limiter_type=None):
     """
     Limited second-order piecewise linear method (PLM) for finite volume solvers.
 
@@ -147,7 +150,9 @@ def rec_PLM(grid, var, dim):
         2D array of the state variable to reconstruct (including ghost cells).
     dim : int
         Dimension along which to perform the reconstruction (1 or 2).
-
+    limiter_type : str, optional
+        PLM slope limiter type 
+        
     Returns
     -------
     var_rec_L : ndarray
@@ -178,7 +183,8 @@ def rec_PLM(grid, var, dim):
         cx, fx = grid.cx2.T, grid.fx2.T
         var = var.T
 
-    limtype = 'VL'
+    if limiter_type is None:
+        limiter_type = 'VL'
 
     # Named stencil slices for the cell-centered variable
     v_im1 = var[Ngc - 2 : Nr,     Ngc : -Ngc]   # cell i-1
@@ -195,7 +201,7 @@ def rec_PLM(grid, var, dim):
     grad_R = (v_ip1 - v_i) / (cx_ip1 - cx_i)
 
     # Slope-limited gradient (ensures monotonicity)
-    lim_grad = limiter(grad_L, grad_R, limtype)
+    lim_grad = limiter(grad_L, grad_R, limiter_type)
 
     # Face coordinates and adjacent cell centers for extrapolation
     fx_face  = fx[Ngc : -Ngc,     Ngc : -Ngc]
