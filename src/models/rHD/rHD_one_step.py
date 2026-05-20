@@ -5,7 +5,7 @@ rHD_one_step.py
 Container class and time-stepping routines for 2D special-relativistic
 hydrodynamics (rHD).
 
-This module mirrors hydro_one_step.py for the relativistic Euler equations.
+This module mirrors hydro_one_step.py (NR) for the relativistic Euler equations.
 It provides:
 
 - rHD2D class: lightweight container with step_RK() interface
@@ -35,7 +35,6 @@ import copy
 from src.models.rHD.rHD_phys import (
     prim2cons_sr_hydro,
     cons2prim_sr_hydro,
-    sound_speed_sr,
     Riemann_sr_hydro,
     boundCond_rHD,
 )
@@ -91,6 +90,25 @@ class rHD2D:
 
 
 # -------------------------
+# Small helper: one RK stage applied to all five conservative variables
+# -------------------------
+def _rk_stage(HD_out, HD_a, HD_b, ResM, Res1, Res2, Res3, ResE, dt, a, b, c):
+    """
+    Set HD_out.* = a * HD_a.* + b * HD_b.* + c * dt * Res*
+ 
+    For SSP-RK, the standard combinations are:
+      Stage 1 (predictor): a=1,    b=0,    c=-1     -> HD_h = HD - dt*R(HD)
+      RK2 corrector:       a=0.5,  b=0.5,  c=-0.5
+      RK3 stage 2:         a=0.75, b=0.25, c=-0.25
+      RK3 stage 3 (final): a=1/3,  b=2/3,  c=-2/3
+    """
+    HD_out.mass = a * HD_a.mass + b * HD_b.mass + c * dt * ResM
+    HD_out.mom1 = a * HD_a.mom1 + b * HD_b.mom1 + c * dt * Res1
+    HD_out.mom2 = a * HD_a.mom2 + b * HD_b.mom2 + c * dt * Res2
+    HD_out.mom3 = a * HD_a.mom3 + b * HD_b.mom3 + c * dt * Res3
+    HD_out.etot = a * HD_a.etot + b * HD_b.etot + c * dt * ResE
+
+# -------------------------
 # Function definitions
 # -------------------------
 
@@ -125,9 +143,10 @@ def CFLcondition_rHD(g, HD, eos, CFL):
     vel2 = HD.vel2[Ngc:-Ngc, Ngc:-Ngc]
     pres = HD.pres[Ngc:-Ngc, Ngc:-Ngc]
 
-    cs = sound_speed_sr(dens, pres, eos)
+    cs = eos.sound_speed_sr(dens, pres)
 
     # SR characteristic speed estimate: (|v| + cs) / (1 + |v|*cs)
+    # it is an inexact but conservative one 
     lam1 = (np.abs(vel1) + cs) / (1.0 + np.abs(vel1) * cs + 1e-14)
     lam2 = (np.abs(vel2) + cs) / (1.0 + np.abs(vel2) * cs + 1e-14)
 
@@ -173,11 +192,8 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
     # 1st RK stage (predictor)
     ResM, Res1, Res2, Res3, ResE = flux_calc_rHD(g, HD, par, eos)
 
-    HD_h.mass = HD.mass - dt * ResM
-    HD_h.mom1 = HD.mom1 - dt * Res1
-    HD_h.mom2 = HD.mom2 - dt * Res2
-    HD_h.mom3 = HD.mom3 - dt * Res3
-    HD_h.etot = HD.etot - dt * ResE
+    _rk_stage(HD_h, HD, HD, \
+        ResM, Res1, Res2, Res3, ResE, dt, 1.0, 0.0, -1.0)
 
     if par.RK_order == 'RK1':
         HD.mass = HD_h.mass
@@ -187,75 +203,73 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
         HD.etot = HD_h.etot
 
     if par.RK_order == 'RK2':
+        
         # Primitive recovery after predictor stage
-        HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.pres[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_sr_hydro(
-                HD_h.mass, HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot,
-                HD_h.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
+        _prim_recovery(HD_h, Ngc, HD.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
 
         # 2nd RK stage (corrector)
         ResM, Res1, Res2, Res3, ResE = flux_calc_rHD(g, HD_h, par, eos)
 
-        HD.mass = (HD_h.mass + HD.mass) / 2.0 - dt * ResM / 2.0
-        HD.mom1 = (HD_h.mom1 + HD.mom1) / 2.0 - dt * Res1 / 2.0
-        HD.mom2 = (HD_h.mom2 + HD.mom2) / 2.0 - dt * Res2 / 2.0
-        HD.mom3 = (HD_h.mom3 + HD.mom3) / 2.0 - dt * Res3 / 2.0
-        HD.etot = (HD_h.etot + HD.etot) / 2.0 - dt * ResE / 2.0
+        # Conservative update - 2nd RK iteration
+        # update mass, three components of momentum and total energy
+        _rk_stage(HD, HD, HD_h, \
+            ResM, Res1, Res2, Res3, ResE, dt, 1.0/2.0, 1.0/2.0, -1.0/2.0)
 
     if par.RK_order == 'RK3':
+        
         # Primitive recovery after 1st stage
-        HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.pres[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_sr_hydro(
-                HD_h.mass, HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot,
-                HD_h.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
+        _prim_recovery(HD_h, Ngc, HD.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
 
         # 2nd RK stage
         ResM, Res1, Res2, Res3, ResE = flux_calc_rHD(g, HD_h, par, eos)
 
-        HD_h.mass = (HD_h.mass + 3.0 * HD.mass) / 4.0 - dt * ResM / 4.0
-        HD_h.mom1 = (HD_h.mom1 + 3.0 * HD.mom1) / 4.0 - dt * Res1 / 4.0
-        HD_h.mom2 = (HD_h.mom2 + 3.0 * HD.mom2) / 4.0 - dt * Res2 / 4.0
-        HD_h.mom3 = (HD_h.mom3 + 3.0 * HD.mom3) / 4.0 - dt * Res3 / 4.0
-        HD_h.etot = (HD_h.etot + 3.0 * HD.etot) / 4.0 - dt * ResE / 4.0
+        # Conservative update - 2nd RK iteration
+        # update mass, three components of momentum and total energy        
+        _rk_stage(HD_h, HD, HD_h, \
+            ResM, Res1, Res2, Res3, ResE, dt, 1.0/4.0, 3.0/4.0, -1.0/4.0)
 
         # Primitive recovery after 2nd stage
-        HD_h.dens[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel2[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-            HD_h.pres[Ngc:-Ngc, Ngc:-Ngc] = \
-            cons2prim_sr_hydro(
-                HD_h.mass, HD_h.mom1, HD_h.mom2, HD_h.mom3, HD_h.etot,
-                HD_h.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
+        _prim_recovery(HD_h, Ngc, HD_h.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
 
         # 3rd RK stage (final)
         ResM, Res1, Res2, Res3, ResE = flux_calc_rHD(g, HD_h, par, eos)
 
-        HD.mass = (2.0 * HD_h.mass + HD.mass) / 3.0 - 2.0 * dt * ResM / 3.0
-        HD.mom1 = (2.0 * HD_h.mom1 + HD.mom1) / 3.0 - 2.0 * dt * Res1 / 3.0
-        HD.mom2 = (2.0 * HD_h.mom2 + HD.mom2) / 3.0 - 2.0 * dt * Res2 / 3.0
-        HD.mom3 = (2.0 * HD_h.mom3 + HD.mom3) / 3.0 - 2.0 * dt * Res3 / 3.0
-        HD.etot = (2.0 * HD_h.etot + HD.etot) / 3.0 - 2.0 * dt * ResE / 3.0
+        # Conservative update - final 3rd RK iteration
+        # update mass, three components of momentum and total energy
+        _rk_stage(HD, HD, HD_h, \
+            ResM, Res1, Res2, Res3, ResE, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
 
     # Final primitive variable recovery
-    HD.dens[Ngc:-Ngc, Ngc:-Ngc], \
-        HD.vel1[Ngc:-Ngc, Ngc:-Ngc], \
-        HD.vel2[Ngc:-Ngc, Ngc:-Ngc], \
-        HD.vel3[Ngc:-Ngc, Ngc:-Ngc], \
-        HD.pres[Ngc:-Ngc, Ngc:-Ngc] = \
-        cons2prim_sr_hydro(
-            HD.mass, HD.mom1, HD.mom2, HD.mom3, HD.etot,
-            HD.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
+    _prim_recovery(HD, Ngc, HD_h.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
 
     return HD
+
+
+
+# ============================================================================
+# Helper: call cons2prim_sr_hydro for a SimState object
+# ============================================================================
+def _prim_recovery(state, Ngc, init_pres, eos):
+    """
+    Call cons2prim_nr_hydro and write results back into
+    state.{dens,vel*,pres}.
+
+    Parameters
+    ----------
+    state     : SimState with conservative vars populated
+    init_pres : initial guess for the unknown pressure 
+    Ngc       : int number of ghost cells
+    eos       : EOSdata
+    """
+    (state.dens[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel1[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel2[Ngc:-Ngc, Ngc:-Ngc],
+     state.vel3[Ngc:-Ngc, Ngc:-Ngc],
+     state.pres[Ngc:-Ngc, Ngc:-Ngc]) = \
+        cons2prim_sr_hydro(
+            state.mass, state.mom1, state.mom2, state.mom3, state.etot, \
+            init_pres, eos)
+
 
 
 def flux_calc_rHD(g, HD, par, eos):
@@ -308,7 +322,21 @@ def flux_calc_rHD(g, HD, par, eos):
         u1_L,   u1_R   = VarReconstruct(u1,      g, par.rec_type, 1)
         u2_L,   u2_R   = VarReconstruct(u2,      g, par.rec_type, 1)
         u3_L,   u3_R   = VarReconstruct(u3,      g, par.rec_type, 1)
+        
+        # Detect troubled faces: unphysical states or strong pressure jump
+        p_lc = HD.pres[Ngc - 1:g.Nx1r,     Ngc:-Ngc]
+        p_rc = HD.pres[Ngc    :g.Nx1r + 1, Ngc:-Ngc]
+        troubled = ((dens_L <= 0.0) | (dens_R <= 0.0) |
+                    (pres_L <= 0.0) | (pres_R <= 0.0) |
+                    (np.abs(p_rc - p_lc) > 0.33 * np.minimum(p_lc, p_rc)))
 
+        # Fallback to PCM at troubled faces
+        dens_L, dens_R = _swap_troubled(dens_L, dens_R, HD.dens, g, 1, troubled)
+        pres_L, pres_R = _swap_troubled(pres_L, pres_R, HD.pres, g, 1, troubled)
+        u1_L,   u1_R   = _swap_troubled(u1_L,   u1_R,   u1,      g, 1, troubled)
+        u2_L,   u2_R   = _swap_troubled(u2_L,   u2_R,   u2,      g, 1, troubled)
+        u3_L,   u3_R   = _swap_troubled(u3_L,   u3_R,   u3,      g, 1, troubled)
+        
         # Recover 3-velocities from 4-velocities: vⁱ = uⁱ / sqrt(1 + |u|²)
         W_L = np.sqrt(1.0 + u1_L**2 + u2_L**2 + u3_L**2)
         W_R = np.sqrt(1.0 + u1_R**2 + u2_R**2 + u3_R**2)
@@ -316,12 +344,14 @@ def flux_calc_rHD(g, HD, par, eos):
         vel2_L = u2_L / W_L;  vel2_R = u2_R / W_R
         vel3_L = u3_L / W_L;  vel3_R = u3_R / W_R
 
+        #Riemann problem solution to obtain fluxes 
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
             Riemann_sr_hydro(
                 dens_L, dens_R,
                 vel1_L, vel1_R, vel2_L, vel2_R, vel3_L, vel3_R,
                 pres_L, pres_R, eos, par.flux_type, 1)
 
+        # residuals update 
         ResM = (Fmass[1:, :] * g.fS1[1:, :] - Fmass[:-1, :] * g.fS1[:-1, :]) / g.cVol
         Res1 = (Fmomx[1:, :] * g.fS1[1:, :] - Fmomx[:-1, :] * g.fS1[:-1, :]) / g.cVol
         Res2 = (Fmomy[1:, :] * g.fS1[1:, :] - Fmomy[:-1, :] * g.fS1[:-1, :]) / g.cVol
@@ -335,19 +365,36 @@ def flux_calc_rHD(g, HD, par, eos):
         u1_L,   u1_R   = VarReconstruct(u1,      g, par.rec_type, 2)
         u2_L,   u2_R   = VarReconstruct(u2,      g, par.rec_type, 2)
         u3_L,   u3_R   = VarReconstruct(u3,      g, par.rec_type, 2)
-
+        
+        # Detect troubled faces: unphysical states or strong pressure jump
+        p_lc = HD.pres[Ngc:-Ngc, Ngc - 1:g.Nx2r    ]
+        p_rc = HD.pres[Ngc:-Ngc, Ngc    :g.Nx2r + 1]
+        troubled = ((dens_L <= 0.0) | (dens_R <= 0.0) |
+                    (pres_L <= 0.0) | (pres_R <= 0.0) |
+                    (np.abs(p_rc - p_lc) > 0.33 * np.minimum(p_lc, p_rc)))
+        
+        # Fallback to PLM with MM limiter at troubled faces
+        dens_L, dens_R = _swap_troubled(dens_L, dens_R, HD.dens, g, 2, troubled)
+        pres_L, pres_R = _swap_troubled(pres_L, pres_R, HD.pres, g, 2, troubled)
+        u1_L,   u1_R   = _swap_troubled(u1_L,   u1_R,   u1,      g, 2, troubled)
+        u2_L,   u2_R   = _swap_troubled(u2_L,   u2_R,   u2,      g, 2, troubled)
+        u3_L,   u3_R   = _swap_troubled(u3_L,   u3_R,   u3,      g, 2, troubled)
+        
+        # turn back to 3-velocities 
         W_L = np.sqrt(1.0 + u1_L**2 + u2_L**2 + u3_L**2)
         W_R = np.sqrt(1.0 + u1_R**2 + u2_R**2 + u3_R**2)
         vel1_L = u1_L / W_L;  vel1_R = u1_R / W_R
         vel2_L = u2_L / W_L;  vel2_R = u2_R / W_R
         vel3_L = u3_L / W_L;  vel3_R = u3_R / W_R
 
+        #Riemann problem solution to obtain fluxes 
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
             Riemann_sr_hydro(
                 dens_L, dens_R,
                 vel1_L, vel1_R, vel2_L, vel2_R, vel3_L, vel3_R,
                 pres_L, pres_R, eos, par.flux_type, 2)
 
+        #residuals update 
         ResM += (Fmass[:, 1:] * g.fS2[:, 1:] - Fmass[:, :-1] * g.fS2[:, :-1]) / g.cVol
         Res1 += (Fmomx[:, 1:] * g.fS2[:, 1:] - Fmomx[:, :-1] * g.fS2[:, :-1]) / g.cVol
         Res2 += (Fmomy[:, 1:] * g.fS2[:, 1:] - Fmomy[:, :-1] * g.fS2[:, :-1]) / g.cVol
@@ -362,3 +409,13 @@ def flux_calc_rHD(g, HD, par, eos):
         HD.F2 * HD.vel2[Ngc:-Ngc, Ngc:-Ngc])
 
     return ResM, Res1, Res2, Res3, ResE
+
+
+
+def _swap_troubled(L, R, var, g, dim, troubled):
+    """Overwrite L, R with PCM values where 'troubled' is True."""
+    if troubled.any():
+        Llo, Rlo = VarReconstruct(var, g, 'PLM', dim, limiter_type = 'MM')
+        L = np.where(troubled, Llo, L)
+        R = np.where(troubled, Rlo, R)
+    return L, R

@@ -52,7 +52,9 @@ mrkondratyev
 """
 
 import numpy as np
-from src.common.boundaries import apply_bc_scalar, apply_bc_vector
+from src.common.boundaries import (
+    apply_bc_scalar, 
+    apply_bc_vector)
 
 
 # ============================================================================
@@ -77,7 +79,7 @@ def prim2cons_sr_hydro(dens, vel1, vel2, vel3, pres, eos):
     etot : ndarray   –  E  = ρ h W² − p
     """
     W    = 1.0 / np.sqrt(1.0 - vel1**2 - vel2**2 - vel3**2)
-    enth = 1.0 + pres / (dens + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
+    enth = eos.enthalpy_sr(dens, pres)
 
     mass = dens * W
     mom1 = mass * enth * W * vel1
@@ -108,11 +110,22 @@ def cons2prim_sr_hydro(mass, mom1, mom2, mom3, etot, pres_init, eos):
 
     W    = (etot + pres) / np.sqrt((etot + pres)**2 - (mom1**2 + mom2**2 + mom3**2))
     dens = mass / W
-    enth = 1.0 + pres / (dens + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-
+    enth = eos.enthalpy_sr(dens, pres)
+    
     vel1 = mom1 / (mass * enth * W)
     vel2 = mom2 / (mass * enth * W)
     vel3 = mom3 / (mass * enth * W)
+    
+    # safety prescription -- set den and pres above floor values of 1e-12
+    dens = np.maximum(dens, 1e-12)
+    pres = np.maximum(pres, 1e-12)
+
+    # Clip velocity to sub-luminal
+    v2 = vel1**2 + vel2**2 + vel3**2
+    too_fast = v2 >= 1.0
+    if np.any(too_fast):
+        fac = np.where(too_fast, 0.9999 / np.sqrt(v2 + 1e-28), 1.0)
+        vel1 *= fac; vel2 *= fac; vel3 *= fac
 
     return dens, vel1, vel2, vel3, pres
 
@@ -121,7 +134,7 @@ def cons2prim_sr_hydro(mass, mom1, mom2, mom3, etot, pres_init, eos):
 #   Nonlinear pressure solver (Newton-Raphson)
 # ============================================================================
 
-def _pres_eqn_sr(pres, mass, mom1, mom2, mom3, etot, GAMMA):
+def _pres_eqn_sr(pres, mass, m2, etot, GAMMA):
     """
     Nonlinear equation f(p) = 0 whose root gives the SR pressure.
 
@@ -132,10 +145,31 @@ def _pres_eqn_sr(pres, mass, mom1, mom2, mom3, etot, GAMMA):
     Parameters and Returns: arrays of same shape as `pres`.
     """
     Ep   = etot + pres
-    m2   = mom1**2 + mom2**2 + mom3**2
-    W2   = Ep**2 / (Ep**2 - m2 + 1e-28)
-    W    = np.sqrt(np.maximum(W2, 1.0))
-    return mass * W + GAMMA / (GAMMA - 1.0) * pres * W2 - etot - pres
+    Epm2 = Ep**2 - m2
+    W2   = Ep**2 / Epm2
+    
+    func = mass * np.sqrt(np.maximum(W2, 1.0)) + GAMMA / (GAMMA - 1.0) * pres * W2 - Ep
+    
+    return func
+
+
+def _pres_der_sr(pres, mass, m2, etot, GAMMA):
+    """
+    Derivative  df(p)/dp for root finding procedure in SR hydrodynamics.
+
+    f(p) = D·W(p) + Γ/(Γ−1)·p·W(p)² − E − p
+
+    where W(p) = (E+p)/√((E+p)²−|m|²).
+
+    Parameters and Returns: arrays of same shape as `pres`.
+    """
+    Ep   = etot + pres
+    Epm2 = Ep**2 - m2
+    
+    der = -mass * m2 / Epm2**1.5 + \
+        GAMMA / (GAMMA - 1.0) * Ep * (Ep**3 - m2*(Ep+2.0*pres)) / Epm2**2 - 1.0
+    
+    return der
 
 
 def _newton_pres_sr(pres_init, mass, mom1, mom2, mom3, etot, GAMMA):
@@ -156,12 +190,12 @@ def _newton_pres_sr(pres_init, mass, mom1, mom2, mom3, etot, GAMMA):
     pres : ndarray   –  converged pressure field
     """
     tol    = 1.0e-8
-    dp_rel = 1.0e-12   # relative step for numerical derivative
-    maxitr = 100
+    maxitr = 50
 
-    pres = np.maximum(pres_init, 1.0e-14)
+    m2   = mom1**2 + mom2**2 + mom3**2
+    pres = np.maximum(pres_init, 1e-12)
 
-    res   = _pres_eqn_sr(pres, mass, mom1, mom2, mom3, etot, GAMMA)
+    res   = _pres_eqn_sr(pres, mass, m2, etot, GAMMA)
     eps1  = np.max(np.abs(res))
     eps2  = 1.0
 
@@ -169,18 +203,16 @@ def _newton_pres_sr(pres_init, mass, mom1, mom2, mom3, etot, GAMMA):
         if eps1 <= tol and eps2 <= tol:
             break
 
-        dp    = pres * (1.0 + dp_rel)
-        f0    = _pres_eqn_sr(pres,      mass, mom1, mom2, mom3, etot, GAMMA)
-        f1    = _pres_eqn_sr(pres + dp, mass, mom1, mom2, mom3, etot, GAMMA)
-        deriv = (f1 - f0) / dp
+        f0    = _pres_eqn_sr(pres, mass, m2, etot, GAMMA)
+        deriv = _pres_der_sr(pres, mass, m2, etot, GAMMA)
 
-        update = f0 / (deriv + 1.0e-28)
+        update = f0 / (deriv + 1e-16)
         pres   = pres - update
-        pres   = np.maximum(pres, 1.0e-14)
+        pres   = np.maximum(pres, 1e-12)
 
-        res  = _pres_eqn_sr(pres, mass, mom1, mom2, mom3, etot, GAMMA)
+        res  = _pres_eqn_sr(pres, mass, m2, etot, GAMMA)
         eps1 = np.max(np.abs(res))
-        eps2 = np.max(np.abs(update / (pres + 1.0e-28)))
+        eps2 = np.max(np.abs(update / (pres + 1e-16)))
     else:
         print(f"[rHD] pressure Newton solver: did not converge after {maxitr} iterations "
               f"(residual = {eps1:.3e})")
@@ -188,30 +220,36 @@ def _newton_pres_sr(pres_init, mass, mom1, mom2, mom3, etot, GAMMA):
     return pres
 
 
-# ============================================================================
-#   SR sound speed
-# ============================================================================
+# -------------------------
+# Small helper: conservative SR hydro variables + their fluxes along Ox 
+# -------------------------
+def sr_hydro_cons_and_flux(rho, vx, vy, vz, p, eos):
+    
+    # --- specific enthalpy ---
+    ent = eos.enthalpy_sr(rho, p)
 
-def sound_speed_sr(dens, pres, eos):
-    """
-    Adiabatic sound speed for an ideal relativistic gas.
+    # --- Lorentz factor ---
+    W = 1.0 / np.sqrt(1.0 - vx**2 - vy**2 - vz**2)
+    
+    # --- conservative state ---
+    #number density 
+    m   = rho * W
+    #temporary variable 
+    tmp = m * ent * W 
+    #momentum components 
+    mx = tmp * vx; my = tmp * vy; mz = tmp * vz
+    #total energy 
+    e  = tmp - p
 
-        cs² = Γ p / (ρ h)
+    # --- conservative fluxes ---
+    Fm = m * vx
+    Fx = mx * vx + p; Fy = mx * vy; Fz = mx * vz
+    Fe = mx
+    
+    #output -- conservative state + fluxes 
+    return m, mx, my, mz, e, \
+        ent, W, Fm, Fx, Fy, Fz, Fe
 
-    where h = 1 + Γ p / (ρ (Γ−1)) is the specific enthalpy.
-
-    Parameters
-    ----------
-    dens, pres : ndarray
-    eos : EOSdata
-
-    Returns
-    -------
-    cs : ndarray   –  sound speed  (0 < cs < 1)
-    """
-    enth = 1.0 + pres / (dens + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-    cs2  = eos.GAMMA * pres / (dens * enth + 1e-14)
-    return np.sqrt(np.clip(cs2, 0.0, 1.0 - 1e-14))
 
 
 # ============================================================================
@@ -253,45 +291,21 @@ def Riemann_sr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
     if dim == 2:
         vxl, vxr, vyl, vyr = vyl, vyr, -vxl, -vxr
 
-    # --- specific enthalpies ---
-    entl = 1.0 + pl / (rhol + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-    entr = 1.0 + pr / (rhor + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-
-    # --- Lorentz factors ---
-    Wl = 1.0 / np.sqrt(1.0 - vxl**2 - vyl**2 - vzl**2)
-    Wr = 1.0 / np.sqrt(1.0 - vxr**2 - vyr**2 - vzr**2)
-
-    # --- left conservative state ---
-    Dl   = rhol * Wl
-    momxl = Dl * entl * Wl * vxl
-    momyl = Dl * entl * Wl * vyl
-    momzl = Dl * entl * Wl * vzl
-    El   = Dl * entl * Wl - pl
-
-    # --- right conservative state ---
-    Dr   = rhor * Wr
-    momxr = Dr * entr * Wr * vxr
-    momyr = Dr * entr * Wr * vyr
-    momzr = Dr * entr * Wr * vzr
-    Er   = Dr * entr * Wr - pr
-
-    # --- left physical fluxes ---
-    FDl    = Dl   * vxl
-    Fmxl   = momxl * vxl + pl
-    Fmyl   = momxl * vyl
-    Fmzl   = momxl * vzl
-    FEl    = momxl
-
-    # --- right physical fluxes ---
-    FDr    = Dr   * vxr
-    Fmxr   = momxr * vxr + pr
-    Fmyr   = momxr * vyr
-    Fmzr   = momxr * vzr
-    FEr    = momxr
-
+    #left state and fluxes 
+    Dl, momxl, momyl, momzl, El, \
+    entl, Wl, \
+    FDl, Fmxl, Fmyl, Fmzl, FEl  = \
+        sr_hydro_cons_and_flux(rhol, vxl, vyl, vzl, pl, eos)
+        
+    #right state and fluxes 
+    Dr, momxr, momyr, momzr, Er, \
+    entr, Wr, \
+    FDr, Fmxr, Fmyr, Fmzr, FEr  = \
+        sr_hydro_cons_and_flux(rhor, vxr, vyr, vzr, pr, eos)
+    
     # --- SR wave-speed estimates (Mignone & Bodo 2005, eqs. 9-10) ---
-    cs2l = eos.GAMMA * pl / (rhol * entl + 1e-14)
-    cs2r = eos.GAMMA * pr / (rhor * entr + 1e-14)
+    cs2l = eos.sound_speed_sr(rhol, pl)**2
+    cs2r = eos.sound_speed_sr(rhor, pr)**2
 
     sigl = cs2l / (Wl**2 * (1.0 - cs2l) + 1e-14)
     sigr = cs2r / (Wr**2 * (1.0 - cs2r) + 1e-14)
@@ -308,74 +322,65 @@ def Riemann_sr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
     if flux_type == 'LLF':
 
         lam  = np.maximum(np.abs(Sl), np.abs(Sr))
-        Fmass = 0.5 * (FDl  + FDr  - lam * (Dr   - Dl  ))
+        Fmass = 0.5 * (FDl  + FDr  - lam * (Dr    - Dl   ))
         Fmomx = 0.5 * (Fmxl + Fmxr - lam * (momxr - momxl))
         Fmomy = 0.5 * (Fmyl + Fmyr - lam * (momyr - momyl))
         Fmomz = 0.5 * (Fmzl + Fmzr - lam * (momzr - momzl))
-        Fetot = 0.5 * (FEl  + FEr  - lam * (Er   - El  ))
+        Fetot = 0.5 * (FEl  + FEr  - lam * (Er    - El   ))
 
     elif flux_type == 'HLL':
 
-        Sl_m = np.minimum(Sl, 0.0)
-        Sr_p = np.maximum(Sr, 0.0)
-        dS   = Sr_p - Sl_m + 1e-14
+        Sl = np.minimum(Sl, 0.0)
+        Sr = np.maximum(Sr, 0.0)
 
-        Fmass = (Sr_p * FDl  - Sl_m * FDr  + Sr_p * Sl_m * (Dr   - Dl  )) / dS
-        Fmomx = (Sr_p * Fmxl - Sl_m * Fmxr + Sr_p * Sl_m * (momxr - momxl)) / dS
-        Fmomy = (Sr_p * Fmyl - Sl_m * Fmyr + Sr_p * Sl_m * (momyr - momyl)) / dS
-        Fmomz = (Sr_p * Fmzl - Sl_m * Fmzr + Sr_p * Sl_m * (momzr - momzl)) / dS
-        Fetot = (Sr_p * FEl  - Sl_m * FEr  + Sr_p * Sl_m * (Er   - El  )) / dS
+        Fmass = (Sr * FDl  - Sl * FDr  + Sr * Sl * (Dr    - Dl   )) / (Sr - Sl)
+        Fmomx = (Sr * Fmxl - Sl * Fmxr + Sr * Sl * (momxr - momxl)) / (Sr - Sl)
+        Fmomy = (Sr * Fmyl - Sl * Fmyr + Sr * Sl * (momyr - momyl)) / (Sr - Sl)
+        Fmomz = (Sr * Fmzl - Sl * Fmzr + Sr * Sl * (momzr - momzl)) / (Sr - Sl)
+        Fetot = (Sr * FEl  - Sl * FEr  + Sr * Sl * (Er    - El   )) / (Sr - Sl)
 
     elif flux_type == 'HLLC':
 
-        Sl_m = np.minimum(Sl, 0.0)
-        Sr_p = np.maximum(Sr, 0.0)
-        dS   = Sr_p - Sl_m + 1e-14
+        Sl = np.minimum(Sl, 0.0)
+        Sr = np.maximum(Sr, 0.0)
 
         # HLL intermediate state (needed for contact speed calculation)
-        momx_hll = (Sr_p * momxr - Sl_m * momxl + Fmxl - Fmxr) / dS
-        etot_hll  = (Sr_p * Er   - Sl_m * El   + FEl  - FEr ) / dS
-        Fmx_hll  = (Sr_p * Fmxl - Sl_m * Fmxr + Sr_p * Sl_m * (momxr - momxl)) / dS
-        FE_hll   = (Sr_p * FEl  - Sl_m * FEr  + Sr_p * Sl_m * (Er   - El  )) / dS
+        momx_hll = (Sr * momxr - Sl * momxl + Fmxl - Fmxr) / (Sr - Sl)
+        etot_hll = (Sr * Er   - Sl * El   + FEl  - FEr ) / (Sr - Sl)
+        Fmx_hll  = (Sr * Fmxl - Sl * Fmxr + Sr * Sl * (momxr - momxl)) / (Sr - Sl)
+        FE_hll   = (Sr * FEl  - Sl * FEr  + Sr * Sl * (Er   - El  )) / (Sr - Sl)
 
-        # Contact wave speed (Mignone & Bodo 2005, eq. 18)
+        # Contact wave speed  "Ss" (Mignone & Bodo 2005, eq. 18)
         disc  = np.maximum((etot_hll + Fmx_hll)**2 - 4.0 * momx_hll * FE_hll, 0.0)
-        Sstar = ((etot_hll + Fmx_hll) - np.sqrt(disc)) / (2.0 * FE_hll + 1e-28)
+        Ss = ((etot_hll + Fmx_hll) - np.sqrt(disc)) / (2.0 * FE_hll + 1e-28)
 
         # Starred pressure (Mignone & Bodo 2005, eq. 17)
-        Pstarl = (pl + Sl_m * Sstar * El - (Sstar + Sl_m - vxl) * momxl) / (1.0 - Sl_m * Sstar + 1e-28)
-        Pstarr = (pr + Sr_p * Sstar * Er - (Sstar + Sr_p - vxr) * momxr) / (1.0 - Sr_p * Sstar + 1e-28)
+        Pstar = (pl + Sl * Ss * El - (Ss + Sl - vxl) * momxl) / (1.0 - Sl * Ss) 
+        #Pstar = (pr + Sr * Ss * Er - (Ss + Sr - vxr) * momxr) / (1.0 - Sr * Ss)
 
-        # Starred conservative states
-        def _star(U, FU, S, Pstar):
-            return (S * U - FU + Pstar * np.array([0.0])) / (S - Sstar + 1e-28)
+        Dl_s    = Dl     * (Sl - vxl) / (Sl - Ss)
+        momxl_s = (momxl * (Sl - vxl) + Pstar - pl) / (Sl - Ss)
+        momyl_s = momyl  * (Sl - vxl) / (Sl - Ss)
+        momzl_s = momzl  * (Sl - vxl) / (Sl - Ss)
+        El_s    = (El    * (Sl - vxl) + Pstar * Ss - pl * vxl) / (Sl - Ss)
 
-        dSl = Sl_m - Sstar + 1e-28
-        dSr = Sr_p - Sstar + 1e-28
+        Dr_s    = Dr     * (Sr - vxr) / (Sr - Ss)
+        momxr_s = (momxr * (Sr - vxr) + Pstar - pr) / (Sr - Ss)
+        momyr_s = momyr  * (Sr - vxr) / (Sr - Ss)
+        momzr_s = momzr  * (Sr - vxr) / (Sr - Ss)
+        Er_s    = (Er    * (Sr - vxr) + Pstar * Ss - pr * vxr) / (Sr - Ss)
 
-        Dl_s    = Dl   * (Sl_m - vxl) / dSl
-        momxl_s = (momxl * (Sl_m - vxl) + Pstarl - pl) / dSl
-        momyl_s = momyl  * (Sl_m - vxl) / dSl
-        momzl_s = momzl  * (Sl_m - vxl) / dSl
-        El_s    = (El    * (Sl_m - vxl) + Pstarl * Sstar - pl * vxl) / dSl
-
-        Dr_s    = Dr   * (Sr_p - vxr) / dSr
-        momxr_s = (momxr * (Sr_p - vxr) + Pstarr - pr) / dSr
-        momyr_s = momyr  * (Sr_p - vxr) / dSr
-        momzr_s = momzr  * (Sr_p - vxr) / dSr
-        Er_s    = (Er    * (Sr_p - vxr) + Pstarr * Sstar - pr * vxr) / dSr
-
-        def _hllc_flux(FL, FR, UL, UR, ULs, URs):
+        def _hllc_state(FL, FR, UL, UR, ULs, URs):
             return np.where(
-                Sl_m >= 0.0, FL,
-                np.where((Sl_m < 0.0) & (Sstar >= 0.0), FL + Sl_m * (ULs - UL),
-                np.where((Sstar < 0.0) & (Sr_p >= 0.0), FR + Sr_p * (URs - UR), FR)))
+                Sl >= 0.0, FL,
+                np.where((Sl < 0.0) & (Ss >= 0.0), FL + Sl * (ULs - UL),
+                np.where((Ss < 0.0) & (Sr >= 0.0), FR + Sr * (URs - UR), FR)))
 
-        Fmass = _hllc_flux(FDl,  FDr,  Dl,    Dr,    Dl_s,    Dr_s   )
-        Fmomx = _hllc_flux(Fmxl, Fmxr, momxl, momxr, momxl_s, momxr_s)
-        Fmomy = _hllc_flux(Fmyl, Fmyr, momyl, momyr, momyl_s, momyr_s)
-        Fmomz = _hllc_flux(Fmzl, Fmzr, momzl, momzr, momzl_s, momzr_s)
-        Fetot = _hllc_flux(FEl,  FEr,  El,    Er,    El_s,    Er_s   )
+        Fmass = _hllc_state(FDl,  FDr,  Dl,    Dr,    Dl_s,    Dr_s   )
+        Fmomx = _hllc_state(Fmxl, Fmxr, momxl, momxr, momxl_s, momxr_s)
+        Fmomy = _hllc_state(Fmyl, Fmyr, momyl, momyr, momyl_s, momyr_s)
+        Fmomz = _hllc_state(Fmzl, Fmzr, momzl, momzr, momzl_s, momzr_s)
+        Fetot = _hllc_state(FEl,  FEr,  El,    Er,    El_s,    Er_s   )
 
     else:
         raise ValueError(f"Unknown rHD flux_type '{flux_type}'. Choose 'LLF', 'HLL', or 'HLLC'.")
