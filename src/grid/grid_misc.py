@@ -103,7 +103,7 @@ def div_face_vector(grid, fV1, fV2):
     - Discretization uses Gauss’s theorem: flux differences divided by cell volume.
     - Shape of `divV` is `(grid.Nx1, grid.Nx2)`.
     """
-    Ngc = grid.Ngc 
+    
     divV = np.zeros((grid.Nx1, grid.Nx2))
     
     if grid.Nx1 > 1:
@@ -259,7 +259,7 @@ def _ddx2(grid, f):
 # Gradient
 # ============================================================================
 
-def gradient(grid, f):
+def cell_gradient(grid, f):
     """
     Compute the gradient of a cell-centered scalar field.
 
@@ -301,6 +301,58 @@ def gradient(grid, f):
         Ngc = grid.Ngc
         h2  = grid.hx2[Ngc:-Ngc, Ngc:-Ngc]
         g2 /= np.where(np.abs(h2) > 1e-30, h2, 1e-30)
+
+    return g1, g2
+
+
+
+def face_gradient(grid, f):
+    """
+    Compute the face-centered gradient of a cell-centered scalar field.
+
+    Uses second-order central differences.  For curvilinear grids the
+    metric scale factors are included so that the result represents the
+    *physical* gradient components.
+
+    Coordinate conventions
+    ----------------------
+    - Cartesian  (cart): ∇f = (∂f/∂x, ∂f/∂y)               [hx2 = 1]
+    - Cylindrical (cyl): ∇f = (∂f/∂R, ∂f/∂Z)               [hx2 = 1]
+    - Polar       (pol): ∇f = (∂f/∂R, (1/R) ∂f/∂φ)          [hx2 = R]
+    - Spherical   (sph): ∇f = (∂f/∂r, (1/r) ∂f/∂θ)          [hx2 = r]
+
+    The metric scale factor ``grid.hx2`` (set for every geometry by the
+    Grid class) removes the need for any geometry branching here.
+    
+    Since grid.hx2 depends on radius only, we can define it at cells
+    instead of faces without loss of generality/validity
+
+    Parameters
+    ----------
+    grid : Grid
+        Grid object (must have ``geom`` attribute set).
+    f : ndarray, shape grid.grid_shape
+        Cell-centered scalar field (including ghost zones).
+
+    Returns
+    -------
+    g1 : ndarray, shape (grid.Nx1+1, grid.Nx2)
+        x1-component of the gradient on x1-faces.
+    g2 : ndarray, shape (grid.Nx1, grid.Nx2+1)
+        x2-component of the gradient on x2-faces.
+    """
+    Ngc = grid.Ngc; Nx1r = grid.Nx1r; Nx2r = grid.Nx2r 
+
+    # x1: Nx1+1 faces for Nx2 real cells
+    g1 = (f[Ngc:Nx1r+1, Ngc:Nx2r] - f[Ngc-1:Nx1r, Ngc:Nx2r]) / \
+        (grid.cx1[Ngc:Nx1r+1, Ngc:Nx2r] - grid.cx1[Ngc-1:Nx1r,  Ngc:Nx2r])   # (Nx1+1, Nx2)
+
+    # x2: Nx1 real cells by Nx2+1 faces
+    g2 = (f[Ngc:Nx1r, Ngc:Nx2r+1] - f[Ngc:Nx1r, Ngc-1:Nx2r]) / \
+        (grid.cx2[Ngc:Nx1r, Ngc:Nx2r+1] - grid.cx2[Ngc:Nx1r, Ngc-1:Nx2r]) /\
+        grid.hx2[Ngc:Nx1r, Ngc-1:Nx2r]   # (Nx1, Nx2+1)
+    # indexing Ngc-1:Nx2r or Ngc:Nx2r+1 actually does not matter for hx2, 
+    # because it is a function of x1 only 
 
     return g1, g2
 
