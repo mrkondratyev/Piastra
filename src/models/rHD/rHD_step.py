@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-rHD_one_step.py
+rHD_step.py
 
 Container class and time-stepping routines for 2D special-relativistic
 hydrodynamics (rHD).
@@ -33,12 +33,15 @@ mrkondratyev
 import numpy as np
 import copy
 from src.models.rHD.rHD_phys import (
-    prim2cons_sr_hydro,
-    cons2prim_sr_hydro,
-    Riemann_sr_hydro,
+    prim2cons_rHD,
+    cons2prim_rHD,
+    Riemann_rHD,
     boundCond_rHD,
 )
-from src.common.high_order_rec import VarReconstruct
+from src.common.high_order_rec import ( 
+    VarReconstruct,
+    _swap_troubled,
+)
 
 
 class rHD2D:
@@ -135,6 +138,12 @@ def CFLcondition_rHD(g, HD, eos, CFL):
     Returns
     -------
     dt : float
+    
+    Notes
+    -------
+    Lame coefficient hx2 is included in the CFL calculation 
+    in order to adjust the correct timestep for the simulations in the polar coordinates, 
+    e.g. dt ~ rdφ for the cylindrical polar geometry
     """
     Ngc = g.Ngc
 
@@ -151,7 +160,8 @@ def CFLcondition_rHD(g, HD, eos, CFL):
     lam2 = (np.abs(vel2) + cs) / (1.0 + np.abs(vel2) * cs + 1e-14)
 
     dt_inv = np.max(lam1 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] +
-                    lam2 / g.dx2[Ngc:-Ngc, Ngc:-Ngc])
+                    lam2 / (g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
+    
     return CFL / dt_inv
 
 
@@ -181,7 +191,7 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
 
     # Conservative variables at the beginning of the timestep
     HD.mass, HD.mom1, HD.mom2, HD.mom3, HD.etot = \
-        prim2cons_sr_hydro(
+        prim2cons_rHD(
             HD.dens[Ngc:-Ngc, Ngc:-Ngc],
             HD.vel1[Ngc:-Ngc, Ngc:-Ngc],
             HD.vel2[Ngc:-Ngc, Ngc:-Ngc],
@@ -196,13 +206,15 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
         ResM, Res1, Res2, Res3, ResE, dt, 1.0, 0.0, -1.0)
 
     if par.RK_order == 'RK1':
+        
+        #simply rewrite the conservative state here for clarity
         HD.mass = HD_h.mass
         HD.mom1 = HD_h.mom1
         HD.mom2 = HD_h.mom2
         HD.mom3 = HD_h.mom3
         HD.etot = HD_h.etot
 
-    if par.RK_order == 'RK2':
+    elif par.RK_order == 'RK2':
         
         # Primitive recovery after predictor stage
         _prim_recovery(HD_h, Ngc, HD.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
@@ -215,7 +227,7 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
         _rk_stage(HD, HD, HD_h, \
             ResM, Res1, Res2, Res3, ResE, dt, 1.0/2.0, 1.0/2.0, -1.0/2.0)
 
-    if par.RK_order == 'RK3':
+    elif par.RK_order == 'RK3':
         
         # Primitive recovery after 1st stage
         _prim_recovery(HD_h, Ngc, HD.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
@@ -238,6 +250,12 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
         # update mass, three components of momentum and total energy
         _rk_stage(HD, HD, HD_h, \
             ResM, Res1, Res2, Res3, ResE, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
+
+    else:
+        
+        raise ValueError(
+            f"Invalid RK_order: '{par.RK_order}'. "
+            f"Expected one of ['RK1', 'RK2', 'RK3'].")
 
     # Final primitive variable recovery
     _prim_recovery(HD, Ngc, HD_h.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
@@ -266,7 +284,7 @@ def _prim_recovery(state, Ngc, init_pres, eos):
      state.vel2[Ngc:-Ngc, Ngc:-Ngc],
      state.vel3[Ngc:-Ngc, Ngc:-Ngc],
      state.pres[Ngc:-Ngc, Ngc:-Ngc]) = \
-        cons2prim_sr_hydro(
+        cons2prim_rHD(
             state.mass, state.mom1, state.mom2, state.mom3, state.etot, \
             init_pres, eos)
 
@@ -294,7 +312,7 @@ def flux_calc_rHD(g, HD, par, eos):
         Residuals for D, m₁, m₂, m₃, E.
     """
     # Apply boundary conditions
-    HD = boundCond_rHD(g, par.BC, HD)
+    HD = boundCond_rHD(g, par.BC, HD, par.BC_fixed)
 
     Ngc = g.Ngc
 
@@ -303,6 +321,10 @@ def flux_calc_rHD(g, HD, par, eos):
     Res2 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     Res3 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     ResE = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    
+    # limiter type for flattening of cells with potentially unphysical behaviour
+    # we switch to PLM for such cells
+    lim = 'VL' #'VL', 'MM', 'MC', 'KOR', 'PCM', 'NO'
 
     # --- Precompute 4-velocity components ---
     # W = 1 / sqrt(1 - v1^2 - v2^2 - v3^2)
@@ -323,19 +345,24 @@ def flux_calc_rHD(g, HD, par, eos):
         u2_L,   u2_R   = VarReconstruct(u2,      g, par.rec_type, 1)
         u3_L,   u3_R   = VarReconstruct(u3,      g, par.rec_type, 1)
         
+        #Lorenz factors 
+        W_L = np.sqrt(1.0 + u1_L**2 + u2_L**2 + u3_L**2)
+        W_R = np.sqrt(1.0 + u1_R**2 + u2_R**2 + u3_R**2)
+        
         # Detect troubled faces: unphysical states or strong pressure jump
         p_lc = HD.pres[Ngc - 1:g.Nx1r,     Ngc:-Ngc]
         p_rc = HD.pres[Ngc    :g.Nx1r + 1, Ngc:-Ngc]
         troubled = ((dens_L <= 0.0) | (dens_R <= 0.0) |
                     (pres_L <= 0.0) | (pres_R <= 0.0) |
+                    (W_L <= 0.0) | (W_R <= 0.0) |
                     (np.abs(p_rc - p_lc) > 0.33 * np.minimum(p_lc, p_rc)))
 
-        # Fallback to PCM at troubled faces
-        dens_L, dens_R = _swap_troubled(dens_L, dens_R, HD.dens, g, 1, troubled)
-        pres_L, pres_R = _swap_troubled(pres_L, pres_R, HD.pres, g, 1, troubled)
-        u1_L,   u1_R   = _swap_troubled(u1_L,   u1_R,   u1,      g, 1, troubled)
-        u2_L,   u2_R   = _swap_troubled(u2_L,   u2_R,   u2,      g, 1, troubled)
-        u3_L,   u3_R   = _swap_troubled(u3_L,   u3_R,   u3,      g, 1, troubled)
+        # Fallback to PLM with minmod at troubled faces
+        dens_L, dens_R = _swap_troubled(dens_L, dens_R, HD.dens, g, 1, lim, troubled)
+        pres_L, pres_R = _swap_troubled(pres_L, pres_R, HD.pres, g, 1, lim, troubled)
+        u1_L,   u1_R   = _swap_troubled(u1_L,   u1_R,   u1,      g, 1, lim, troubled)
+        u2_L,   u2_R   = _swap_troubled(u2_L,   u2_R,   u2,      g, 1, lim, troubled)
+        u3_L,   u3_R   = _swap_troubled(u3_L,   u3_R,   u3,      g, 1, lim, troubled)
         
         # Recover 3-velocities from 4-velocities: vⁱ = uⁱ / sqrt(1 + |u|²)
         W_L = np.sqrt(1.0 + u1_L**2 + u2_L**2 + u3_L**2)
@@ -346,10 +373,10 @@ def flux_calc_rHD(g, HD, par, eos):
 
         #Riemann problem solution to obtain fluxes 
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
-            Riemann_sr_hydro(
+            Riemann_rHD(
                 dens_L, dens_R,
                 vel1_L, vel1_R, vel2_L, vel2_R, vel3_L, vel3_R,
-                pres_L, pres_R, eos, par.flux_type, 1)
+                pres_L, pres_R, eos, par.solver_type, 1)
 
         # residuals update 
         ResM = (Fmass[1:, :] * g.fS1[1:, :] - Fmass[:-1, :] * g.fS1[:-1, :]) / g.cVol
@@ -366,19 +393,24 @@ def flux_calc_rHD(g, HD, par, eos):
         u2_L,   u2_R   = VarReconstruct(u2,      g, par.rec_type, 2)
         u3_L,   u3_R   = VarReconstruct(u3,      g, par.rec_type, 2)
         
+        #Lorenz factors 
+        W_L = np.sqrt(1.0 + u1_L**2 + u2_L**2 + u3_L**2)
+        W_R = np.sqrt(1.0 + u1_R**2 + u2_R**2 + u3_R**2)
+        
         # Detect troubled faces: unphysical states or strong pressure jump
         p_lc = HD.pres[Ngc:-Ngc, Ngc - 1:g.Nx2r    ]
         p_rc = HD.pres[Ngc:-Ngc, Ngc    :g.Nx2r + 1]
         troubled = ((dens_L <= 0.0) | (dens_R <= 0.0) |
                     (pres_L <= 0.0) | (pres_R <= 0.0) |
+                    (W_L <= 0.0) | (W_R <= 0.0) |
                     (np.abs(p_rc - p_lc) > 0.33 * np.minimum(p_lc, p_rc)))
         
-        # Fallback to PLM with MM limiter at troubled faces
-        dens_L, dens_R = _swap_troubled(dens_L, dens_R, HD.dens, g, 2, troubled)
-        pres_L, pres_R = _swap_troubled(pres_L, pres_R, HD.pres, g, 2, troubled)
-        u1_L,   u1_R   = _swap_troubled(u1_L,   u1_R,   u1,      g, 2, troubled)
-        u2_L,   u2_R   = _swap_troubled(u2_L,   u2_R,   u2,      g, 2, troubled)
-        u3_L,   u3_R   = _swap_troubled(u3_L,   u3_R,   u3,      g, 2, troubled)
+        # Fallback to PLM with minmod at troubled faces
+        dens_L, dens_R = _swap_troubled(dens_L, dens_R, HD.dens, g, 2, lim, troubled)
+        pres_L, pres_R = _swap_troubled(pres_L, pres_R, HD.pres, g, 2, lim, troubled)
+        u1_L,   u1_R   = _swap_troubled(u1_L,   u1_R,   u1,      g, 2, lim, troubled)
+        u2_L,   u2_R   = _swap_troubled(u2_L,   u2_R,   u2,      g, 2, lim, troubled)
+        u3_L,   u3_R   = _swap_troubled(u3_L,   u3_R,   u3,      g, 2, lim, troubled)
         
         # turn back to 3-velocities 
         W_L = np.sqrt(1.0 + u1_L**2 + u2_L**2 + u3_L**2)
@@ -389,10 +421,10 @@ def flux_calc_rHD(g, HD, par, eos):
 
         #Riemann problem solution to obtain fluxes 
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
-            Riemann_sr_hydro(
+            Riemann_rHD(
                 dens_L, dens_R,
                 vel1_L, vel1_R, vel2_L, vel2_R, vel3_L, vel3_R,
-                pres_L, pres_R, eos, par.flux_type, 2)
+                pres_L, pres_R, eos, par.solver_type, 2)
 
         #residuals update 
         ResM += (Fmass[:, 1:] * g.fS2[:, 1:] - Fmass[:, :-1] * g.fS2[:, :-1]) / g.cVol
@@ -401,9 +433,16 @@ def flux_calc_rHD(g, HD, par, eos):
         Res3 += (Fmomz[:, 1:] * g.fS2[:, 1:] - Fmomz[:, :-1] * g.fS2[:, :-1]) / g.cVol
         ResE += (Fetot[:, 1:] * g.fS2[:, 1:] - Fetot[:, :-1] * g.fS2[:, :-1]) / g.cVol
 
-    # External force source terms (gravity, etc.)
-    Res1 += -HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F1
-    Res2 += -HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F2
+    # Curvature source terms for different curvilinear coordinates
+    ST1, ST2, ST3 = curv_source_rHD(g, HD, eos)
+    
+    # Finally, here we add the external force + curvature source terms
+    # Source term for momentum residual 
+    Res1 += - HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F1[:,:] - ST1
+    Res2 += - HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F2[:,:] - ST2
+    Res3 += - ST3
+
+    # Source term for energy residual 
     ResE += -HD.dens[Ngc:-Ngc, Ngc:-Ngc] * (
         HD.F1 * HD.vel1[Ngc:-Ngc, Ngc:-Ngc] +
         HD.F2 * HD.vel2[Ngc:-Ngc, Ngc:-Ngc])
@@ -411,11 +450,93 @@ def flux_calc_rHD(g, HD, par, eos):
     return ResM, Res1, Res2, Res3, ResE
 
 
+  
+def curv_source_rHD(g, HD, eos):
+    """
+    Geometric (curvature) source terms for the SPECIAL-RELATIVISTIC
+    hydrodynamic equations in curvilinear coordinates (finite-volume form).
 
-def _swap_troubled(L, R, var, g, dim, troubled):
-    """Overwrite L, R with PCM values where 'troubled' is True."""
-    if troubled.any():
-        Llo, Rlo = VarReconstruct(var, g, 'PLM', dim, limiter_type = 'MM')
-        L = np.where(troubled, Llo, L)
-        R = np.where(troubled, Rlo, R)
-    return L, R
+    In Cartesian coordinates the relativistic Euler equations are source-free;
+    in curvilinear geometries the divergence of the stress tensor expressed in
+    a non-Cartesian basis produces momentum source terms. The relativistic form
+    differs from the Newtonian one by replacing the momentum-flux prefactor
+
+        dens            ->      rho_h * W**2
+
+    where  rho_h = rho + rho*eps + p  is the relativistic specific enthalpy
+    (times rest density) and  W = 1/sqrt(1 - v^2)  is the Lorentz factor. The
+    isotropic pressure terms and the geometric factors (1/r, cot(theta)/r) are
+    unchanged from the Newtonian case.
+
+    For an ideal-gas (gamma-law) EOS,  rho_h = rho + Gamma/(Gamma-1) * p.
+
+    Parameters
+    ----------
+    g : object
+        Grid: geom ('cart'/'cyl'/'pol'/'sph'), cx1, fx2, Ngc, Nx1, Nx2.
+    HD : object
+        Primitive state: dens, pres, vel1, vel2, vel3 (3-velocities).
+    eos : object
+        Equation of state providing GAMMA (adiabatic index).
+
+    Returns
+    -------
+    ST1, ST2, ST3 : ndarray, shape (Nx1, Nx2)
+        Momentum source terms (zero in ghost zones / Cartesian geometry).
+
+    Notes
+    -----
+    - rho_h * W**2 is the relativistic momentum-density / stress prefactor;
+      using the Newtonian 'dens' here is incorrect for v -> 1 (it omits the
+      Lorentz-factor and enthalpy enhancement that dominate the SR stress).
+    - The spherical cot(theta) is evaluated in a volume-consistent way from
+      face values of sin/cos rather than pointwise, matching the FV scheme.
+    """
+    Ngc = g.Ngc
+    ST1 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    ST2 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    ST3 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    
+    # source-free; nothing further to do
+    if g.geom == 'cart':
+        return ST1, ST2, ST3
+
+    # --- interior primitives ---
+    r    = g.cx1[Ngc:-Ngc, Ngc:-Ngc]
+    dens = HD.dens[Ngc:-Ngc, Ngc:-Ngc]
+    pres = HD.pres[Ngc:-Ngc, Ngc:-Ngc]
+    v1   = HD.vel1[Ngc:-Ngc, Ngc:-Ngc]
+    v2   = HD.vel2[Ngc:-Ngc, Ngc:-Ngc]
+    v3   = HD.vel3[Ngc:-Ngc, Ngc:-Ngc]
+
+    # --- relativistic momentum-flux prefactor:  rho_h * W**2 ---
+    v2sq = v1 * v1 + v2 * v2 + v3 * v3
+    W2 = 1.0 / (1.0 - v2sq) # Lorentz factor squared
+    rhoh = dens * eos.enthalpy_sr(dens, pres) # dens * enthalpy
+    D = rhoh * W2
+
+    # --- cylindrical (R, Z) ---
+    if g.geom == 'cyl':
+        ST1 = (pres + D * v3 * v3) / r
+        ST3 = -D * v3 * v1 / r
+
+    # --- polar (R, phi) ---
+    elif g.geom == 'pol':
+        ST1 = (pres + D * v2 * v2) / r
+        ST2 = -D * v2 * v1 / r
+
+    # --- spherical-polar (r, theta) ---
+    elif g.geom == 'sph':
+        if g.Nx2 > 1:
+            sin_theta = np.sin(g.fx2[Ngc:g.Nx1 + Ngc, Ngc:g.Nx2 + Ngc + 1])
+            cos_theta = np.cos(g.fx2[Ngc:g.Nx1 + Ngc, Ngc:g.Nx2 + Ngc + 1])
+            cot = (sin_theta[:, 1:] - sin_theta[:, :-1]) / \
+                  (cos_theta[:, :-1] - cos_theta[:, 1:])
+        else:
+            cot = np.zeros_like(r)
+
+        ST1 = (2.0 * pres + D * (v2 * v2 + v3 * v3)) / r
+        ST2 = (pres + D * v3 * v3) * cot / r - D * v1 * v2 / r
+        ST3 = -(D * v2 * v3) * cot / r - D * v1 * v3 / r
+
+    return ST1, ST2, ST3
