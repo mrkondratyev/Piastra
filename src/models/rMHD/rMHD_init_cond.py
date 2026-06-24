@@ -89,7 +89,7 @@ def IC_rMHD_user_defined(grid, state, par):
 
 
 # ============================================================================
-# 1D Brio-Wu relativistic MHD problem
+#   1D problems
 # ============================================================================
 def IC_rMHD1D_BW(grid, MHD, par):
     """
@@ -153,9 +153,6 @@ def IC_rMHD1D_BW(grid, MHD, par):
 
 
 
-# ============================================================================
-# RP2 relativistic MHD problem
-# ============================================================================
 def IC_rMHD1D_RP2(grid, MHD, par):
     """
     Riemann problem 2 from 
@@ -215,9 +212,6 @@ def IC_rMHD1D_RP2(grid, MHD, par):
 
 
 
-# ============================================================================
-# RP3 relativistic MHD problem
-# ============================================================================
 def IC_rMHD1D_RP3(grid, MHD, par):
     """
     Riemann problem 3 with a strong shock from 
@@ -277,9 +271,6 @@ def IC_rMHD1D_RP3(grid, MHD, par):
 
 
 
-# ============================================================================
-# RP4 relativistic MHD problem
-# ============================================================================
 def IC_rMHD1D_RP4(grid, MHD, par):
     """
     Riemann problem 4 with ultrarelativistic motion from 
@@ -339,8 +330,9 @@ def IC_rMHD1D_RP4(grid, MHD, par):
     return grid, MHD, par, eos
 
 
+
 # ============================================================================
-# 2D relativistic MHD explosion (cylindrical blast wave)
+#   2D problems
 # ============================================================================
 def IC_rMHD2D_blast(grid, MHD, par):
     """
@@ -420,9 +412,6 @@ def IC_rMHD2D_blast(grid, MHD, par):
 
 
 
-# ============================================================================
-# 2D relativistic rotor
-# ============================================================================
 def IC_rMHD2D_rotor(grid, state, par):
     """
     2D relativistic rotor (Del Zanna et al. 2003 test).
