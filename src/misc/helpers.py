@@ -9,7 +9,7 @@ Provides:
   - initial_model  : dispatcher that selects the correct initial-condition
                      function based on (mode, problem)
 
-Supported modes: 'adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff'.
+Supported modes: 'adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff', 'SWE'.
 
 Author: mrkondratyev
 """
@@ -34,7 +34,7 @@ def run_simulation(grid, state, par, solver, var_to_plot, n_plot):
         State container for the physical variables.
     par : Parameters
         Simulation parameters.  Must include timenow, timefin, mode,
-        and (for non-diffusion modes) rec_type and RK_order.
+        and (for non-diffusion, non-SWE modes) rec_type and RK_order.
     solver : object
         Numerical solver providing the method ``step_RK()``.
     var_to_plot : ndarray
@@ -49,101 +49,96 @@ def run_simulation(grid, state, par, solver, var_to_plot, n_plot):
     timenow : float
         Final physical time reached by the simulation.
     """
-    #print solver parameters
+    # Print solver configuration
     print("numerical model = ", par.mode)
+    print("solver type  = ", par.solver_type)
     print("grid resolution = ", grid.Nx1, grid.Nx2)
+    
     if par.mode == "diff":
-        print("time integrator = ", par.diff_solver)
-        if par.diff_solver == "rkl2":
+        if par.solver_type == "rkl2":
             print("RKL2 stages     = ", par.rkl2_stages)
     else:
-        print("reconstruction type = ", par.rec_type)
-        print("Temporal integration = ", par.RK_order)
+        print("reconstruction type  = ", par.rec_type)
+        print("temporal integration = ", par.RK_order)
+
     print("final phys time = ", par.timefin)
-    
-    #plot setup
+
+    # Plot setup
     line, ax, fig, im = plot_setup(grid, var_to_plot, par.timenow)
-    
+
     print("START OF SIMULATION")
-    
-    #set the start timer to check the elapsed time 
-    start_time1 = time.time() 
-    #cycle over time 
+
+    start_time1 = time.time()
     i_time = 0
+
     while par.timenow < par.timefin:
-           
-        #current timestep
-        i_time = i_time + 1
-        
-        #advected variable update 
-        state = solver.step_RK() 
-        
-        #"real time" output (animated)
+
+        i_time += 1
+
+        state = solver.step_RK()
+
         if (i_time % n_plot == 0) or (par.timefin - par.timenow) < 1e-12:
-            
             print("phys time = ", par.timenow)
             print('num of timesteps = ', i_time)
-    
             plotting(grid, var_to_plot, par.timenow, line, ax, fig, im)
-     
-    #print final physical time
-    print("final phys time = ", par.timenow)    
-    
+
+    print("final phys time = ", par.timenow)
     print("END OF SIMULATION")
-    ##calculate and the elapsed time of the simulation
     end_time1 = time.time()
     print("elapsed time = ", end_time1 - start_time1, " secs")
-    
+
     return state, par.timenow
 
 
+# ── IC imports ────────────────────────────────────────────────────────────────
 
-
-from src.models.adv.advection_init_cond import (
-    IC_advection1D_smooth,
-    IC_advection1D_disc,
-    IC_advection2D_smooth,
-    IC_advection2D_disc,
-    IC_advection_user_defined,
+from src.models.adv.adv_init_cond import (
+    IC_adv1D_smooth,
+    IC_adv1D_disc,
+    IC_adv2D_smooth,
+    IC_adv2D_disc,
+    IC_adv_user_defined,
 )
-from src.models.diff.diffusion_init_cond import (
-    IC_diffusion2D_gaussian,
-    IC_diffusion2D_cross,
-    IC_diffusion2D_ring,
-    IC_diffusion1D_gaussian,
-    IC_diffusion1D_step,
-    IC_diffusion2D_cyl,
-    IC_diffusion1D_sine,
-    IC_diffusion_user_defined,
+from src.models.diff.diff_init_cond import (
+    IC_diff2D_gaussian,
+    IC_diff2D_cross,
+    IC_diff2D_ring,
+    IC_diff1D_gaussian,
+    IC_diff1D_step,
+    IC_diff2D_cyl,
+    IC_diff1D_sine,
+    IC_diff_user_defined,
 )
-from src.models.HD.hydro_init_cond import (
-    IC_hydro1D_Sod,
-    IC_hydro1D_strong_shock,
-    IC_hydro1D_DBW,
-    IC_hydro2D_KHI,
-    IC_hydro2D_RTI,
-    IC_hydro2D_Sod,
-    IC_hydro2D_Sedov_cart,
-    IC_hydro2D_Sedov_cyl,
-    IC_hydro1D_Noh, 
-    IC_hydro1D_ShuOsher, 
-    IC_hydro2D_RP2D, 
-    IC_hydro2D_implosion,
-    IC_hydro1D_Einfeldt,
-    IC_hydro2D_DMR, 
-    IC_hydro2D_Gresho, 
-    IC_hydro2D_shock_cloud,
-    IC_hydro2D_gap_opening,
-    IC_hydro2D_jet_cyl,
-    IC_hydro_user_defined,
+from src.models.HD.HD_init_cond import (
+    IC_HD1D_Sod_cart,
+    IC_HD1D_Sod_cyl,
+    IC_HD1D_Sod_sph,
+    IC_HD1D_strong_shock,
+    IC_HD1D_DBW,
+    IC_HD1D_ShuOsher,
+    IC_HD1D_Einfeldt,
+    IC_HD2D_KHI,
+    IC_HD2D_RTI,
+    IC_HD2D_Sod,
+    IC_HD2D_Sod_sph,
+    IC_HD2D_Sod_polar,
+    IC_HD2D_Sedov_cart,
+    IC_HD2D_Sedov_cyl,
+    IC_HD2D_RP2D,
+    IC_HD2D_Gresho,
+    IC_HD2D_shock_cloud,
+    IC_HD2D_gap_opening,
+    IC_HD2D_jet_cyl,
+    IC_HD_user_defined,
 )
 from src.models.MHD.MHD_init_cond import (
     IC_MHD1D_BW,
-    IC_MHD1D_Toth, 
+    IC_MHD1D_Toth,
     IC_MHD1D_RJ,
     IC_MHD1D_Alfven,
     IC_MHD2D_blast_cart,
     IC_MHD2D_blast_cyl,
+    IC_MHD2D_blast_sph, 
     IC_MHD2D_OT,
     IC_MHD2D_rotor,
     IC_MHD2D_current_sheet,
@@ -159,20 +154,31 @@ from src.models.rHD.rHD_init_cond import (
     IC_rHD1D_RP5,
     IC_rHD2D_RP,
     IC_rHD2D_RTI,
-    IC_rHD1D_perturbed_shock,
-    IC_rHD1D_shock_heating,
-    IC_rHD2D_jet,
+    IC_rHD2D_jet_cart,
     IC_rHD2D_jet_cyl,
     IC_rHD_user_defined,
 )
 from src.models.rMHD.rMHD_init_cond import (
-    IC_rMHD2D_rotor,
+    IC_rMHD1D_BW,
     IC_rMHD1D_RP2,
     IC_rMHD1D_RP3,
     IC_rMHD1D_RP4,
     IC_rMHD2D_blast,
-    IC_rMHD1D_BW,
+    IC_rMHD2D_rotor,
     IC_rMHD_user_defined,
+)
+from src.models.SWE.SWE_init_cond import (
+    IC_SWE1D_dam,
+    IC_SWE2D_bathtub,
+    IC_SWE2D_expl,
+    IC_SWE2D_tsunami,
+    IC_SWE2D_ocean,
+    IC_SWE2D_atmo,
+    IC_SWE2D_dam,
+    IC_SWE2D_bickley,
+    IC_SWE2D_KH,
+    IC_SWE1D_bump,
+    IC_SWE_user_defined,
 )
 
 
@@ -191,7 +197,7 @@ def initial_model(grid, state, par):
         Simulation state container.
     par : Parameters
         Parameters object containing simulation settings, including
-        mode ('adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff') and problem name.
+        mode and problem name.
 
     Returns
     -------
@@ -202,68 +208,68 @@ def initial_model(grid, state, par):
     par : Parameters
         Parameters with timefin, BC, etc. configured.
     eos : EOSdata or None
-        Equation of state (None for advection and diffusion modes).
+        Equation of state (None for advection, diffusion, and SWE modes).
     """
 
-    # --- dispatch dictionaries ---
+    # ── Dispatch dictionaries ─────────────────────────────────────────────
+
     diff_dispatch = {
-        "gauss2D":      IC_diffusion2D_gaussian,
-        "cross2D":      IC_diffusion2D_cross,
-        "ring2D":       IC_diffusion2D_ring,
-        "gauss1D":      IC_diffusion1D_gaussian,
-        "step1D":       IC_diffusion1D_step,
-        "sine1D":       IC_diffusion1D_sine,
-        "cyl2D":        IC_diffusion2D_cyl,
-        "user_defined": IC_diffusion_user_defined,
-        
+        "gauss2D":      IC_diff2D_gaussian,
+        "cross2D":      IC_diff2D_cross,
+        "ring2D":       IC_diff2D_ring,
+        "gauss1D":      IC_diff1D_gaussian,
+        "step1D":       IC_diff1D_step,
+        "sine1D":       IC_diff1D_sine,
+        "cyl2D":        IC_diff2D_cyl,
+        "user_defined": IC_diff_user_defined,
     }
 
     adv_dispatch = {
-        "smooth1D":     IC_advection1D_smooth,
-        "disc1D":       IC_advection1D_disc,
-        "smooth2D":     IC_advection2D_smooth,
-        "disc2D":       IC_advection2D_disc,
-        "user_defined": IC_advection_user_defined,
+        "smooth1D":     IC_adv1D_smooth,
+        "disc1D":       IC_adv1D_disc,
+        "smooth2D":     IC_adv2D_smooth,
+        "disc2D":       IC_adv2D_disc,
+        "user_defined": IC_adv_user_defined,
     }
 
     hd_dispatch = {
-        "sod1Dcart":    lambda g, s, p: IC_hydro1D_Sod(g, s, p, "cart"),
-        "sod1Dcyl":     lambda g, s, p: IC_hydro1D_Sod(g, s, p, "cyl"),
-        "sod1Dpol":     lambda g, s, p: IC_hydro1D_Sod(g, s, p, "pol"),
-        "strong1D":     IC_hydro1D_strong_shock,
-        "DBW1D":        IC_hydro1D_DBW,
-        "noh1D":        IC_hydro1D_Noh,
-        "shuosher1D":   IC_hydro1D_ShuOsher,
-        "einfeldt1D":   IC_hydro1D_Einfeldt,
-        "KHI":          IC_hydro2D_KHI,
-        "RTI":          IC_hydro2D_RTI,
-        "sod2Dcart":    IC_hydro2D_Sod,
-        "sedov2Dcart":  IC_hydro2D_Sedov_cart,
-        "sedov2Dcyl":   IC_hydro2D_Sedov_cyl,
-        "RP2D":         IC_hydro2D_RP2D,
-        "implosion2D":  IC_hydro2D_implosion,
-        "DMR2D":        IC_hydro2D_DMR,
-        "gresho2D":     IC_hydro2D_Gresho,
-        "shock-cloud":  IC_hydro2D_shock_cloud,
-        "gap-opening":  IC_hydro2D_gap_opening,
-        "jet2Dcyl":     IC_hydro2D_jet_cyl,
-        "user_defined": IC_hydro_user_defined,
+        "sod1Dcart":    IC_HD1D_Sod_cart,
+        "sod1Dcyl":     IC_HD1D_Sod_cyl,
+        "sod1Dsph":     IC_HD1D_Sod_sph,
+        "strong1D":     IC_HD1D_strong_shock,
+        "DBW1D":        IC_HD1D_DBW,
+        "shuosher1D":   IC_HD1D_ShuOsher,
+        "einfeldt1D":   IC_HD1D_Einfeldt,
+        "sod2Dsph":     IC_HD2D_Sod_sph,
+        "sod2Dpol":     IC_HD2D_Sod_polar,
+        "KHI2D":        IC_HD2D_KHI,
+        "RTI2D":        IC_HD2D_RTI,
+        "sod2Dcart":    IC_HD2D_Sod,
+        "sedov2Dcart":  IC_HD2D_Sedov_cart,
+        "sedov2Dcyl":   IC_HD2D_Sedov_cyl,
+        "RP2D":         IC_HD2D_RP2D,
+        "gresho2D":     IC_HD2D_Gresho,
+        "shock-cloud":  IC_HD2D_shock_cloud,
+        "gap-opening":  IC_HD2D_gap_opening,
+        "jet2Dcyl":     IC_HD2D_jet_cyl,
+        "user_defined": IC_HD_user_defined,
     }
 
     mhd_dispatch = {
-        "BW1D":         IC_MHD1D_BW,
-        "toth1D":       IC_MHD1D_Toth,
-        "RJ1D":         IC_MHD1D_RJ,
-        "alfven1D":     IC_MHD1D_Alfven,
-        "blast-cart":   IC_MHD2D_blast_cart,
-        "blast-cyl":    IC_MHD2D_blast_cyl,
-        "rotor2D":      IC_MHD2D_rotor,
-        "OT2D":         IC_MHD2D_OT,
-        "current-sheet":IC_MHD2D_current_sheet,
-        "field-loop":   IC_MHD2D_field_loop,
-        "disk2D":       IC_MHD2D_disk,
-        "shock-cloud":  IC_MHD2D_shock_cloud,
-        "user_defined": IC_MHD_user_defined,
+        "BW1D":          IC_MHD1D_BW,
+        "toth1D":        IC_MHD1D_Toth,
+        "RJ1D":          IC_MHD1D_RJ,
+        "alfven1D":      IC_MHD1D_Alfven,
+        "blast2Dcart":  IC_MHD2D_blast_cart,
+        "blast2Dcyl":   IC_MHD2D_blast_cyl,
+        "blast2Dsph":   IC_MHD2D_blast_sph, 
+        "rotor2D":       IC_MHD2D_rotor,
+        "OT2D":          IC_MHD2D_OT,
+        "current-sheet": IC_MHD2D_current_sheet,
+        "field-loop":    IC_MHD2D_field_loop,
+        "disk2D":        IC_MHD2D_disk,
+        "shock-cloud":   IC_MHD2D_shock_cloud,
+        "user_defined":  IC_MHD_user_defined,
     }
 
     rhd_dispatch = {
@@ -273,24 +279,37 @@ def initial_model(grid, state, par):
         "RP5":          IC_rHD1D_RP5,
         "RP2D":         IC_rHD2D_RP,
         "RTI":          IC_rHD2D_RTI,
-        "pshock1D":     IC_rHD1D_perturbed_shock,
-        "sheat1D":      IC_rHD1D_shock_heating,
-        "jet2D":        IC_rHD2D_jet,
+        "jet2Dcart":    IC_rHD2D_jet_cart,
         "jet2Dcyl":     IC_rHD2D_jet_cyl,
         "user_defined": IC_rHD_user_defined,
     }
 
     rmhd_dispatch = {
-        "blast2D":      IC_rMHD2D_blast,
-        "rotor2D":      IC_rMHD2D_rotor,
+        "BW1D":         IC_rMHD1D_BW,    
         "RP2":          IC_rMHD1D_RP2,
         "RP3":          IC_rMHD1D_RP3,
         "RP4":          IC_rMHD1D_RP4,
-        "BW1D":         IC_rMHD1D_BW,
+        "blast2D":      IC_rMHD2D_blast,
+        "rotor2D":      IC_rMHD2D_rotor,
         "user_defined": IC_rMHD_user_defined,
     }
 
-    # --- mode selection ---
+    swe_dispatch = {
+        "dam1D":        IC_SWE1D_dam,
+        "bump1D":       IC_SWE1D_bump,
+        "bathtub2D":    IC_SWE2D_bathtub,
+        "expl2D":       IC_SWE2D_expl,
+        "tsunami2D":    IC_SWE2D_tsunami,
+        "ocean2D":      IC_SWE2D_ocean,
+        "atmo2D":       IC_SWE2D_atmo,
+        "dam2D":        IC_SWE2D_dam,
+        "jet2D":        IC_SWE2D_bickley,
+        "KHI2D":        IC_SWE2D_KH,
+        "user_defined": IC_SWE_user_defined,
+    }
+
+    # ── Mode selection ────────────────────────────────────────────────────
+
     if par.mode == "diff":
         try:
             grid, state, par = diff_dispatch[par.problem](grid, state, par)
@@ -298,27 +317,24 @@ def initial_model(grid, state, par):
         except KeyError:
             raise ValueError(
                 f"Invalid diffusion problem '{par.problem}'. "
-                f"Available: {list(diff_dispatch.keys())}"
-            )
+                f"Available: {list(diff_dispatch.keys())}")
 
     elif par.mode == "adv":
         try:
             grid, state, par = adv_dispatch[par.problem](grid, state, par)
-            eos = None 
+            eos = None
         except KeyError:
             raise ValueError(
                 f"Invalid advection problem '{par.problem}'. "
-                f"Available: {list(adv_dispatch.keys())}"
-            )
+                f"Available: {list(adv_dispatch.keys())}")
 
     elif par.mode == "HD":
         try:
             grid, state, par, eos = hd_dispatch[par.problem](grid, state, par)
         except KeyError:
             raise ValueError(
-                f"Invalid hydro problem '{par.problem}'. "
-                f"Available: {list(hd_dispatch.keys())}"
-            )
+                f"Invalid HD problem '{par.problem}'. "
+                f"Available: {list(hd_dispatch.keys())}")
 
     elif par.mode == "MHD":
         try:
@@ -326,8 +342,7 @@ def initial_model(grid, state, par):
         except KeyError:
             raise ValueError(
                 f"Invalid MHD problem '{par.problem}'. "
-                f"Available: {list(mhd_dispatch.keys())}"
-            )
+                f"Available: {list(mhd_dispatch.keys())}")
 
     elif par.mode == "rHD":
         try:
@@ -335,8 +350,7 @@ def initial_model(grid, state, par):
         except KeyError:
             raise ValueError(
                 f"Invalid rHD problem '{par.problem}'. "
-                f"Available: {list(rhd_dispatch.keys())}"
-            )
+                f"Available: {list(rhd_dispatch.keys())}")
 
     elif par.mode == "rMHD":
         try:
@@ -344,13 +358,20 @@ def initial_model(grid, state, par):
         except KeyError:
             raise ValueError(
                 f"Invalid rMHD problem '{par.problem}'. "
-                f"Available: {list(rmhd_dispatch.keys())}"
-            )
+                f"Available: {list(rmhd_dispatch.keys())}")
+
+    elif par.mode == "SWE":
+        try:
+            grid, state, par, eos = swe_dispatch[par.problem](grid, state, par)
+            eos = None 
+        except KeyError:
+            raise ValueError(
+                f"Invalid SWE problem '{par.problem}'. "
+                f"Available: {list(swe_dispatch.keys())}")
 
     else:
         raise ValueError(
             f"Invalid simulation mode '{par.mode}'. "
-            f"Expected one of ['adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff']."
-        )
-        
+            f"Expected one of ['adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff', 'SWE'].")
+
     return grid, state, par, eos
