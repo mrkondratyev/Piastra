@@ -47,8 +47,10 @@ Author: mrkondratyev
 
 import numpy as np
 from src.common.boundaries import apply_bc_scalar, apply_bc_vector
-from src.models.SWE.riemann_exact import exact_swe_godunov_state
-
+from src.models.SWE.SWE_riemann_exact import exact_swe_godunov_state
+from src.models.SWE.SWE_riemann_approx import (
+    LLF_flux,
+    HLL_flux)
 
 def boundCond_SWE(grid, BC, SWE):
     """
@@ -93,9 +95,7 @@ def boundCond_SWE(grid, BC, SWE):
     return SWE
 
 
-
-
-def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, flux_type, dim):
+def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, solver_type, dim):
     """
    Approximate Riemann solver for the Euler equations of gas dynamics.
 
@@ -107,7 +107,7 @@ def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, flux_type, dim):
        Velocity components (x, y) for left and right states.
    g_ff : float
        gravity acceleration.
-   flux_type : str
+   solver_type : str
        Type of flux solver: 'LLF', 'HLL'.
    dim : int
        Coordinate direction (1 or 2). Other directions obtained by rotation.
@@ -124,47 +124,18 @@ def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, flux_type, dim):
     if dim == 2: #2-direction -- rotate the coordinate system
         templ, tempr = vxl, vxr
         vxl, vxr = vyl, vyr
-        vyl, vyr = -templ, -tempr
+        vyl, vyr = -templ, -tempr   
     
-    #left fluxes
-    Fh_L = hl * vxl
-    Fx_L = hl * vxl * vxl + 0.5 * g_ff * hl**2 
-    Fy_L = hl * vyl * vxl
+    #here we calculate the flux using various Riemann solvers
+    if solver_type == 'LLF':
+        
+        Fh, Fx, Fy = LLF_flux(hl, hr, vxl, vxr, vyl, vyr, g_ff)
+        
+    elif solver_type == 'HLL':  
+        
+        Fh, Fx, Fy = HLL_flux(hl, hr, vxl, vxr, vyl, vyr, g_ff)
     
-    #right fluxes
-    Fh_R = hr * vxr
-    Fx_R = hr * vxr * vxr + 0.5 * g_ff * hr**2
-    Fy_R = hr * vyr * vxr
-
-    #left and right speeds of gravity waves 
-    gwavel = np.sqrt(g_ff * hl)
-    gwaver = np.sqrt(g_ff * hr)    
-    
-    #here we calculate the flux using approximate Riemann solvers
-    if flux_type == 'LLF':
-        
-        #maximal absolute value of eigenvalues  
-        Sr = np.maximum(gwavel + np.abs(vxl), gwaver + np.abs(vxr))
-        
-        Fh = (Fh_L + Fh_R) / 2.0 - Sr * (hr     - hl    ) / 2.0
-        Fx = (Fx_L + Fx_R) / 2.0 - Sr * (hr*vxr - hl*vxl) / 2.0
-        Fy = (Fy_L + Fy_R) / 2.0 - Sr * (hr*vyr - hl*vyl) / 2.0
-        
-    elif flux_type == 'HLL':  
-        
-        #maximal and minimal eigenvalues estimate according to Davis (1988)
-        Sl = np.minimum(vxl, vxr) - np.maximum(gwavel, gwaver)
-        Sr = np.maximum(vxl, vxr) + np.maximum(gwavel, gwaver)
-        
-        #maximal and minimal eigenvalues for one-line form of HLL flux
-        Sl = np.minimum(Sl, 0.0)
-        Sr = np.maximum(Sr, 0.0)
-        
-        Fh = (Sr*Fh_L - Sl*Fh_R + Sr*Sl*(hr     - hl    ))/(Sr - Sl)
-        Fx = (Sr*Fx_L - Sl*Fx_R + Sr*Sl*(hr*vxr - hl*vxl))/(Sr - Sl)
-        Fy = (Sr*Fy_L - Sl*Fy_R + Sr*Sl*(hr*vyr - hl*vyl))/(Sr - Sl)
-    
-    elif flux_type == 'Exact':
+    elif solver_type == 'Exact':
         
         # exact Riemann problem solution for SWE/barotropic HD 
         h0, vx0, vy0 = exact_swe_godunov_state(hl, hr, vxl, vxr, vyl, vyr, g_ff)
@@ -176,9 +147,10 @@ def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, flux_type, dim):
         
     else:
 
-        #flux_type is incorrect
-        raise ValueError(f"Unknown flux_type: {flux_type}. Expected one of ['LLF', 'HLL', 'Exact'].")
-    
+        #solver_type is incorrect -> throw an error
+        raise ValueError(
+            f"Unknown SWE solver_type '{solver_type}'. " 
+            f"Expected one of ['LLF', 'HLL', 'Exact'].")
 
     #check in what direction we solve the problem    #если решаем ЗР вдоль (Y) -- повернем систему координат в исходное состояние 
     if dim == 2: #2-direction -- rotate the coordinate system
@@ -186,6 +158,6 @@ def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, flux_type, dim):
         Fx = -Fy
         Fy = temp
         
-    #return approximate Riemann flux for SWE -- 
+    #return Riemann flux for SWE -- 
     #3 fluxes for conservative variables
     return Fh, Fx, Fy
