@@ -17,7 +17,6 @@ The Parameters class:
 
 Author: mrkondratyev
 """
-
 import numpy as np
 from typing import Optional
 
@@ -38,7 +37,7 @@ class Parameters:
       dt = CFL * ( max( Σ λ_i / Δx_i ) )^(-1),
       so the same CFL works for 1D and 2D.
     - Ghost cells:
-      Default is 2, but for PPM/WENO reconstructions 3 are required.
+      Default is 2, but for PPM/WENO reconstructions 3 is required.
 
     Parameters
     ----------
@@ -58,18 +57,14 @@ class Parameters:
         Runge-Kutta temporal integration order. Default is 'RK3'.
         Options: 'RK1', 'RK2', 'RK3'.
         Not used for 'diff' mode.
-    flux_type : str, optional
-        Numerical flux type. If not provided, assigned from defaults.
-        Not used for 'diff' or 'SWE' modes.
+    solver_type : str, optional
+        Numerical solver type. If not provided, assigned from defaults.
     CFL : float, optional
         Courant-Friedrichs-Lewy number. Default is 0.7.
     divb_tr : str, optional
-        Divergence of magnetic field treatment (MHD only): 'CT' or '8wave'.
-    diff_solver : str, optional
-        Time-integration method for diffusion (mode='diff' only).
-        'expl' (explicit forward Euler) or 'rkl2' (RKL2 super time-stepping).
+        Divergence of magnetic field treatment (MHD only): 'CT' , 'GLM', or '8wave'.
     rkl2_stages : int, optional
-        Number of RKL2 stages s ≥ 2 (mode='diff', diff_solver='rkl2' only).
+        Number of RKL2 stages s ≥ 2 (mode='diff', solver_type='rkl2' only).
         Default is 10.
 
     Attributes
@@ -84,14 +79,15 @@ class Parameters:
         Number of ghost cells (depends on reconstruction method).
     """
 
-    # Default flux mapping per mode
-    _default_flux = {
+    # Default solver mapping per mode
+    _default_solver = {
         "adv":  "adv",
         "SWE":  "HLL",
         "HD":   "HLLC",
         "rHD":  "HLLC",
         "MHD":  "HLLD",
         "rMHD": "HLL",
+        "diff": "rkl2",
     }
 
     def __init__(self,
@@ -100,11 +96,10 @@ class Parameters:
                  Nx1: Optional[int] = None,
                  Nx2: Optional[int] = None,
                  rec_type: str = "PLM",
-                 RK_order: str = "RK3",
-                 flux_type: Optional[str] = None,
+                 RK_order: str = "RK2",
+                 solver_type: Optional[str] = None,
                  CFL: float = 0.7,
-                 divb_tr: str = '8wave',
-                 diff_solver: str = 'expl',
+                 divb_tr: str = 'GLM',
                  rkl2_stages: int = 10):
 
         # Simulation mode
@@ -116,29 +111,29 @@ class Parameters:
         self.problem = problem
 
         # Grid resolution
-        self.Nx1 = Nx1
-        self.Nx2 = Nx2
+        self.Nx1 = Nx1; self.Nx2 = Nx2
 
         # Physical time
-        self.timenow = 0.0
-        self.timefin = 0.0
+        self.timenow = 0.0; self.timefin = 0.0
 
         # Boundary conditions (set by IC function)
-        self.BC = np.array(["wall", "wall", "wall", "wall"], dtype=str)
+        self.BC = np.array(["free", "free", "free", "free"], dtype=str)
+        # Fixed (Dirichlet) ghost-fill patches, keyed by face index 0..3.
+        # Each entry: list of (start, end, {field: value}) tuples giving an
+        # interior index range along that boundary and the prescribed state.
+        self.BC_fixed = {0: [], 1: [], 2: [], 3: []}
 
         # CFL number
         self.CFL = CFL
+            
+        # solver type
+        self.solver_type = (solver_type if solver_type is not None
+                          else self._default_solver[mode])
 
         # ── Diffusion mode ────────────────────────────────────────────────
         if mode == "diff":
-            if diff_solver not in ["expl", "rkl2"]:
-                raise ValueError(
-                    f"Invalid diff_solver: '{diff_solver}'. "
-                    f"Expected 'expl' or 'rkl2'.")
-            self.diff_solver  = diff_solver
-            self.rkl2_stages  = int(rkl2_stages)
+            self.rkl2_stages  = int(rkl2_stages)                
             self.Ngc          = 1
-            self.flux_type    = None
             self.rec_type     = None
             self.RK_order     = None
             self.BCm          = None
@@ -149,56 +144,41 @@ class Parameters:
 
         # Reconstruction method
         self.rec_type = rec_type
-        self.Ngc      = 2 if rec_type in ["PCM", "PLM"] else 3
+        self.Ngc = 2 if rec_type in ["PCM", "PLM"] else 3
 
         # Time integration
-        if RK_order not in ["RK1", "RK2", "RK3"]:
-            raise ValueError(
-                f"Invalid RK_order: '{RK_order}'. "
-                f"Expected one of ['RK1', 'RK2', 'RK3'].")
         self.RK_order = RK_order
 
-        # Flux type
-        self.flux_type = (flux_type if flux_type is not None
-                          else self._default_flux[mode])
-
         # Parameters unused by these modes
-        self.diff_solver = None
         self.rkl2_stages = None
-
-        # ── rHD ───────────────────────────────────────────────────────────
-        if mode == "rHD":
-            valid_rHD = ["LLF", "HLL", "HLLC"]
-            if self.flux_type not in valid_rHD:
-                raise ValueError(
-                    f"Invalid flux_type '{self.flux_type}' for rHD. "
-                    f"Expected one of {valid_rHD}.")
-            self.BCm     = None
-            self.divb_tr = None
-
+        
+        # -- relativistic flows should use lower CFL -----------------------
+        if (mode == "rMHD" or mode == "rHD") & (self.CFL > 0.4):
+            print("adjust CFL parameter to 0.4 for relativistic flows")
+            self.CFL = 0.4
+          
         # ── rMHD ──────────────────────────────────────────────────────────
-        elif mode == "rMHD":
-            valid_rMHD = ["LLF", "HLL"]
-            if self.flux_type not in valid_rMHD:
-                raise ValueError(
-                    f"Invalid flux_type '{self.flux_type}' for rMHD. "
-                    f"Expected one of {valid_rMHD}.")
-            self.BCm     = np.array(["wall", "wall", "wall", "wall"], dtype=str)
+        if mode == "rMHD":
+            self.BCm = np.array(["free", "free", "free", "free"], dtype=str)
+            if divb_tr not in ["CT"]:
+                print("CT scheme is only available for rMHD")
             self.divb_tr = "CT"
 
         # ── MHD ───────────────────────────────────────────────────────────
         elif mode == "MHD":
-            self.BCm = np.array(["wall", "wall", "wall", "wall"], dtype=str)
-            if divb_tr not in ["CT", "8wave"]:
+            self.BCm = np.array(["free", "free", "free", "free"], dtype=str)
+            if divb_tr not in ["CT", "8wave", "GLM"]:
                 raise ValueError(
                     f"Invalid divb_tr: '{divb_tr}'. "
-                    f"Expected one of ['CT', '8wave'].")
+                    f"Expected one of ['CT', '8wave', 'GLM'].")
             self.divb_tr = divb_tr
 
-        # ── adv / HD / SWE ────────────────────────────────────────────────
+        # ── adv / HD / rHD / SWE ──────────────────────────────────────────
         else:
             self.BCm     = None
             self.divb_tr = None
+
+
 
     def __str__(self):
         lines = [
@@ -209,7 +189,7 @@ class Parameters:
 
         if self.mode == "diff":
             lines += [
-                f"Time integrator   : {self.diff_solver}",
+                f"Time integrator   : {self.solver_type}",
                 f"RKL2 stages       : {self.rkl2_stages}",
                 f"CFL               : {self.CFL}",
             ]
@@ -218,7 +198,7 @@ class Parameters:
             lines += [
                 f"Reconstruction    : {self.rec_type}",
                 f"RK Order          : {self.RK_order}",
-                f"Flux Type         : {self.flux_type}",
+                f"Solver Type       : {self.solver_type}",
                 f"CFL               : {self.CFL}",
             ]
             if self.mode == "MHD":
