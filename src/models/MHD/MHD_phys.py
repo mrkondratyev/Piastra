@@ -44,14 +44,16 @@ mrkondratyev, 2024–2025
 import numpy as np
 from src.common.boundaries import (
     apply_bc_scalar, 
-    apply_bc_vector)
-from src.models.MHD.riemann_approx import (
+    apply_bc_vector,
+    apply_bc_fixed)
+from src.models.MHD.MHD_riemann_approx import (
     LLF_flux,
     HLL_flux,
+    HLLC_flux,
     HLLD_flux)
 
 
-def prim2cons_nr_MHD(dens, vel1, vel2, vel3, pres, bfld1, bfld2, bfld3, eos):
+def prim2cons_MHD(dens, vel1, vel2, vel3, pres, bfld1, bfld2, bfld3, eos):
     """
     Convert primitive variables to conservative variables (non-relativistic MHD).
 
@@ -81,6 +83,7 @@ def prim2cons_nr_MHD(dens, vel1, vel2, vel3, pres, bfld1, bfld2, bfld3, eos):
     """
     
     mass = dens
+    #momentum
     mom1 = dens * vel1; mom2 = dens * vel2; mom3 = dens * vel3
     #kinetic energy 
     ekin = dens * (vel1**2 + vel2**2 + vel3**2) / 2.0 
@@ -96,7 +99,8 @@ def prim2cons_nr_MHD(dens, vel1, vel2, vel3, pres, bfld1, bfld2, bfld3, eos):
     return mass, mom1, mom2, mom3, etot, bcon1, bcon2, bcon3
 
 
-def cons2prim_nr_MHD(mass, mom1, mom2, mom3, etot, bcon1, bcon2, bcon3, eos):
+
+def cons2prim_MHD(mass, mom1, mom2, mom3, etot, bcon1, bcon2, bcon3, eos):
     """
     Convert conservative variables to primitive variables (non-relativistic MHD).
 
@@ -125,17 +129,23 @@ def cons2prim_nr_MHD(mass, mom1, mom2, mom3, etot, bcon1, bcon2, bcon3, eos):
         Magnetic field components (identical to input).
     """
     dens = mass
+    #apply density floor for problematic flows 
+    dens = np.maximum(dens, 1e-10)
     vel1 = mom1 / dens; vel2 = mom2 / dens; vel3 = mom3 / dens
     bfld1 = bcon1; bfld2 = bcon2; bfld3 = bcon3
     eint = etot - dens * (vel1**2 + vel2**2 + vel3**2) / 2.0 - (bfld1**2 + bfld2**2 + bfld3**2) / 2.0
     pres = eos.pres(dens, eint) 
+    #apply pressure floor for very magnetized/cold flows 
+    pres = np.maximum(pres, 1e-10)
     
     return dens, vel1, vel2, vel3, pres, bfld1, bfld2, bfld3
+
 
 
 # ============================================================================
 # Helper: call cons2prim_nr_MHD for a SimState object
 # ============================================================================
+
 def _prim_recovery(state, Ngc, eos):
     """
     Call cons2prim_nr_MHD and write results back into
@@ -155,9 +165,10 @@ def _prim_recovery(state, Ngc, eos):
      state.bfi1[Ngc:-Ngc, Ngc:-Ngc],
      state.bfi2[Ngc:-Ngc, Ngc:-Ngc],
      state.bfi3[Ngc:-Ngc, Ngc:-Ngc]) = \
-        cons2prim_nr_MHD(
+        cons2prim_MHD(
             state.mass, state.mom1, state.mom2, state.mom3, state.etot,
             state.bcon1, state.bcon2, state.bcon3, eos)
+
 
 
 def max_wavespeed_MHD(csound, b1, b2, b3, dens):
@@ -183,7 +194,8 @@ def max_wavespeed_MHD(csound, b1, b2, b3, dens):
     return cfast
 
 
-def boundCond_MHD(grid, BC, fluid):
+
+def boundCond_MHD(grid, BC, BCm, MHD, BC_fixed=None):
     """
     Apply boundary conditions to MHD variables.
 
@@ -194,8 +206,15 @@ def boundCond_MHD(grid, BC, fluid):
     BC : list of str
         Boundary types for each boundary [inner_x1, inner_x2, outer_x1, outer_x2].
         Supported: 'free', 'wall', 'peri', 'axis'.
+    BCm : list of str
+        magnetic boundary types for each boundary [inner_x1, inner_x2, outer_x1, outer_x2].
+        Supported: 'free', 'wall', 'peri', 'axis'.
     fluid : object
         MHD state object with attributes dens, pres, vel1, vel2, vel3, bfi1, bfi2, bfi3.
+        
+    Notes
+    ----------
+    Fixed boundaries are not supproted yet for CT MHD
 
     Returns
     -------
@@ -204,41 +223,58 @@ def boundCond_MHD(grid, BC, fluid):
     """
     Ngc = grid.Ngc
     
-    # Apply BCs for density and pressure
-    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[0], axis=1, side='inner')
-    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[1], axis=2, side='inner')
-    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[2], axis=1, side='outer')
-    fluid.dens = apply_bc_scalar(fluid.dens, Ngc, BC[3], axis=2, side='outer')
+    # Apply BCs for density, pressure, and GLM 
+    MHD.dens = apply_bc_scalar(MHD.dens, Ngc, BC[0], axis=1, side='inner')
+    MHD.dens = apply_bc_scalar(MHD.dens, Ngc, BC[1], axis=2, side='inner')
+    MHD.dens = apply_bc_scalar(MHD.dens, Ngc, BC[2], axis=1, side='outer')
+    MHD.dens = apply_bc_scalar(MHD.dens, Ngc, BC[3], axis=2, side='outer')
     
-    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[0], axis=1, side='inner')
-    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[1], axis=2, side='inner')
-    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[2], axis=1, side='outer')
-    fluid.pres = apply_bc_scalar(fluid.pres, Ngc, BC[3], axis=2, side='outer')
+    MHD.pres = apply_bc_scalar(MHD.pres, Ngc, BC[0], axis=1, side='inner')
+    MHD.pres = apply_bc_scalar(MHD.pres, Ngc, BC[1], axis=2, side='inner')
+    MHD.pres = apply_bc_scalar(MHD.pres, Ngc, BC[2], axis=1, side='outer')
+    MHD.pres = apply_bc_scalar(MHD.pres, Ngc, BC[3], axis=2, side='outer')
+    
+    MHD.bglm = apply_bc_scalar(MHD.bglm, Ngc, BCm[0], axis=1, side='inner')
+    MHD.bglm = apply_bc_scalar(MHD.bglm, Ngc, BCm[1], axis=2, side='inner')
+    MHD.bglm = apply_bc_scalar(MHD.bglm, Ngc, BCm[2], axis=1, side='outer')
+    MHD.bglm = apply_bc_scalar(MHD.bglm, Ngc, BCm[3], axis=2, side='outer')
     
     # Apply BCs for velocity
-    fluid.vel1, fluid.vel2, fluid.vel3 = \
-        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[0], axis=1, side='inner')
-    fluid.vel1, fluid.vel2, fluid.vel3 = \
-        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[1], axis=2, side='inner')
-    fluid.vel1, fluid.vel2, fluid.vel3 = \
-        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[2], axis=1, side='outer')
-    fluid.vel1, fluid.vel2, fluid.vel3 = \
-        apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[3], axis=2, side='outer')
+    MHD.vel1, MHD.vel2, MHD.vel3 = \
+        apply_bc_vector(MHD.vel1, MHD.vel2, MHD.vel3, Ngc, BC[0], axis=1, side='inner')
+    MHD.vel1, MHD.vel2, MHD.vel3 = \
+        apply_bc_vector(MHD.vel1, MHD.vel2, MHD.vel3, Ngc, BC[1], axis=2, side='inner')
+    MHD.vel1, MHD.vel2, MHD.vel3 = \
+        apply_bc_vector(MHD.vel1, MHD.vel2, MHD.vel3, Ngc, BC[2], axis=1, side='outer')
+    MHD.vel1, MHD.vel2, MHD.vel3 = \
+        apply_bc_vector(MHD.vel1, MHD.vel2, MHD.vel3, Ngc, BC[3], axis=2, side='outer')
     
     # Apply BCs for magnetic fields
-    fluid.bfi1, fluid.bfi2, fluid.bfi3 = \
-        apply_bc_vector(fluid.bfi1, fluid.bfi2, fluid.bfi3, Ngc, BC[0], axis=1, side='inner')
-    fluid.bfi1, fluid.bfi2, fluid.bfi3 = \
-        apply_bc_vector(fluid.bfi1, fluid.bfi2, fluid.bfi3, Ngc, BC[1], axis=2, side='inner')
-    fluid.bfi1, fluid.bfi2, fluid.bfi3 = \
-        apply_bc_vector(fluid.bfi1, fluid.bfi2, fluid.bfi3, Ngc, BC[2], axis=1, side='outer')
-    fluid.bfi1, fluid.bfi2, fluid.bfi3 = \
-        apply_bc_vector(fluid.bfi1, fluid.bfi2, fluid.bfi3, Ngc, BC[3], axis=2, side='outer')
+    MHD.bfi1, MHD.bfi2, MHD.bfi3 = \
+        apply_bc_vector(MHD.bfi1, MHD.bfi2, MHD.bfi3, Ngc, BCm[0], axis=1, side='inner')
+    MHD.bfi1, MHD.bfi2, MHD.bfi3 = \
+        apply_bc_vector(MHD.bfi1, MHD.bfi2, MHD.bfi3, Ngc, BCm[1], axis=2, side='inner')
+    MHD.bfi1, MHD.bfi2, MHD.bfi3 = \
+        apply_bc_vector(MHD.bfi1, MHD.bfi2, MHD.bfi3, Ngc, BCm[2], axis=1, side='outer')
+    MHD.bfi1, MHD.bfi2, MHD.bfi3 = \
+        apply_bc_vector(MHD.bfi1, MHD.bfi2, MHD.bfi3, Ngc, BCm[3], axis=2, side='outer')
     
-    return fluid
+    # --- fixed (Dirichlet) ghost-fill, applied LAST ---
+    if BC_fixed is not None:
+        N1, N2 = MHD.dens.shape
+        sf = {'dens': MHD.dens, 'pres': MHD.pres,
+              'vel1': MHD.vel1, 'vel2': MHD.vel2, 'vel3': MHD.vel3,
+              'bfi1': MHD.vel1, 'bfi2': MHD.bfi2, 'bfi3': MHD.bfi3,
+              'bglm': MHD.bglm}
+        for face in (0, 1, 2, 3):
+            if BC_fixed.get(face):
+                apply_bc_fixed(sf, Ngc, N1, N2, face, BC_fixed[face])
+    
+    return MHD
 
 
-def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos, flux_type, dim):
+
+def Riemann_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos, solver_type, dim):
     """
     Compute approximate Riemann fluxes for non-relativistic MHD.
 
@@ -256,7 +292,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         Left and right magnetic field components.
     eos : object
         Equation of state object with attribute `GAMMA`.
-    flux_type : {'LLF', 'HLL', 'HLLD'}
+    solver_type : {'LLF', 'HLL', 'HLLD'}
         Choice of Riemann solver.
     dim : int
         Normal direction (1 or 2). If `dim == 2`, system is rotated.
@@ -284,7 +320,7 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
         byl, byr = -templ, -tempr
     
     #here we calculate the flux using LLF approximate Riemann solver (Rusanov (1961))
-    if flux_type == 'LLF':
+    if solver_type == 'LLF':
         
         Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz = \
             LLF_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos)
@@ -292,23 +328,33 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     #here we calculate the flux using HLL approximate Riemann solver (3 states between two fast shocks)
     #solution of Riemann problem according to Harten, Lax and van Leer, SIAM (1983)
     #see also Miyoshi and Kusano, JCP (2005)
-    elif flux_type == 'HLL':  
+    elif solver_type == 'HLL':  
         
         Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz = \
             HLL_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos)
+    
+    #here we calculate the flux using HLLC approximate Riemann solver 
+    #(4 states between two fast shocks and contact surface)
+    #solution of Riemann problem according to Li, JCP (2005) 
+    elif solver_type == 'HLLC':
+                
+        Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz = \
+            HLLC_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos)
             
     #here we calculate the flux using HLLD approximate Riemann solver 
     #(6 states between two fast shocks, two Alfven discontinuities and contact surface)
     #solution of Riemann problem according to Miyoshi and Kusano, JCP (2005) 
-    elif flux_type == 'HLLD':
+    elif solver_type == 'HLLD':
         
         Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz = \
             HLLD_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos)
         
     else:
         
-        #flux_type is incorrect -> throw an error
-        raise ValueError(f"Unknown flux_type: {flux_type}. Expected one of ['LLF', 'HLL', 'HLLD'].")
+        #solver_type is incorrect -> throw an error
+        raise ValueError(
+            f"Unknown MHD solver_type: {solver_type}. "
+            f"Expected one of ['LLF', 'HLL', 'HLLC', 'HLLD'].")
         
     #check in what direction we solve the problem
     if dim == 2: #2-direction -- rotate the coordinate system
@@ -326,7 +372,8 @@ def Riemann_flux_nr_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, by
     return Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz
 
 
-def divB_clean_GLM_sol_MHD(c_h, bnl,bnr, psil,psir):
+
+def GLM_flux_MHD(c_h, bnl,bnr, psil,psir):
     """
     Solve GLM divergence cleaning subsystem.
 
@@ -340,7 +387,7 @@ def divB_clean_GLM_sol_MHD(c_h, bnl,bnr, psil,psir):
     bnl, bnr : ndarray
         Left and right normal magnetic field components.
     psil, psir : ndarray
-        Left and right scalar potentials.
+        Left and right scalar GLM potentials.
 
     Returns
     -------
