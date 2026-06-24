@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-riemann_exact.py
+HD_riemann_exact.py
 
 Exact Riemann solver for the Euler equations of ideal-gas dynamics
 =================================================================
 
 This module provides the exact solution to the Riemann problem for
 compressible gas dynamics with an ideal-gas equation of state (gamma-law).
-The algorithm follows Chapter 4 of Toro's textbook:
+The algorithm follows Toro's textbook:
 
   Toro, E. F., "Riemann Solvers and Numerical Methods for Fluid Dynamics",
   3rd edition, Springer (2009)
@@ -50,8 +50,7 @@ import numpy as np
 
 def _pressure_function(p, rho, pres, cs, gamma):
     """
-    Evaluate the pressure function f_K(p) for one side of the Riemann fan
-    (Toro, Eq. 4.6 and 4.7).
+    Evaluate the pressure function f_K(p) for one side of the Riemann fan.
 
     For a shock wave (p > p_K):
         f_K = (p - p_K) * sqrt(A_K / (p + B_K))
@@ -92,8 +91,7 @@ def _pressure_function(p, rho, pres, cs, gamma):
 
 def _pressure_function_deriv(p, rho, pres, cs, gamma):
     """
-    Evaluate the derivative f'_K(p) of the pressure function for one side
-    (Toro, Eq. 4.37).
+    Evaluate the derivative f'_K(p) of the pressure function for one side.
 
     For a shock wave (p > p_K):
         f'_K = sqrt(A_K / (p + B_K)) * (1 - (p - p_K) / (2 * (p + B_K)))
@@ -194,8 +192,7 @@ def _initial_pressure_guess(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma):
 def _solve_star_pressure(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma,
                           eps=1e-8, max_iter=100):
     """
-    Find the star-region pressure p* by Newton-Raphson iteration
-    (Toro, Section 4.3).
+    Find the star-region pressure p* by Newton-Raphson iteration.
 
     Solves the nonlinear equation:
 
@@ -259,8 +256,7 @@ def _solve_star_pressure(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma,
 
 def _compute_star_velocity(pstar, rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma):
     """
-    Compute the star-region velocity u* from the converged star pressure
-    (Toro, Eq. 4.9).
+    Compute the star-region velocity u* from the converged star pressure.
 
         u* = 0.5 * (u_L + u_R) + 0.5 * (f_R(p*) - f_L(p*))
 
@@ -338,21 +334,21 @@ def _sample_solution(S, rhol, vxl, pl, csl, rhor, vxr, pr, csr,
     pratio_R = pstar / (pr + 1e-30)
 
     # =================================================================
-    #  Left wave (Toro, Section 4.5.1)
+    #  Left wave 
     # =================================================================
 
     #--- left rarefaction (p* <= p_L) ---
 
     #sound speed behind left rarefaction (Toro, Eq. 4.54)
     cstarL_rar = csl * pratio_L ** (gm1 / (2.0 * gamma))
-    #head and tail speeds of the left rarefaction fan (Toro, Eq. 4.55-4.56)
+    #head and tail speeds of the left rarefaction fan 
     SHL = vxl - csl          #head (leading edge)
     STL = ustar - cstarL_rar #tail (trailing edge)
 
-    #density in star region behind left rarefaction (Toro, Eq. 4.53)
+    #density in star region behind left rarefaction 
     rhostarL_rar = rhol * pratio_L ** (1.0 / gamma)
 
-    #solution inside left rarefaction fan (Toro, Eq. 4.56)
+    #solution inside left rarefaction fan 
     #guard the base against negative values outside the fan
     baseL = np.maximum(2.0 / gp1 + gm1 / (gp1 * csl) * (vxl - S), 1e-30)
     rho_fanL = rhol * baseL ** (2.0 / gm1)
@@ -361,10 +357,10 @@ def _sample_solution(S, rhol, vxl, pl, csl, rhor, vxr, pr, csr,
 
     #--- left shock (p* > p_L) ---
 
-    #left shock speed (Toro, Eq. 4.52)
+    #left shock speed
     SL = vxl - csl * np.sqrt(gp1 / (2.0 * gamma) * pratio_L + gm1 / (2.0 * gamma))
 
-    #density behind left shock (Toro, Eq. 4.50)
+    #density behind left shock
     rhostarL_shk = rhol * (pratio_L + gm1 / gp1) / (gm1 / gp1 * pratio_L + 1.0)
 
     #assemble left-of-contact state: rarefaction case
@@ -386,21 +382,21 @@ def _sample_solution(S, rhol, vxl, pl, csl, rhor, vxr, pr, csr,
     prs_left  = np.where(pstar <= pl, prs_left_rar,  prs_left_shk)
 
     # =================================================================
-    #  Right wave (Toro, Section 4.5.2)
+    #  Right wave
     # =================================================================
 
     #--- right rarefaction (p* <= p_R) ---
 
-    #sound speed behind right rarefaction (Toro, Eq. 4.61)
+    #sound speed behind right rarefaction 
     cstarR_rar = csr * pratio_R ** (gm1 / (2.0 * gamma))
-    #head and tail speeds of the right rarefaction fan (Toro, Eq. 4.62-4.63)
+    #head and tail speeds of the right rarefaction fan 
     SHR = vxr + csr          #head (leading edge)
     STR = ustar + cstarR_rar #tail (trailing edge)
 
-    #density in star region behind right rarefaction (Toro, Eq. 4.60)
+    #density in star region behind right rarefaction 
     rhostarR_rar = rhor * pratio_R ** (1.0 / gamma)
 
-    #solution inside right rarefaction fan (Toro, Eq. 4.63)
+    #solution inside right rarefaction fan
     baseR = np.maximum(2.0 / gp1 - gm1 / (gp1 * csr) * (vxr - S), 1e-30)
     rho_fanR = rhor * baseR ** (2.0 / gm1)
     vel_fanR = 2.0 / gp1 * (-csr + gm1 / 2.0 * vxr + S)
@@ -408,7 +404,7 @@ def _sample_solution(S, rhol, vxl, pl, csl, rhor, vxr, pr, csr,
 
     #--- right shock (p* > p_R) ---
 
-    #right shock speed (Toro, Eq. 4.59)
+    #right shock speed 
     SR = vxr + csr * np.sqrt(gp1 / (2.0 * gamma) * pratio_R + gm1 / (2.0 * gamma))
 
     #density behind right shock (Toro, Eq. 4.57)
@@ -433,7 +429,7 @@ def _sample_solution(S, rhol, vxl, pl, csl, rhor, vxr, pr, csr,
     prs_right  = np.where(pstar <= pr, prs_right_rar,  prs_right_shk)
 
     # =================================================================
-    #  Final assembly: left or right of contact (Toro, Figure 4.14)
+    #  Final assembly: left or right of contact 
     # =================================================================
     dens = np.where(S < ustar, dens_left, dens_right)
     vel  = np.where(S < ustar, vel_left,  vel_right)
@@ -452,7 +448,7 @@ def exact_riemann_godunov_state(rhol, rhor, vxl, vxr, pl, pr, gamma):
     to obtain the Godunov state for numerical flux computation.
 
     This function works with arrays and is used internally by
-    ``Riemann_nr_hydro`` when ``flux_type = 'Exact'``.
+    ``Riemann_HD`` when ``flux_type = 'Exact'``.
 
     Parameters
     ----------
@@ -477,8 +473,8 @@ def exact_riemann_godunov_state(rhol, rhor, vxl, vxr, pl, pr, gamma):
         Star-region velocity (needed to assign tangential velocities).
     """
     #sound speeds
-    csl = np.sqrt(gamma * pl / (rhol + 1e-30))
-    csr = np.sqrt(gamma * pr / (rhor + 1e-30))
+    csl = np.sqrt(gamma * pl / rhol)
+    csr = np.sqrt(gamma * pr / rhor)
 
     #solve for star-region pressure via vectorized Newton-Raphson
     pstar = _solve_star_pressure(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma)
