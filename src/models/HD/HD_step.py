@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Hydro2D - Container class for 2D compressible hydrodynamics routines.
+HD2D - Container class for 2D compressible hydrodynamics routines.
 
 Hybrid approach:
 - Functions remain modular and pedagogically simple
@@ -16,7 +16,7 @@ This class handles:
 - Boundary condition handling
 
 The underlying methods are suitable for explicit, finite-volume hydrodynamics
-simulations with compressible HDows. The code assumes that the following objects
+simulations with compressible flows. The code assumes that the following objects
 are provided:
 
 Attributes
@@ -32,29 +32,29 @@ par : object
     Simulation parameters including:
         - CFL : Courant number
         - RK_order : 'RK1', 'RK2', or 'RK3'
-        - flux_type : type of approximate Riemann solver
+        - solver_type : type of approximate Riemann solver
         - rec_type : reconstruction type
         - BC : boundary condition type
         - phystime, phystimefin : current and final physical time
 
 Example usage
 -------------
->>> hydro = Hydro2D(g, HD, eos, par)
+>>> hydro = HD2D(g, HD, eos, par)
 >>> HD = hydro.step_RK()  # advances the solution by one RK timestep
 """
 
 
 import numpy as np
 import copy
-from src.models.HD.hydro_phys import (
-    prim2cons_nr_hydro,
-    cons2prim_nr_hydro, 
+from src.models.HD.HD_phys import (
+    prim2cons_HD,
+    cons2prim_HD, 
     boundCond_HD,
-    Riemann_nr_hydro)
+    Riemann_HD)
 from src.common.high_order_rec import VarReconstruct
 
 
-class Hydro2D:
+class HD2D:
     """
     Container class for 2D compressible hydrodynamics routines.
 
@@ -99,11 +99,12 @@ class Hydro2D:
         HD : object
             Updated FluidState object.
         """
-        dt = min(CFLcondition_hydro(self.g, self.HD, self.eos, self.par.CFL),
+        dt = min(CFLcondition_HD(self.g, self.HD, self.eos, self.par.CFL),
                  self.par.timefin - self.par.timenow)
-        self.HD = oneStep_hydro_RK(self.g, self.HD, self.eos, self.par, dt)
+        self.HD = oneStep_HD_RK(self.g, self.HD, self.eos, self.par, dt)
         self.par.timenow += dt
         return self.HD
+
 
 
 # -------------------------
@@ -129,7 +130,7 @@ def _rk_stage(HD_out, HD_a, HD_b, ResM, Res1, Res2, Res3, ResE, dt, a, b, c):
 # -------------------------
 # Function definitions
 # -------------------------
-def CFLcondition_hydro(g, HD, eos, CFL):
+def CFLcondition_HD(g, HD, eos, CFL):
     """
     Compute the maximum stable timestep for 2D compressible hydrodynamics
     according to the CFL (Courant-Friedrichs-Lewy) condition.
@@ -158,33 +159,45 @@ def CFLcondition_hydro(g, HD, eos, CFL):
     -------
     dt : float
         Maximum stable timestep according to CFL condition.
+    
+    Notes
+    -------
+    Lame coefficient hx2 is included in the CFL calculation 
+    in order to adjust the correct timestep for the simulations in the polar coordinates, 
+    e.g. dt ~ rdφ for the cylindrical polar geometry
     """
     #make copy of ghost cells number to simplify indexing below 
     Ngc = g.Ngc
     
+    dens = HD.dens[Ngc:-Ngc, Ngc:-Ngc]
+    vel1 = HD.vel1[Ngc:-Ngc, Ngc:-Ngc]
+    vel2 = HD.vel2[Ngc:-Ngc, Ngc:-Ngc]
+    pres = HD.pres[Ngc:-Ngc, Ngc:-Ngc]
+    
     #sound speed calculation for whole domain
-    sound = eos.sound_speed_nr(HD.dens[Ngc:-Ngc, Ngc:-Ngc], HD.pres[Ngc:-Ngc, Ngc:-Ngc])
+    sound = eos.sound_speed_nr(dens, pres)
     
     #FIRST APPROACH
     #maximal possible timestep in each direction
-    #dt1 = np.min( g.dx1[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(HD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + sound) )
-    #dt2 = np.min( g.dx2[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(HD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + sound) )
+    #dt1 = np.min(g.dx1[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(vel1) + sound))
+    #dt2 = np.min(g.dx2[Ngc:-Ngc, Ngc:-Ngc]*g.hx2[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(vel2) + sound))
     #return CFL * min(dt1, dt2)
     
     #SECOND APPROACH 
-    dt_inv = np.max((np.abs(HD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + \
-        sound)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
-        (np.abs(HD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + \
-        sound)/g.dx2[Ngc:-Ngc, Ngc:-Ngc])
+    dt_inv = np.max((np.abs(vel1) + sound)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
+        (np.abs(vel2) + sound)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc]* g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
+        
     return CFL/dt_inv
 
 
-def oneStep_hydro_RK(g, HD, eos, par, dt):
+
+
+def oneStep_HD_RK(g, HD, eos, par, dt):
     """
     Perform a single Runge-Kutta timestep for 2D compressible hydrodynamics.
 
     This function implements first-, second-, and third-order explicit Runge-Kutta
-    schemes for updating the conservative HDuid variables, including
+    schemes for updating the conservative fluid variables, including
     primitive variable recovery using the EOS.
 
     Notes
@@ -232,12 +245,12 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
     #define local copy of ghost cells number to simplify array indexing
     Ngc = g.Ngc
     
-    #here we define the copy for the auxilary HDuid state
+    #here we define the copy for the auxilary fluid state
     HD_h = copy.deepcopy(HD)
     
     #conservative variables at the beginning of timestep
     (HD.mass, HD.mom1, HD.mom2, HD.mom3, HD.etot) = \
-        prim2cons_nr_hydro(
+        prim2cons_HD(
             HD.dens[Ngc:-Ngc,Ngc:-Ngc], 
             HD.vel1[Ngc:-Ngc,Ngc:-Ngc], 
             HD.vel2[Ngc:-Ngc,Ngc:-Ngc], 
@@ -247,7 +260,7 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
     #residuals for conservative variables calculation
     #1st Runge-Kutta iteration - predictor stage
     ResM, Res1, Res2, Res3, ResE = \
-        flux_calc_hydro(g, HD, par, eos)
+        flux_calc_HD(g, HD, par, eos)
     
     # Conservative update - 1st RK iteration (predictor stage)
     _rk_stage(HD_h, HD, HD, \
@@ -262,7 +275,7 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
         HD.etot = HD_h.etot
     
     #second-order Runge-Kutta scheme
-    if (par.RK_order == 'RK2'):
+    elif (par.RK_order == 'RK2'):
         
         #Primitive variables recovery after predictor stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
@@ -270,14 +283,14 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
             
         #2nd Runge-Kutta iteration - corrector stage
         ResM, Res1, Res2, Res3, ResE = \
-            flux_calc_hydro(g, HD_h, par, eos)
+            flux_calc_HD(g, HD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy
         _rk_stage(HD, HD, HD_h, \
             ResM, Res1, Res2, Res3, ResE, dt, 1.0/2.0, 1.0/2.0, -1.0/2.0)
     
-    if (par.RK_order == 'RK3'):
+    elif (par.RK_order == 'RK3'):
         
         #Primitive variables recovery after 1st RK stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
@@ -286,7 +299,7 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
         #residuals for conservative variables calculation
         #2nd Runge-Kutta iteration 
         ResM, Res1, Res2, Res3, ResE = \
-            flux_calc_hydro(g, HD_h, par, eos)
+            flux_calc_HD(g, HD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy        
@@ -298,18 +311,24 @@ def oneStep_hydro_RK(g, HD, eos, par, dt):
         _prim_recovery(HD_h, Ngc, eos)
         
         ResM, Res1, Res2, Res3, ResE = \
-            flux_calc_hydro(g, HD_h, par, eos)
+            flux_calc_HD(g, HD_h, par, eos)
         
         # Conservative update - final 3rd RK iteration
         # update mass, three components of momentum and total energy
         _rk_stage(HD, HD, HD_h, \
             ResM, Res1, Res2, Res3, ResE, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
+            
+    else:
+        
+        raise ValueError(
+            f"Invalid RK_order: '{par.RK_order}'. "
+            f"Expected one of ['RK1', 'RK2', 'RK3'].")
         
     # Primitive variables recovery at the end of the timestep
     #density, 3 components of velocity and pressure are evaluated 
     _prim_recovery(HD, Ngc, eos)
     
-    #return the updated class object of the HDuid state on the next timestep 
+    #return the updated class object of the fluid state on the next timestep 
     return HD
 
 
@@ -332,12 +351,12 @@ def _prim_recovery(state, Ngc, eos):
      state.vel2[Ngc:-Ngc, Ngc:-Ngc],
      state.vel3[Ngc:-Ngc, Ngc:-Ngc],
      state.pres[Ngc:-Ngc, Ngc:-Ngc]) = \
-        cons2prim_nr_hydro(
+        cons2prim_HD(
             state.mass, state.mom1, state.mom2, state.mom3, state.etot, eos)
 
 
 
-def flux_calc_hydro(g, HD, par, eos):
+def flux_calc_HD(g, HD, par, eos):
     """
     Compute residuals for conservative variables in 2D compressible hydrodynamics.
     
@@ -371,7 +390,7 @@ def flux_calc_hydro(g, HD, par, eos):
         Residual array for total energy.
     """
     #fill the ghost cells
-    HD = boundCond_HD(g, par.BC, HD)
+    HD = boundCond_HD(g, par.BC, HD, par.BC_fixed)
     
     #make copies of ghost cell numbers to simplify indexing below 
     Ngc = g.Ngc 
@@ -396,9 +415,9 @@ def flux_calc_hydro(g, HD, par, eos):
 
         #fluxes calculation with approximate Riemann solver (see flux_type) in 1-dim
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
-            Riemann_nr_hydro(dens_L, dens_R, \
+            Riemann_HD(dens_L, dens_R, \
                 vel1_L, vel1_R, vel2_L, vel2_R, vel3_L, vel3_R, \
-                pres_L, pres_R, eos, par.flux_type, 1)
+                pres_L, pres_R, eos, par.solver_type, 1)
         
         #residuals calculation for mass, 3 components of momentum and total energy in 1-dim
         ResM = ( Fmass[1:,:]*g.fS1[1:,:] - Fmass[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
@@ -421,12 +440,12 @@ def flux_calc_hydro(g, HD, par, eos):
      
         #fluxes calculation with approximate Riemann solver (see flux_type) in 2-dim
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
-            Riemann_nr_hydro(dens_L, dens_R, \
+            Riemann_HD(dens_L, dens_R, \
                 vel1_L, vel1_R, vel2_L, vel2_R, vel3_L, vel3_R, \
-                pres_L, pres_R, eos, par.flux_type, 2)
+                pres_L, pres_R, eos, par.solver_type, 2)
         
         #residuals calculation for mass, 3 components of momentum and total energy in 2-dim
-        #here we add the HDuxes differences to the residuals after 1-dim calculation
+        #here we add the fluxes differences to the residuals after 1-dim calculation
         ResM += ( Fmass[:,1:]*g.fS2[:,1:] - Fmass[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         Res1 += ( Fmomx[:,1:]*g.fS2[:,1:] - Fmomx[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         Res2 += ( Fmomy[:,1:]*g.fS2[:,1:] - Fmomy[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
@@ -434,7 +453,7 @@ def flux_calc_hydro(g, HD, par, eos):
         ResE += ( Fetot[:,1:]*g.fS2[:,1:] - Fetot[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         
     #curvature source terms for different curvilinear coordinates
-    ST1, ST2, ST3 = hydro_curv_sources(g, HD)
+    ST1, ST2, ST3 = curv_source_HD(g, HD)
     
     #finally, here we add the external force + curvature source terms
     #source term for momentum residual 
@@ -449,8 +468,10 @@ def flux_calc_hydro(g, HD, par, eos):
     #return the residuals for mass, 3 components of momentum and total energy
     return ResM, Res1, Res2, Res3, ResE
 
+
+
     
-def hydro_curv_sources(g, HD):
+def curv_source_HD(g, HD):
     """
     Compute geometric source terms for the hydrodynamic equations 
     in curvilinear coordinates (finite-volume formulation).
@@ -490,13 +511,16 @@ def hydro_curv_sources(g, HD):
     ST2 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     ST3 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     
-    if (g.geom != 'cart'):
-        r = g.cx1[Ngc:-Ngc,Ngc:-Ngc]
-        dens = HD.dens[Ngc:-Ngc,Ngc:-Ngc]
-        pres = HD.pres[Ngc:-Ngc,Ngc:-Ngc]
-        v1 = HD.vel1[Ngc:-Ngc,Ngc:-Ngc]
-        v2 = HD.vel2[Ngc:-Ngc,Ngc:-Ngc]
-        v3 = HD.vel3[Ngc:-Ngc,Ngc:-Ngc]
+    # source-free; nothing further to do
+    if g.geom == 'cart':
+        return ST1, ST2, ST3
+    
+    r    = g.cx1[Ngc:-Ngc,Ngc:-Ngc]
+    dens = HD.dens[Ngc:-Ngc,Ngc:-Ngc]
+    pres = HD.pres[Ngc:-Ngc,Ngc:-Ngc]
+    v1   = HD.vel1[Ngc:-Ngc,Ngc:-Ngc]
+    v2   = HD.vel2[Ngc:-Ngc,Ngc:-Ngc]
+    v3   = HD.vel3[Ngc:-Ngc,Ngc:-Ngc]
     
     #cylindrical (R,Z) geometry
     if (g.geom == 'cyl'):
@@ -510,6 +534,7 @@ def hydro_curv_sources(g, HD):
             
     #spherical polar (r,theta) geometry
     if (g.geom == 'sph'):
+        
         #cotangent of theta
         if g.Nx2 > 1: 
             sin_theta = np.sin(g.fx2[Ngc:g.Nx1+Ngc, Ngc:g.Nx2+Ngc+1])
@@ -518,7 +543,8 @@ def hydro_curv_sources(g, HD):
                 (cos_theta[:,:-1]-cos_theta[:,1:])
         else:
             cot = np.zeros_like(r)
-        ST1 = ( pres + dens * (v2**2 + v3**2) ) / r
+            
+        ST1 = ( 2.0 * pres + dens * (v2**2 + v3**2) ) / r
         ST2 = ( pres + dens * v3**2 ) * cot / r  - dens * v1 * v2 / r
         ST3 = - ( dens * v2 * v3 ) * cot / r - dens * v1 * v3 / r
             
