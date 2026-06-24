@@ -33,8 +33,6 @@ Author: mrkondratyev
 
 import numpy as np
 
-
-
 def interp_face_to_cell(grid, fV1, fV2):
     """
     Interpolate a staggered (face-centered) vector field to cell centers.
@@ -108,10 +106,10 @@ def div_face_vector(grid, fV1, fV2):
     
     if grid.Nx1 > 1:
         divV += (grid.fS1[1:, :] * fV1[1:, :] -
-                 grid.fS1[:-1, :] * fV1[:-1, :]) / grid.cVol[:, :]
+            grid.fS1[:-1, :] * fV1[:-1, :]) / grid.cVol[:, :]
     if grid.Nx2 > 1:
         divV += (grid.fS2[:, 1:] * fV2[:, 1:] -
-                 grid.fS2[:, :-1] * fV2[:, :-1]) / grid.cVol[:, :]
+            grid.fS2[:, :-1] * fV2[:, :-1]) / grid.cVol[:, :]
     
     return divV
 
@@ -142,23 +140,20 @@ def div_cell_vector(grid, V1, V2):
     - Divergence is computed as the flux difference divided by cell volume.
     - Shape of `divV` is `(grid.Nx1, grid.Nx2)`.
     """
-    Ngc = grid.Ngc 
-    Nx1r = grid.Nx1r
-    Nx2r = grid.Nx2r
+    Ngc = grid.Ngc; Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
     divV = np.zeros((grid.Nx1, grid.Nx2))
     
     if grid.Nx1 > 1:
         divV += 0.5 * (grid.fS1[1:, :]  * (V1[Ngc+1:Nx1r+1, Ngc:-Ngc] + V1[Ngc:Nx1r, Ngc:-Ngc]) -
-                       grid.fS1[:-1, :] * (V1[Ngc-1:Nx1r-1, Ngc:-Ngc] + V1[Ngc:Nx1r, Ngc:-Ngc])
-                      ) / grid.cVol[:, :]
+            grid.fS1[:-1, :] * (V1[Ngc-1:Nx1r-1, Ngc:-Ngc] + V1[Ngc:Nx1r, Ngc:-Ngc])
+            ) / grid.cVol[:, :]
             
     if grid.Nx2 > 1: 
         divV += 0.5 * (grid.fS2[:, 1:]  * (V2[Ngc:-Ngc, Ngc+1:Nx2r+1] + V2[Ngc:-Ngc, Ngc:Nx2r]) -
-                       grid.fS2[:, :-1] * (V2[Ngc:-Ngc, Ngc-1:Nx2r-1] + V2[Ngc:-Ngc, Ngc:Nx2r])
-                      ) / grid.cVol[:, :]
+            grid.fS2[:, :-1] * (V2[Ngc:-Ngc, Ngc-1:Nx2r-1] + V2[Ngc:-Ngc, Ngc:Nx2r])
+            ) / grid.cVol[:, :]
     
     return divV
-
 
 
 
@@ -212,11 +207,9 @@ def integral_over_grid(grid, var):
 
 
 
-
 # ============================================================================
 # Helper: central finite differences on cell-centered data
 # ============================================================================
-
 def _ddx1(grid, f):
     """
     Central ∂f/∂x1 on real cells using ghost-zone data.
@@ -234,7 +227,6 @@ def _ddx1(grid, f):
     Ngc, Nx1r, Nx2r = grid.Ngc, grid.Nx1r, grid.Nx2r
     return (f[Ngc+1:Nx1r+1, Ngc:Nx2r] - f[Ngc-1:Nx1r-1, Ngc:Nx2r]) / \
            (grid.cx1[Ngc+1:Nx1r+1, Ngc:Nx2r] - grid.cx1[Ngc-1:Nx1r-1, Ngc:Nx2r])
-
 
 def _ddx2(grid, f):
     """
@@ -255,10 +247,10 @@ def _ddx2(grid, f):
            (grid.cx2[Ngc:Nx1r, Ngc+1:Nx2r+1] - grid.cx2[Ngc:Nx1r, Ngc-1:Nx2r-1])
 
 
+
 # ============================================================================
 # Gradient
 # ============================================================================
-
 def cell_gradient(grid, f):
     """
     Compute the gradient of a cell-centered scalar field.
@@ -355,5 +347,3 @@ def face_gradient(grid, f):
     # because it is a function of x1 only 
 
     return g1, g2
-
-
