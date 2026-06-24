@@ -85,10 +85,10 @@ def IC_rHD_user_defined(grid, state, par):
     return grid, state, par, eos
 
 
-# ============================================================================
-#   1D Riemann problems from Mignone & Bodo (2005)
-# ============================================================================
 
+# ============================================================================
+#   1D problems
+# ============================================================================
 def IC_rHD1D_RP1(grid, state, par):
     """
     Mignone & Bodo (2005) Riemann Problem 1: moving fluid colliding with
@@ -130,6 +130,7 @@ def IC_rHD1D_RP1(grid, state, par):
     return grid, state, par, eos
 
 
+
 def IC_rHD1D_RP3(grid, state, par):
     """
     Mignone & Bodo (2005) Riemann Problem 3: strong relativistic shock.
@@ -169,6 +170,7 @@ def IC_rHD1D_RP3(grid, state, par):
     return grid, state, par, eos
 
 
+
 def IC_rHD1D_RP4(grid, state, par):
     """
     Mignone & Bodo (2005) Riemann Problem 4: ultra-relativistic blast wave.
@@ -206,6 +208,7 @@ def IC_rHD1D_RP4(grid, state, par):
     par.BC[:] = 'free'
     
     return grid, state, par, eos
+
 
 
 def IC_rHD1D_RP5(grid, state, par):
@@ -252,10 +255,10 @@ def IC_rHD1D_RP5(grid, state, par):
     return grid, state, par, eos
 
 
+
 # ============================================================================
 #   2D problems
 # ============================================================================
-
 def IC_rHD2D_RP(grid, state, par):
     """
     Special-relativistic 2D Riemann problem from Mignone & Bodo (2005).
@@ -311,6 +314,7 @@ def IC_rHD2D_RP(grid, state, par):
     par.BC[:] = 'free'
 
     return grid, state, par, eos
+
 
 
 def IC_rHD2D_RTI(grid, state, par):
@@ -385,10 +389,10 @@ def IC_rHD2D_RTI(grid, state, par):
     return grid, state, par, eos
 
 
+
 # ============================================================================
 #   2D astrophysical problems
 # ============================================================================
-
 def IC_rHD2D_jet_cart(grid, state, par):
     """
     Relativistic 2D jet propagation problem (Cartesian).
