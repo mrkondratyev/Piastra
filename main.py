@@ -2,100 +2,81 @@
 """
 main.py
 
-Main driver for advection/fluid/MHD/rHD/diffusion simulations.
+Main driver for Piastra simulations.
 
-This script handles:
-- Grid construction
-- Initial condition setup
-- Solver selection
-- Simulation control loop
-- Optional visualization
+This script handles, end to end:
+    - parameter setup and validation (Parameters)
+    - grid construction (Grid)
+    - initial-condition / test-problem selection (initial_model)
+    - solver selection (SOLVER_DISPATCH)
+    - the time-integration loop with live visualization (run_simulation)
 
-Available modes:
+To run a different case, edit the Parameters block inside main() and execute
+`python main.py`. The notebook main.ipynb mirrors this file cell by cell.
+
+Available modes
 ---------------
-- 'adv'  : Linear advection problems
-- 'SWE'  : Shallow water problems  
-- 'HD'   : Hydrodynamics problems
-- 'rHD'  : Special-relativistic hydrodynamics problems
-- 'MHD'  : Magnetohydrodynamics problems
-- 'rMHD' : Special-relativistic magnetohydrodynamics problems
-- 'diff' : 2D thermal diffusion
+    'adv'  : linear scalar advection
+    'HD'   : compressible (Euler) hydrodynamics
+    'rHD'  : special-relativistic hydrodynamics
+    'MHD'  : ideal magnetohydrodynamics
+    'rMHD' : special-relativistic magnetohydrodynamics
+    'SWE'  : shallow-water equations
+    'diff' : 2D thermal diffusion
 
-Available problems (examples, see models and src/common/helper.py for more):
-------------------------------
-Advection (see adv_init_cond.py):
-    - "smooth1D", "disc1D", "smooth2D", "disc2D", "user_defined"
-Shallow water (see SWE_init_cond.py):
-    - "BW1D", "toth1D", "blast-cart", "blast-cyl", "OT2D", "rotor2D"
-    - "user_defined"
-Hydrodynamics (see HD_init_cond.py):
-    - "sod1Dcart", "sod1Dcyl", "sod1Dpol", "strong1D", "DBW1D",
-    - "KHI", "RTI", "sod2Dcart", "sedov2Dcart", "sedov2Dcyl"
-    - "user_defined"
-Relativistic HD (see rHD_init_cond.py):
-    - "RP1"  : Mignone & Bodo (2005) RP1 (moving fluid, v=0.9)
-    - "RP3"  : strong relativistic shock
-    - "RP4"  : ultra-relativistic blast wave (p=1000)
-    - "RP5"  : tangential velocity test
-    - "RP2D" : 2D relativistic Riemann problem
-    - "RTI"  : relativistic Rayleigh-Taylor instability
-    - "user_defined"
-Magnetohydrodynamics (see MHD_init_cond.py):
-    - "BW1D", "toth1D", "blast-cart", "blast-cyl", "OT2D", "rotor2D"
-    - "user_defined"
-Relativistic MHD (see rMHD_init_cond.py):
-    - "BW1D", "RP2", "RP3", "RP4", "blast2D", "rotor2D" (Mignone & Bodo 2006)
-    - "user_defined"
-Diffusion (see diff_init_cond.py):
-    - "gauss2D", "cross2D", "ring2D", "gauss1D"
-    - "user_defined"
+Available test problems (pass as `problem`; 'user_defined' exists for every mode)
+--------------------------------------------------------------------------------
+The authoritative mapping from a problem name to its initial-condition function
+lives in the dispatch dictionaries of src/misc/helpers.py (initial_model).
 
-Parameters (in Parameters class):
---------------------------------
-- mode       : str   -- Simulation type ('adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff')
-- problem    : str   -- Problem name (depends on mode)
-- Nx1, Nx2   : int   -- Grid resolution
-- solver_type: str   -- Solver type ('adv', 'HLLC', 'HLLD', 'rkl2', etc.)
-- divb_tr    : str   -- Divergence cleaning method ('CT', '8wave', 'GLM' -- MHD ONLY)
-- rec_type   : str   -- Reconstruction method ('PLM', 'PPM', 'WENO', etc.)
-- RK_order   : str   -- Runge-Kutta integration order ('RK1', 'RK2', 'RK3')
-- CFL        : float -- CFL stability number
-- timefin    : float -- Final physical time
-- timenow    : float -- Current physical time
+    adv  (see src/models/adv/adv_init_cond.py):
+        smooth1D, disc1D, smooth2D, disc2D
 
-available parameters:
---------------------------------
+    HD   (see src/models/HD/HD_init_cond.py):
+        sod1Dcart, sod1Dcyl, sod1Dsph, strong1D, DBW1D, shuosher1D, einfeldt1D,
+        sod2Dcart, sod2Dsph, sod2Dpol, sedov2Dcart, sedov2Dcyl, RP2D, gresho2D,
+        KHI2D, RTI2D, shock-cloud, gap-opening, jet2Dcyl
 
-all modes :
-    required :
-        mode = str
-        problem = str
-        Nx1, Nx2 = integers
-    optional :
-        CFL = double < 1
-        rec_type = 'PLM', 'PPM', 'PCM', 'PPMorig', 'WENO', 'MP5'
-        RK_order = 'RK1', 'RK2', 'RK3'
-    
-'adv' : 
-    solver_type = 'adv', 'LW'
-    
-'HD' : 
-    solver_type = 'LLF', 'HLL', 'HLLC', 'Roe', 'Exact'
-    
-'SWE' : 
-    solver_type = 'LLF', 'HLL', 'Exact'
-    
-'MHD' :
-    solver_type = 'LLF', 'HLL', 'HLLC', 'HLLD'
-    divb_tr = 'CT', GLM', '8wave'
+    rHD  (see src/models/rHD/rHD_init_cond.py):
+        RP1, RP3, RP4, RP5, RP2D, RTI, jet2Dcart, jet2Dcyl
 
-'rMHD' :
-    solver_type = 'LLF', 'HLL'
-    divb_tr = 'CT' (only CT is supported)
+    MHD  (see src/models/MHD/MHD_init_cond.py):
+        BW1D, toth1D, RJ1D, alfven1D, blast2Dcart, blast2Dcyl, blast2Dsph,
+        rotor2D, OT2D, current-sheet, field-loop, disk2D, shock-cloud
 
-'diff' :
-    solver_type = 'expl', 'rkl2'
-    rkl2_stages = integer >= 2   (only for rkl2)
+    rMHD (see src/models/rMHD/rMHD_init_cond.py):
+        BW1D, RP2, RP3, RP4, blast2D, rotor2D
+
+    SWE  (see src/models/SWE/SWE_init_cond.py):
+        dam1D, bump1D, bathtub2D, expl2D, tsunami2D, ocean2D, atmo2D, dam2D,
+        jet2D, KHI2D
+
+    diff (see src/models/diff/diff_init_cond.py):
+        gauss1D, gauss2D, step1D, sine1D, cross2D, ring2D, cyl2D
+
+Parameters (Parameters class; required vs optional)
+---------------------------------------------------
+all modes:
+    required:
+        mode    = str    -- one of the modes listed above
+        problem = str    -- one of the problem names listed above
+        Nx1, Nx2 = int   -- grid resolution
+    optional:
+        CFL      = float < 1     (default 0.7; auto-capped at 0.4 for rHD/rMHD)
+        rec_type = 'PCM', 'PLM', 'PPMorig', 'PPM', 'WENO', 'MP5'  (default 'PLM')
+        RK_order = 'RK1', 'RK2', 'RK3'                            (default 'RK2')
+
+per-mode solver options:
+    'adv'  : solver_type = 'adv', 'LW'
+    'HD'   : solver_type = 'LLF', 'HLL', 'HLLC', 'Roe', 'Exact'
+    'rHD'  : solver_type = 'LLF', 'HLL', 'HLLC'
+    'MHD'  : solver_type = 'LLF', 'HLL', 'HLLC', 'HLLD'
+             divb_tr     = 'CT', 'GLM', '8wave'
+    'rMHD' : solver_type = 'LLF', 'HLL'
+             divb_tr     = 'CT' (only CT is supported)
+    'SWE'  : solver_type = 'LLF', 'HLL', 'Exact'
+    'diff' : solver_type = 'expl', 'rkl2'
+             rkl2_stages = int >= 2   (only used by 'rkl2')
 
 Author: mrkondratyev
 """
@@ -116,10 +97,12 @@ from src.models.adv.adv_step import Adv2D
 from src.models.SWE.SWE_step import SWE2D
 from src.models.diff.diff_step import Diff2D
 from src.misc.helpers import run_simulation, initial_model
-from src.misc.io_visual import plot_setup, plotting 
+from src.misc.io_visual import plot_setup, plotting
 
 
 # --- Solver dispatch dictionary ---
+# Maps a mode string to a callable that builds the corresponding solver object.
+# For MHD the choice of divergence-control scheme is resolved from par.divb_tr.
 SOLVER_DISPATCH = {
     "adv":  lambda grid, state, eos, par: Adv2D(grid, state, par),
     "SWE":  lambda grid, state, eos, par: SWE2D(grid, state, par),
@@ -135,19 +118,36 @@ SOLVER_DISPATCH = {
 
 
 def main():
-    """Main driver function for the simulation."""
+    """
+    Configure and run a single Piastra simulation.
 
+    Steps performed:
+        1. build a Parameters object (edit this block to change the run);
+        2. construct the Grid and allocate the SimState;
+        3. load the chosen test problem via initial_model, which sets the grid
+           geometry, primitive variables, boundary conditions, final time, and
+           equation of state;
+        4. instantiate the matching solver through SOLVER_DISPATCH;
+        5. advance in time with run_simulation, plotting every nsteps_visual
+           steps;
+        6. for MHD/rMHD in 2D, optionally display the final magnetic-field
+           divergence as a diagnostic.
+
+    Returns
+    -------
+    None
+    """
     # --- Define main simulation parameters ---
     par = Parameters(
         mode="HD",
         Nx1=64,
-        Nx2=64, 
-        problem= "KHI2D",
-        solver_type = 'HLLC',
-        #timestep 
+        Nx2=64,
+        problem="KHI2D",
+        solver_type='HLLC',
+        # timestep
         CFL=0.7,
-        rec_type = 'PPM',
-        RK_order = 'RK3',
+        rec_type='PPM',
+        RK_order='RK3',
     )
 
     # --- Initialize grid and state ---
@@ -164,7 +164,7 @@ def main():
 
     # --- Variable to visualise ---
     if par.mode == "diff":
-        var_to_plot = state.T 
+        var_to_plot = state.T
     elif par.mode == "SWE":
         var_to_plot = state.h
     else:
@@ -177,11 +177,12 @@ def main():
     )
 
     # --- Final visualization of B-divergence for MHD (optional) ---
-    if (par.mode == "MHD" or par.mode == "rMHD") & (par.Nx1 > 1) & (par.Nx2 > 1):
+    if (par.mode == "MHD" or par.mode == "rMHD") and (par.Nx1 > 1) and (par.Nx2 > 1):
         divB = np.zeros(grid.grid_shape, dtype=np.double)
         divB[grid.Ngc:grid.Nx1r, grid.Ngc:grid.Nx2r] = state.divB
         line, ax, fig, im = plot_setup(grid, divB, par.timenow)
-        #plotting(grid, divB, par.timenow, line, ax, fig, im)
+        # plotting(grid, divB, par.timenow, line, ax, fig, im)
+
 
 if __name__ == "__main__":
     main()
