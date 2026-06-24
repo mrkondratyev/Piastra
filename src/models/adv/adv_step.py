@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Advection2D - Container class for 2D linear advection routines.
+Adv2D - Container class for 2D linear advection routines.
 
 Hybrid approach:
 - Functions remain modular and pedagogically simple
@@ -44,7 +44,9 @@ Example usage
 import numpy as np
 import copy
 from src.common.high_order_rec import VarReconstruct
-from src.common.boundaries import apply_bc_scalar, apply_bc_fixed
+from src.models.adv.adv_phys import ( 
+    boundCond_adv,
+    Riemann_adv)
 
 
 class Adv2D:
@@ -142,9 +144,9 @@ def oneStep_adv_RK(g, adv, par, dt):
     adv_h = copy.deepcopy(adv)
 
     # Predictor stage
-    Res = flux_adv(g, adv, par, dt)
-    adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] = \
-        adv.dens[Ngc:-Ngc, Ngc:-Ngc] - dt * Res
+    Res = flux_calc_adv(g, adv, par, dt)        
+    # Conservative update - 1st RK iteration (predictor stage)
+    _rk_stage(adv_h, adv, adv, Res, dt, 1.0, 0.0, -1.0, Ngc)
 
     #Lax-Wendroff scheme
     if par.solver_type == 'LW':
@@ -154,29 +156,24 @@ def oneStep_adv_RK(g, adv, par, dt):
     #Runge-Kutta multistage approach
     if par.RK_order == 'RK1':
         
+        #simply rewrite the advected variable here for clarity
         adv.dens = adv_h.dens
         
     elif par.RK_order == 'RK2':
         
-        Res = flux_adv(g, adv_h, par, dt)
-        adv.dens[Ngc:-Ngc, Ngc:-Ngc] = \
-            (1.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
-             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 2.0 - \
-             1.0 * dt * Res / 2.0
-    
+        # Conservative update - 2nd RK iteration (corrector stage)
+        Res = flux_calc_adv(g, adv_h, par, dt)
+        _rk_stage(adv, adv, adv_h, Res, dt, 1.0/2.0, 1.0/2.0, -1.0/2.0, Ngc)
+
     elif par.RK_order == 'RK3':
         
-        Res = flux_adv(g, adv_h, par, dt)
-        adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] = \
-            (1.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
-             3.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 4.0 - \
-             1.0 * dt * Res / 4.0
+        # Conservative update - 2nd RK iteration
+        Res = flux_calc_adv(g, adv_h, par, dt)
+        _rk_stage(adv_h, adv_h, adv, Res, dt, 1.0/4.0, 3.0/4.0, -1.0/4.0, Ngc)
         
-        Res = flux_adv(g, adv_h, par, dt)
-        adv.dens[Ngc:-Ngc, Ngc:-Ngc] = \
-            (2.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
-             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 3.0 - \
-             2.0 * dt * Res / 3.0
+        # Conservative update - 3rd RK iteration
+        Res = flux_calc_adv(g, adv_h, par, dt)
+        _rk_stage(adv, adv_h, adv, Res, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0, Ngc)
     
     else:
         
@@ -185,6 +182,24 @@ def oneStep_adv_RK(g, adv, par, dt):
             f"Expected one of ['RK1', 'RK2', 'RK3'].")
 
     return adv
+
+
+# -------------------------
+# Small helper: one RK stage applied to update the advected variable 
+# -------------------------
+def _rk_stage(adv_out, adv_a, adv_b, Res, dt, a, b, c, Ngc):
+    """
+    Set adv_out.* = a * adv_a.* + b * adv_b.* + c * dt * Res
+ 
+    For SSP-RK, the standard combinations are:
+      Stage 1 (predictor): a=1,    b=0,    c=-1     -> adv_h = adv - dt*R(HD)
+      RK2 corrector:       a=0.5,  b=0.5,  c=-0.5
+      RK3 stage 2:         a=0.75, b=0.25, c=-0.25
+      RK3 stage 3 (final): a=1/3,  b=2/3,  c=-2/3
+    """
+    adv_out.dens[Ngc:-Ngc, Ngc:-Ngc] = \
+        a * adv_a.dens[Ngc:-Ngc, Ngc:-Ngc] + \
+        b * adv_b.dens[Ngc:-Ngc, Ngc:-Ngc] + c * dt * Res
 
 
 def CFLcondition_adv(g, adv, CFL):
@@ -225,7 +240,7 @@ def CFLcondition_adv(g, adv, CFL):
 
 
 
-def flux_adv(g, adv, par, dt):
+def flux_calc_adv(g, adv, par, dt):
     """
     Compute residuals for finite-volume linear advection in 2D.
 
@@ -258,40 +273,31 @@ def flux_adv(g, adv, par, dt):
     Ngc = g.Ngc
     Nx1r = g.Nx1 + Ngc
     Nx2r = g.Nx2 + Ngc
-
-    # Apply boundary conditions
-    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[0], axis=1, side='inner')
-    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[1], axis=2, side='inner')
-    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[2], axis=1, side='outer')
-    adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[3], axis=2, side='outer')
-
-    # --- fixed (Dirichlet) ghost-fill, applied LAST so it overrides the above ---
-    if par.BC_fixed is not None:
-        N1, N2 = adv.dens.shape
-        state_fields = {'dens': adv.dens}
-        for face in (0, 1, 2, 3):
-            if par.BC_fixed.get(face):
-                apply_bc_fixed(state_fields, Ngc, N1, N2, face, par.BC_fixed[face])
     
+    # Apply boundary conditions
+    adv = boundCond_adv(g, par.BC, adv, par.BC_fixed)    
 
+    #nulify the residual
     Res = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
-
+    
+    #piecewise polynomial limited reconstruction with RK timestepping
     if par.solver_type == 'adv':
         if g.Nx1 > 1:
             #piecewise polynomial reconstruction
-            L, R = VarReconstruct(adv.dens, g, par.rec_type, 1)
+            dens_L, dens_R = VarReconstruct(adv.dens, g, par.rec_type, 1)
             #exact solution of the Riemann problem for advection
-            flux = adv.vel1 * (L + R) / 2.0 - np.abs(adv.vel1) * (R - L) / 2.0
+            flux = Riemann_adv(dens_L, dens_R, adv.vel1)
             #conservative residual update
             Res = (flux[1:, :]*g.fS1[1:, :] - flux[:-1, :]*g.fS1[:-1, :]) / g.cVol[:, :]
 
         if g.Nx2 > 1:
             #piecewise polynomial reconstruction
-            L, R = VarReconstruct(adv.dens, g, par.rec_type, 2)
+            dens_L, dens_R = VarReconstruct(adv.dens, g, par.rec_type, 2)
             #exact solution of the Riemann problem for advection
-            flux = adv.vel2 * (L + R) / 2.0 - np.abs(adv.vel2) * (R - L) / 2.0
+            flux = Riemann_adv(dens_L, dens_R, adv.vel2)
             Res += (flux[:, 1:]*g.fS2[:, 1:] - flux[:, :-1]*g.fS2[:, :-1]) / g.cVol[:, :]
-
+            
+    # second-order unlimited Lax-Wendroff scheme
     elif par.solver_type == 'LW':
         
         if (g.geom != 'cart'): raise ValueError("'LW' for advection works only for CARTESIAN grids!") 
