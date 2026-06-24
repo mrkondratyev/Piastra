@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-riemann_approx.py
+HD_riemann_approx.py
 
 Approximate Riemann solvers for non-relativistic hydrodynamics.
 
@@ -11,8 +11,8 @@ Implemented solvers, in increasing order of accuracy/cost:
     HLLC  - HLL with contact restoration (Toro et al. 1994)
     Roe   - Linearized Roe solver (Roe 1981)
 
-All solvers share the same calling convention (see Riemann_nr_hydro in 
-                                               hydro_phys file).
+All solvers share the same calling convention (see Riemann_HD in 
+                                               HD_phys file).
 
 Each Riemann solver routine has the following i/o sturcture:
 
@@ -39,7 +39,6 @@ Each Riemann solver routine has the following i/o sturcture:
 
 Author: mrkondratyev
 """
-
 import numpy as np
 
 
@@ -47,7 +46,7 @@ import numpy as np
 # -------------------------
 # Small helper: conservative hydro variables + their fluxes along Ox 
 # -------------------------
-def nr_hydro_cons_and_flux(rho, vx, vy, vz, p, eos):
+def cons_and_flux_HD(rho, vx, vy, vz, p, eos):
     
     #conservative variables 
     #mass
@@ -79,12 +78,12 @@ def LLF_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
     Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L = \
-        nr_hydro_cons_and_flux(rhol, vxl, vyl, vzl, pl, eos)
+        cons_and_flux_HD(rhol, vxl, vyl, vzl, pl, eos)
         
     #right state conservatives and fluxes 
     mass_R, momx_R, momy_R, momz_R, etot_R, \
     Fmass_R, Fmomx_R, Fmomy_R, Fmomz_R, Fetot_R = \
-        nr_hydro_cons_and_flux(rhor, vxr, vyr, vzr, pr, eos)
+        cons_and_flux_HD(rhor, vxr, vyr, vzr, pr, eos)
 
     #maximal absolute value of eigenvalues  
     Sr = np.maximum(eos.sound_speed_nr(rhol, pl) + np.abs(vxl), \
@@ -109,12 +108,12 @@ def HLL_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
     Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L = \
-        nr_hydro_cons_and_flux(rhol, vxl, vyl, vzl, pl, eos)
+        cons_and_flux_HD(rhol, vxl, vyl, vzl, pl, eos)
         
     #right state conservatives and fluxes 
     mass_R, momx_R, momy_R, momz_R, etot_R, \
     Fmass_R, Fmomx_R, Fmomy_R, Fmomz_R, Fetot_R = \
-        nr_hydro_cons_and_flux(rhor, vxr, vyr, vzr, pr, eos)
+        cons_and_flux_HD(rhor, vxr, vyr, vzr, pr, eos)
     
     #left and right sound speeds 
     csl = eos.sound_speed_nr(rhol, pl)
@@ -124,7 +123,7 @@ def HLL_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     Sl = np.minimum(np.minimum(vxl, vxr) - np.maximum(csl, csr), 0.0)
     Sr = np.maximum(np.maximum(vxl, vxr) + np.maximum(csl, csr), 0.0)
     
-    #calculation of the flux using HLL approximate Riemann fan (3 states between two shocks)
+    #calculation of the flux using HLL approximate Riemann fan (3 states separated by two shocks)
     Fmass = ( Sr * Fmass_L - Sl * Fmass_R + Sr * Sl * (mass_R - mass_L) ) / (Sr - Sl)
     Fmomx = ( Sr * Fmomx_L - Sl * Fmomx_R + Sr * Sl * (momx_R - momx_L) ) / (Sr - Sl)
     Fmomy = ( Sr * Fmomy_L - Sl * Fmomy_R + Sr * Sl * (momy_R - momy_L) ) / (Sr - Sl)
@@ -143,12 +142,12 @@ def HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
     Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L = \
-        nr_hydro_cons_and_flux(rhol, vxl, vyl, vzl, pl, eos)
+        cons_and_flux_HD(rhol, vxl, vyl, vzl, pl, eos)
         
     #right state conservatives and fluxes 
     mass_R, momx_R, momy_R, momz_R, etot_R, \
     Fmass_R, Fmomx_R, Fmomy_R, Fmomz_R, Fetot_R = \
-        nr_hydro_cons_and_flux(rhor, vxr, vyr, vzr, pr, eos)
+        cons_and_flux_HD(rhor, vxr, vyr, vzr, pr, eos)
     
     #left and right sound speeds 
     csl = eos.sound_speed_nr(rhol, pl)
@@ -174,7 +173,7 @@ def HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     etotS_R = massS_R * ( etot_R / rhor + (Sstar - vxr) * (Sstar + pr / rhor / (Sr - vxr)) ) 
     
     # helper -- calculation of the flux using HLLC approximate Riemann fan 
-    # 4 states between left shock, contact wave, and right shock
+    # 4 states separated by left shock, contact wave, and right shock
     def _hllc_state(FL, FR, UL, UR, ULs, URs):
         return np.where(
             Sl >= 0.0, FL,
@@ -203,12 +202,12 @@ def Roe_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
     Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L = \
-        nr_hydro_cons_and_flux(rhol, vxl, vyl, vzl, pl, eos)
+        cons_and_flux_HD(rhol, vxl, vyl, vzl, pl, eos)
         
     #right state conservatives and fluxes 
     mass_R, momx_R, momy_R, momz_R, etot_R, \
     Fmass_R, Fmomx_R, Fmomy_R, Fmomz_R, Fetot_R = \
-        nr_hydro_cons_and_flux(rhor, vxr, vyr, vzr, pr, eos)    
+        cons_and_flux_HD(rhor, vxr, vyr, vzr, pr, eos)    
 
     #left and rigth enthalpies
     entl = (eos.eint(rhol, pl) + pl)/rhol + (vxl**2 + vyl**2 + vzl**2)/2.0 
@@ -233,7 +232,7 @@ def Roe_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     #Roe-averaged enthalpy
     ents = (sqrt_rhol*entl + sqrt_rhor*entr)/(sqrt_rhol + sqrt_rhor)
     
-    #Roe-averaged sound speed 
+    #Roe-averaged sound speed (ideal gas only!)
     css = np.sqrt( (eos.GAMMA - 1.0)*(ents - (vxs**2 + vys**2 + vzs**2)/2.0) )
     
     # Alternatively, we can use the following prescription for css, 
@@ -281,7 +280,7 @@ def Roe_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     rv[4,3,:,:] = vzs
     rv[4,4,:,:] = ents + vxs*css
     
-    #array of absolute value of eugenvalues
+    #array of absolute valueы of eugenvalues
     eugen = np.zeros((5, *rhos.shape))
     eugen[0,:,:] = np.abs(np.minimum(vxs - css, vxl - csl)) # entropy fix
     eugen[1,:,:] = np.abs(vxs); eugen[2,:,:] = np.abs(vxs); eugen[3,:,:] = np.abs(vxs) 
@@ -298,7 +297,8 @@ def Roe_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     #array of flux residuals
     dF = np.zeros((5, *rhos.shape))
     
-    # calculation of dF (basically, it is our numerical diffusion, that stabilizes the method)
+    # calculation of dF 
+    # basically, it is our numerical diffusion, that stabilizes the method
     dF = np.sum(eugen[:, np.newaxis, :, :] * rv[:, :, :, :] * dS[:, np.newaxis, :, :], axis=0)
 
     #final values of conservative fluxes, obtained from linearized Riemann problem solution
