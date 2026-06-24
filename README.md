@@ -1,338 +1,212 @@
-# #ENG
 # Piastra
 
-**Piastra** is a teaching-oriented framework for solving:
-- Linear advection
-- Inviscid compressible hydrodynamics (HD)
-- Special-relativistic hydrodynamics (rHD)
-- Ideal Magnetohydrodynamics (MHD)
-- Special-relativistic Magnetohydrodynamics (rMHD)
-- Thermal diffusion (via explicit and RKL2 super time-stepping)
-  
-within a **finite-volume framework**. The code is written in **Python** with extensive use of **NumPy**, and includes tools for visualization with **matplotlib**.
+*A small, readable finite-volume laboratory for astrophysical fluid dynamics.*
+
+Piastra solves the equations that shocks, jets, instabilities, and magnetized
+flows live by — in **pure Python and NumPy**, with nothing hidden behind a
+compiled black box. Every Riemann solver, every reconstruction stencil, every
+geometric source term is written out in plain array operations you can read,
+break, and rebuild. It is meant for two kinds of people: a student meeting
+Godunov's method for the first time, and a researcher who wants to prototype a
+scheme this afternoon without fighting a build system.
+
+If you can read a `for` loop and an einsum-free NumPy slice, you can read all of
+Piastra.
 
 ---
 
-## Features
+## What it solves
 
-- **Dimensionality**: 1D and 2D Cartesian (X,Y) and Cylindrical (R,Z) structured grids  
-- **Finite-volume solver** with approximate Riemann solvers for fluxes  
-- **Hydrodynamics solvers**:
-  - LLF (Rusanov, 1961)  
-  - HLL (Harten–Lax–van Leer, 1983)  
-  - HLLC (Toro et al., 1994)  
-  - Roe (Roe, 1981)
-  - Exact Riemann (Godunov, 1959)  
-- **Special-relativistic HD solvers** (rHD):
-  - LLF, HLL, HLLC (Mignone & Bodo, 2005)
-  - 4-velocity reconstruction (guarantees |v| < 1 at cell faces)
-  - Newton-Raphson conservative-to-primitive inversion
-- **MHD solvers**:
-  - LLF, HLL, HLLD (Miyoshi and Kusano, 2005)
-  - Divergence control:
-    - Powell 8-wave method (Powell 1994, 1999; Tóth 2000)
-    - Constrained Transport (Flux-CT; Balsara & Spicer 1999)
-- **Special-relativistic MHD solvers** (rMHD):
-  - LLF, HLL
-  - 4-velocity reconstruction for guaranteed sub-luminal face states
-  - Newton-Raphson conservative-to-primitive inversion (Mignone & McKinney 2007)
-  - Constrained Transport (Flux-CT) for divergence-free magnetic evolution
-- **Thermal diffusion**:
-  - Explicit forward Euler
-  - RKL2 super time-stepping (Meyer, Balsara & Aslam 2014) with configurable stages
-  - Geometry-aware FV Laplacian (Cartesian, cylindrical, polar)
-- **Advection**: high-order RK with exact Riemann solver or Lax–Wendroff scheme
-- **Reconstruction methods**:  
-  - PCM (piecewise constant)  
-  - PLM (piecewise linear with slope limiter, 2nd order)  
-  - PPM (Colella & Woodward 1984, Mignone 2014)  
-  - PPMorig (original Colella & Woodward version)  
-  - WENO5 (5th order, Jiang & Shu 1996)
-  - MP5 (Suresh & Huynh 1997) 
-- **Time integration**:  
-  - RK1 (Euler)  
-  - RK2, RK3 (TVD Runge–Kutta; Shu & Osher 1988)  
-- **Ghost cells**: automatically adjusted (2 for PLM/PCM, 3 for PPM/WENO/MP5)  
-- **Simulation control** through the `Parameters` class with defaults and validation  
-- **Modular design**:
-  - `parameters.py`: central parameter container  
-  - `grid_setup.py`: structured grid definition  
-  - `grid_misc.py`: grid utility functions (divergence, gradient, norms)
-  - `sim_state.py`: storage for fluid variables
-  - `boundaries.py`: boundary conditions handling for scalar and vector variables
-  - `high_order_rec.py`: spatial reconstruction routines (PCM/PLM/PPM/WENO/MP5)
-  - `helpers.py`: initial condition dispatch and simulation loop  
-  - `advection_one_step.py`, `hydro_one_step.py`, `rHD_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`, `rMHD_one_step.py`, `diffusion_one_step.py`: solver backends
-  - `hydro_phys.py`, `rHD_phys.py`, `MHD_phys.py`, `rMHD_phys.py`: supplementary physics modules
-  - `io_visual.py`: plotting utilities
-  - `advection_init_cond.py`, `hydro_init_cond.py`, `rHD_init_cond.py`, `MHD_init_cond.py`, `rMHD_init_cond.py`, `diffusion_init_cond.py`: initial conditions
-  - `main.py`: launcher (alternatively can be run via Jupyter notebook **main.ipynb**)
+| Mode   | Physics                                            | Solvers                      |
+|--------|----------------------------------------------------|------------------------------|
+| `adv`  | Linear scalar advection                            | upwind, Lax–Wendroff         |
+| `HD`   | Compressible (Euler) hydrodynamics                 | LLF, HLL, HLLC, Roe, Exact   |
+| `rHD`  | Special-relativistic hydrodynamics                 | LLF, HLL, HLLC               |
+| `MHD`  | Ideal magnetohydrodynamics                         | LLF, HLL, HLLC, HLLD         |
+| `rMHD` | Special-relativistic MHD                           | LLF, HLL                     |
+| `SWE`  | Shallow-water equations (geophysical flows)        | LLF, HLL, Exact              |
+| `diff` | Thermal diffusion ∂ₜT = ∇·(κ∇T)                    | — (parabolic)                |
+
+All of it runs on **1D and 2D structured grids** in four geometries —
+Cartesian `(x, y)`, cylindrical `(R, z)`, polar `(R, φ)`, and spherical-polar
+`(r, θ)` — with face areas, cell volumes, and curvilinear source terms handled
+consistently so the same solver code works in every coordinate system.
+
 ---
 
-## Usage
+## How it's built (the numerics)
+***HYPERBOLIC***  
 
-**Requirements:**
-- Python 3.9+  
-- NumPy  
-- matplotlib  
-- IPython (recommended for notebooks)  
+- **Godunov finite volumes.** States are reconstructed to cell faces, a Riemann
+  solver returns the interface flux, and the conservative update is the
+  divergence of those fluxes — the textbook recipe, applied uniformly.
+- **High-order reconstruction:** `PCM` (1st), `PLM` (2nd, slope-limited),
+  `PPMorig`, `PPM` (Mignone 2014), `WENO5` (Jiang & Shu 1996), `MP5`
+  (Suresh & Huynh 1997). Ghost-cell count is chosen automatically (2 for
+  PCM/PLM, 3 for the rest).
+- **Time integration:** TVD Runge–Kutta `RK1`/`RK2`/`RK3` (Shu & Osher 1988).
+- **Divergence control for MHD:** Constrained Transport (`CT`), hyperbolic
+  divergence cleaning (`GLM`), and Powell's 8-wave method (`8wave`).
+- **Relativity:** reconstruction on the 4-velocity (guaranteeing |v| < 1 at
+  faces) with a Newton–Raphson conservative-to-primitive inversion.
 
-**Example (main.py)**
+***PARABOLIC***  
+- **Diffusion:** explicit Euler or RKL2 super-time-stepping (Meyer, Balsara &
+  Aslam 2014), which buys an ~s²/4 speed-up at second-order accuracy.
+
+---
+
+## Quickstart
+
+Piastra is a package rooted at `src/`. Run it from the repository root.
+
+**The fast path** — edit the parameters at the top of `main.py` and run it:
+
+```bash
+python main.py
+```
+
+or open `main.ipynb` for the same workflow with live, re-runnable cells.
+
+**The explicit path** — drive it yourself in a few lines:
 
 ```python
 from src.parameters import Parameters
 from src.grid.grid_setup import Grid
 from src.sim_state import SimState
 from src.misc.helpers import initial_model, run_simulation
-from src.models.HD.hydro_one_step import Hydro2D
+from src.models.HD.HD_step import HD2D
 
-# Setup parameters
-par = Parameters(mode="HD", problem="sod2Dcart", Nx1=64, Nx2=64)
+# 1. Configure the run
+par = Parameters(mode="HD", problem="KHI2D", Nx1=128, Nx2=128,
+                 solver_type="HLLC", rec_type="PPM", RK_order="RK3", CFL=0.7)
 
-# Setup grid and state
-grid = Grid(par.Nx1, par.Nx2, par.Ngc)
-simstate = SimState(grid, par)
-grid, simstate, par, eos = initial_model(grid, simstate, par)
+# 2. Build the grid, allocate state, and load the initial condition
+grid  = Grid(par.Nx1, par.Nx2, par.Ngc)
+state = SimState(grid, par)
+grid, state, par, eos = initial_model(grid, state, par)   # sets geometry, ICs, BCs, t_fin
 
-# Run solver
-solver = Hydro2D(grid, simstate, eos, par)
-simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.dens, nsteps=200)
+# 3. Pick a solver and march in time (plotting every Nplot steps)
+solver = HD2D(grid, state, eos, par)
+state, par.timenow = run_simulation(grid, state, par, solver, state.dens, n_plot=20)
 ```
 
-
-# Parameters
-
-All parameters are stored in the Parameters class. Defaults are applied automatically.
-
-## Required:
-
-- mode: `'adv'`, `'HD'`, `'rHD'`, `'MHD'`, `'rMHD'`, or `'diff'`
-
-- problem: name of the test problem
-
-- Nx1, Nx2: grid resolution
-
-## Optional:
-
-- flux_type: depends on solver (defaults assigned automatically)
-
-- rec_type: `'PCM'`, `'PLM'`, `'PPM'`, `'PPMorig'`, `'WENO'`
-
-- RK_order: `'RK1'`, `'RK2'`, `'RK3'`
-
-- CFL: Courant number (default 0.7)
-
-- divb_tr: `'CT'` or `'8wave'` (MHD only); rMHD uses CT exclusively
-
-## Available Problems
-
-Advection: smooth/discontinuous 1D/2D tests
-
-Hydrodynamics: Sod shock tubes, Noh, strong shocks, Shu–Osher, Einfeldt, Kelvin–Helmholtz, Rayleigh–Taylor, Sedov blast waves, double Mach reflection, implosion, Gresho vortex, shock–cloud, gap-opening disk, cylindrical jet
-
-Relativistic HD: Mignone & Bodo (2005) Riemann problems (RP1–RP5), 2D Riemann problem, relativistic Rayleigh–Taylor instability, perturbed shock, shock heating, relativistic jet
-
-MHD: Brio–Wu shock, Tóth problem, Ryu–Jones, Alfvén wave, blast wave, Orszag–Tang vortex, rotor, current sheet, field loop, disk, shock–cloud
-
-Relativistic MHD: Brio–Wu 1D (rMHD), Mignone & Bodo (2006) Riemann problems (RP2–RP4), 2D blast wave, 2D relativistic rotor
-
-Diffusion: 2D Gaussian pulse, crossed Gaussian ridges, annular ring, 1D Gaussian, 1D step, 1D sine, cylindrical 2D
-
-## References
-
-- E. F. Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics (2009)
-
-- D. S. Balsara, Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods, Living Rev Comput Astrophys 3:2 (2017)
-
-- G. Tóth, The ∇·B constraint in shock-capturing MHD codes, JCP 161, 605 (2000)
-
-- A. Mignone & G. Bodo, An HLLC Riemann solver for relativistic flows, MNRAS 364, 126 (2005)
-
-- A. Mignone & G. Bodo, An HLLC solver for relativistic flows — II. Magnetohydrodynamics, MNRAS 368, 1040 (2006)
-
-- L. Del Zanna, N. Bucciantini & P. Londrillo, An efficient shock-capturing central-type scheme for multidimensional relativistic flows — II. MHD, A&A 400, 397 (2003)
-
-- A. Mignone & J. C. McKinney, Equation of state in relativistic MHD: variable versus constant adiabatic index, MNRAS 378, 1118 (2007)
-
-- C. D. Meyer, D. S. Balsara & T. D. Aslam, A stabilized Runge–Kutta–Legendre method for explicit super-time-stepping of parabolic and mixed equations, JCP 257, 594 (2014)
-
-- M. Zingale, Introduction to Computational Astrophysical Hydrodynamics (2015+)
-
-
-## Additional notes
-
-The folder **notebooks** contains lightweight solvers in separate independent ipynb-files (with comments in Russian): 
-2D shallow water simulator, 1D hydrodynamics, 1D advection solver, and 1D diffusion equation. My lecture notes are provided as well in **pdf** folder (they are also in Russian, however. I plan to rewrite them soon).
-
----
----
----
-
-# #RUS
-
-# Piastra
-
-**Piastra** — учебный код для моделирования:
-- Линейного уравнения переноса (адвекции)
-- Сжимаемой невязкой гидродинамики (HD)
-- Специально-релятивистской гидродинамики (rHD)
-- Идеальной магнитной гидродинамики (MHD)
-- Специально-релятивистской магнитной гидродинамики (rMHD)
-- Теплопроводности (явная схема и RKL2 super time-stepping)
-в рамках **метода конечных объемов**. Код написан на **Python** с активным использованием **NumPy** и включает инструменты визуализации через **matplotlib**.
+The initial-condition function chooses the geometry, fills the primitive
+variables, sets boundary conditions, and returns the final time — so a single
+`problem` string fully specifies a test case.
 
 ---
 
-## Возможности
+## Configuration reference
 
-- **Измерения**: 1D и 2D структурированные сетки -- декартовы (X,Y) и цилиндрические (R,Z)  
-- **Решатель методом конечных объемов** с приближенными решениями задачи Римана для вычисления потоков  
-- **Гидродинамические решатели**:
-  - LLF (Русанов, 1961)  
-  - HLL (Хартен–Лакс–ван Леер, 1983)  
-  - HLLC (Toro et al., 1994)  
-  - Roe (Roe, 1981)
-  - Точное решение задачи Римана (метод Годунова, 1959)  
-- **Решатели специально-релятивистской гидродинамики** (rHD):
-  - LLF, HLL, HLLC (Mignone & Bodo, 2005)
-  - Реконструкция 4-скорости (гарантирует |v| < 1 на гранях ячеек)
-  - Обращение консервативных переменных методом Ньютона
-- **Решатели МГД**:
-  - LLF, HLL, HLLD (Miyoshi & Kusano, 2005)
-  - Контроль дивергенции:  
-    - Метод 8 волн Пауэлла (Powell 1994, 1999; Tóth 2000)  
-    - Constrained Transport (Flux-CT; Balsara & Spicer 1999)  
-- **Решатели специально-релятивистской МГД** (rMHD):
-  - LLF, HLL
-  - Реконструкция 4-скорости (гарантирует |v| < 1 на гранях ячеек)
-  - Обращение консервативных переменных методом Ньютона (Mignone & McKinney 2007)
-  - Constrained Transport (Flux-CT) для бездивергентной эволюции магнитного поля
-- **Теплопроводность**:
-  - Явная схема Эйлера
-  - RKL2 super time-stepping (Meyer, Balsara & Aslam 2014) с настраиваемым числом стадий
-  - Геометрически корректный лапласиан МКО (декартова, цилиндрическая, полярная геометрии)
-- **Адвективный перенос**: Методы Рунге-Кутты с точным решением задачи Римана или схема Лакса–Вендроффа  
-- **Методы реконструкции**:  
-  - PCM (кусочно-постоянная)  
-  - PLM (кусочно-линейная с ограничителем наклона, 2-й порядок)  
-  - PPM (Colella & Woodward 1984, Mignone 2014)  
-  - PPMorig (оригинальная версия Colella & Woodward)  
-  - WENO5 (5-й порядок, Jiang & Shu 1996)
-  - MP5 (Suresh & Huynh 1997)
-- **Интегрирование по времени**:  
-  - RK1 (Эйлер)  
-  - RK2, RK3 (TVD Runge–Kutta; Shu & Osher 1988)  
-- **Фиктивные ячейки (ghost cells)**: подбираются автоматически (2 для PLM/PCM, 3 для PPM/WENO/MP5)  
-- **Управление симуляцией** через класс `Parameters` с установкой значений по умолчанию и проверкой корректности  
-- **Модульная структура**:
-  - `parameters.py`: центральный контейнер параметров  
-  - `grid_setup.py`: определение структуры сетки
-  - `grid_misc.py`: вспомогательные функции сетки (дивергенция, градиент, нормы)
-  - `sim_state.py`: хранение переменных жидкости  
-  - `boundaries.py`: учет граничных условий на сетке для скалярных и векторных функций
-  - `high_order_rec.py`: алгоритмы реконструкции (PCM/PLM/PPM/WENO/MP5)
-  - `helpers.py`: диспетчер начальных условий и основной цикл симуляции
-  - `advection_one_step.py`, `hydro_one_step.py`, `rHD_one_step.py`, `MHD_one_step_CT.py`, `MHD_one_step_8wave.py`, `rMHD_one_step.py`, `diffusion_one_step.py`: бэкенды решателей
-  - `hydro_phys.py`, `rHD_phys.py`, `MHD_phys.py`, `rMHD_phys.py`: вспомогательные физические модули
-  - `io_visual.py`: функции визуализации
-  - `advection_init_cond.py`, `hydro_init_cond.py`, `rHD_init_cond.py`, `MHD_init_cond.py`, `rMHD_init_cond.py`, `diffusion_init_cond.py`: начальные условия
-  - `main.py`: запуск симуляции (можно запускать также через Jupyter notebook **main.ipynb**)  
+Everything lives in the `Parameters` object. Required: `mode`, `problem`,
+`Nx1`, `Nx2`. Optional knobs (with defaults):
 
----
+| Parameter      | Default  | Meaning                                                            |
+|----------------|----------|-------------------------------------------------------------------|
+| `CFL`          | `0.7`    | Courant number (auto-capped at 0.4 for relativistic modes)        |
+| `rec_type`     | `"PLM"`  | `PCM`, `PLM`, `PPMorig`, `PPM`, `WENO`, `MP5`                      |
+| `RK_order`     | `"RK2"`  | `RK1`, `RK2`, `RK3`                                                |
+| `solver_type`  | per mode | Riemann solver (or time-stepping for diffusion) (see table below)  |
+| `divb_tr`      | `"GLM"`  | MHD divergence control: `CT`, `GLM`, `8wave` (MHD); `CT` (rMHD)    |
+| `rkl2_stages`  | `10`     | RKL2 stage count (diffusion, `solver_type="rkl2"`)                |
 
-## Использование
+**Solver options per mode**
 
-**Требования:**
-- Python 3.9+  
-- NumPy  
-- matplotlib  
-- IPython (рекомендуется для работы с ноутбуками)  
-
-**Пример (main.py)**
-
-```python
-from src.parameters import Parameters
-from src.grid.grid_setup import Grid
-from src.sim_state import SimState
-from src.misc.helpers import initial_model, run_simulation
-from src.models.HD.hydro_one_step import Hydro2D
-
-# Настройка параметров
-par = Parameters(mode="HD", problem="sod2Dcart", Nx1=64, Nx2=64)
-
-# Инициализация сетки и состояния
-grid = Grid(par.Nx1, par.Nx2, par.Ngc)
-simstate = SimState(grid, par)
-grid, simstate, par, eos = initial_model(grid, simstate, par)
-
-# Запуск решателя
-solver = Hydro2D(grid, simstate, eos, par)
-simstate, par.timenow = run_simulation(grid, simstate, par, solver, simstate.dens, nsteps=200)
+```
+adv  : adv, LW
+HD   : LLF, HLL, HLLC, Roe, Exact
+rHD  : LLF, HLL, HLLC
+MHD  : LLF, HLL, HLLC, HLLD          divb_tr: CT, GLM, 8wave
+rMHD : LLF, HLL                      divb_tr: CT (only)
+SWE  : LLF, HLL, Exact
+diff : expl, rkl2                    rkl2_stages: int >= 2
 ```
 
+---
 
-# Параметры
+## The test-problem catalogue
 
-Все параметры хранятся в классе Parameters. Значения по умолчанию присваиваются автоматически.
+Pass one of these as `problem`. Pass `"user_defined"` in any mode to drop into a
+template you fill in yourself.
 
-## Необходимые:
+- **`adv`** — `smooth1D`, `disc1D`, `smooth2D`, `disc2D`
+- **`HD`** — `sod1Dcart`, `sod1Dcyl`, `sod1Dsph`, `strong1D`, `DBW1D`,
+  `shuosher1D`, `einfeldt1D`, `sod2Dcart`, `sod2Dsph`, `sod2Dpol`,
+  `sedov2Dcart`, `sedov2Dcyl`, `RP2D`, `gresho2D`, `KHI2D`, `RTI2D`,
+  `shock-cloud`, `gap-opening`, `jet2Dcyl`
+- **`rHD`** — `RP1`, `RP3`, `RP4`, `RP5`, `RP2D`, `RTI`, `jet2Dcart`, `jet2Dcyl`
+- **`MHD`** — `BW1D`, `toth1D`, `RJ1D`, `alfven1D`, `blast2Dcart`, `blast2Dcyl`,
+  `blast2Dsph`, `rotor2D`, `OT2D`, `current-sheet`, `field-loop`, `disk2D`,
+  `shock-cloud`
+- **`rMHD`** — `BW1D`, `RP2`, `RP3`, `RP4`, `blast2D`, `rotor2D`
+- **`SWE`** — `dam1D`, `bump1D`, `bathtub2D`, `expl2D`, `tsunami2D`, `ocean2D`,
+  `atmo2D`, `dam2D`, `jet2D`, `KHI2D`
+- **`diff`** — `gauss1D`, `gauss2D`, `step1D`, `sine1D`, `cross2D`, `ring2D`,
+  `cyl2D`
 
-- mode: `'adv'`, `'HD'`, `'rHD'`, `'MHD'`, `'rMHD'`, или `'diff'`
+---
 
-- problem: название тестовой задачи
+## Project layout
 
-- Nx1, Nx2: разрешение сетки
+```
+Piastra/
+├── main.py                 # script entry point — edit parameters, run
+├── main.ipynb              # notebook entry point — mirrors main.py
+├── src/
+│   ├── parameters.py       # Parameters: config, defaults, validation
+│   ├── sim_state.py        # SimState: unified per-mode variable storage
+│   ├── grid/
+│   │   ├── grid_setup.py   # Grid: cart / cyl / pol / sph geometries
+│   │   └── grid_misc.py    # divergence, gradient, interpolation, norms
+│   ├── common/
+│   │   ├── boundaries.py   # scalar / vector / fixed ghost-cell fillers
+│   │   ├── high_order_rec.py  # PCM / PLM / PPM / WENO / MP5
+│   │   └── eos_setup.py    # EOSdata (ideal-gas equation of state)
+│   ├── misc/
+│   │   ├── helpers.py      # initial_model dispatch + run_simulation loop
+│   │   ├── io_visual.py    # live matplotlib visualization
+│   │   └── io_utils.py     # snapshot save/load, 1D ASCII export
+│   └── models/             # one self-contained package per physics mode
+│       ├── adv/  HD/  rHD/  MHD/  rMHD/  SWE/  diff/
+│       └── ...             # each: *_step, *_phys, *_init_cond + optionals
+└── notebooks/              # standalone pedagogical notebooks
+```
 
-## Опциональные:
+Every physics package follows the same four-file rhythm: `*_step.py` (the
+time-stepping class and CFL condition), `*_phys.py` (conserved↔primitive maps,
+boundary fills, the flux driver), `*_riemann_*.py` (the solvers), and
+`*_init_cond.py` (the test problems). Learn one package and you can read them all.
 
-- flux_type: зависит от решателя (default присваивается автоматически)
+---
 
-- rec_type: `'PCM'`, `'PLM'`, `'PPM'`, `'PPMorig'`, `'WENO'`
+## Requirements
 
-- RK_order: `'RK1'`, `'RK2'`, `'RK3'`
+- Python 3.9+
+- NumPy
+- matplotlib
+- IPython (for the notebooks)
 
-- CFL: Число Куранта (default 0.7)
+```bash
+pip install numpy matplotlib ipython
+```
 
-- divb_tr: `'CT'` или `'8wave'` (только для МГД); rMHD использует только CT
+No compilation, no external solver libraries, no configuration files.
 
-## Доступные проблемы
+---
 
-Адвекция: smooth/discontinuous 1D/2D тесты
+## Selected references
 
-Газовая динамика:  ударные трубы Sod, Noh, strong shocks, Shu–Osher, Einfeldt; неустойчивости Кельвина-Гельмгольца, Рэлея-Тейлора; сильный взрыв (Седов); double Mach reflection, implosion, Gresho vortex, shock–cloud, gap-opening disk, cylindrical jet
+- Toro, *Riemann Solvers and Numerical Methods for Fluid Dynamics*, 3rd ed. (2009) — Godunov-type solvers basics 
+- Balsara (2017) Living Reviews in Computational Astrophysics, 3:2 — high-order methods and models
+- Toth (2000), *JCP* — divB tretments for MHD
+- Dedner et al (2002), *JCP* — GLM divB cleaning for MHD
+- Mignone & Bodo (2005), *MNRAS* **364**, 126 — relativistic HLLC
+- Miyoshi & Kusano (2005), *JCP* **208**, 315 — HLL-type solvers for MHD
+- Shu & Osher (1988), *JCP* **77**, 439 — TVD Runge–Kutta
+- Mignone (2014), *JCP* **270**, 784 — high-order curvilinear reconstruction
+- Meyer, Balsara & Aslam (2014), *MNRAS* **422**, 2102 — RKL2 super-time-stepping for diffusion
 
-Релятивистская гидродинамика: задачи Римана из Mignone & Bodo (2005) (RP1–RP5), 2D задача Римана, релятивистская неустойчивость Рэлея–Тейлора, возмущённая УВ, нагрев ударной волной, релятивистская струя
+---
 
-МГД: Брио–Ву, задача Тота, Рю–Джонс, волна Альвена, взрывная волна, вихрь Орзага–Танга, ротор, токовый слой, петля поля, аккреционный диск, shock–cloud
-
-Релятивистская МГД: Брио–Ву 1D (rMHD), задачи Римана из Mignone & Bodo (2006) (RP2–RP4), 2D взрывная волна, 2D релятивистский ротор
-
-Диффузия: 2D гауссов импульс, перекрёстные гауссовы гребни, кольцевой импульс, 1D гауссов импульс, 1D ступенька, 1D синус, цилиндрическая 2D
-
-## Ссылки
-
-- Д. В. Бисикало, А. Г. Жилкин, А. А. Боярчук, Газодинамика Тесных Двойных Звезд, Физматлит (2013)
-
-- E. F. Toro, Riemann Solvers and Numerical Methods for Fluid Dynamics (2009)
-
-- D. S. Balsara, Higher-order accurate space-time schemes for computational astrophysics—Part I: finite volume methods, Living Rev Comput Astrophys 3:2 (2017)
-
-- G. Tóth, The ∇·B constraint in shock-capturing MHD codes, JCP 161, 605 (2000)
-
-- A. Mignone & G. Bodo, An HLLC Riemann solver for relativistic flows, MNRAS 364, 126 (2005)
-
-- A. Mignone & G. Bodo, An HLLC solver for relativistic flows — II. Magnetohydrodynamics, MNRAS 368, 1040 (2006)
-
-- L. Del Zanna, N. Bucciantini & P. Londrillo, A&A 400, 397 (2003)
-
-- A. Mignone & J. C. McKinney, MNRAS 378, 1118 (2007)
-
-- C. D. Meyer, D. S. Balsara & T. D. Aslam, JCP 257, 594 (2014)
-
-- M. Zingale, Introduction to Computational Astrophysical Hydrodynamics (2015+)
-
-## Дополнения
-
-В папке **notebooks** представлены облегченнные решатели в отдельных ipynb-файлах с комментариями на русском: 
-2D симулятора уравнений мелкой воды, 1D газовая динамика, 1D решатель адвекции, и 1D модель диффузии. 
-Также в папке **pdf** лежат мои лекционные записи лекции для участников Третьей Школы НЦФМ "Экспериментальная и Лабораторная Астрофизика и Геофизика".
+**Author:** mrkondratyev · [github.com/mrkondratyev/Piastra](https://github.com/mrkondratyev/Piastra)
