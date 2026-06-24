@@ -435,17 +435,23 @@ def flux_calc_rHD(g, HD, par, eos):
 
     # Curvature source terms for different curvilinear coordinates
     ST1, ST2, ST3 = curv_source_rHD(g, HD, eos)
-    
-    # Finally, here we add the external force + curvature source terms
-    # Source term for momentum residual 
-    Res1 += - HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F1[:,:] - ST1
-    Res2 += - HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F2[:,:] - ST2
-    Res3 += - ST3
 
-    # Source term for energy residual 
-    ResE += -HD.dens[Ngc:-Ngc, Ngc:-Ngc] * (
-        HD.F1 * HD.vel1[Ngc:-Ngc, Ngc:-Ngc] +
-        HD.F2 * HD.vel2[Ngc:-Ngc, Ngc:-Ngc])
+    #relativistic "force" (actually it is approximate, since we do not solve GRHD)
+    rhoh = HD.dens[Ngc:-Ngc, Ngc:-Ngc] * \
+        eos.enthalpy_sr(HD.dens[Ngc:-Ngc, Ngc:-Ngc],  \
+        HD.pres[Ngc:-Ngc, Ngc:-Ngc])
+    F1 = rhoh * W_full[Ngc:-Ngc, Ngc:-Ngc]**2 * HD.F1
+    F2 = rhoh * W_full[Ngc:-Ngc, Ngc:-Ngc]**2 * HD.F2
+    
+    #assume Newtonian force 
+    #F1 = HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F1
+    #F2 = HD.dens[Ngc:-Ngc, Ngc:-Ngc] * HD.F2
+    
+    #finally, here we add the external force and curvature source terms
+    #we add forces in momentum res, while in energy we add Power = Force*Momentum 
+    Res1 += - F1 - ST1; Res2 += - F2 - ST2; Res3 += - ST3
+    ResE += -(F1 * HD.vel1[Ngc:-Ngc, Ngc:-Ngc] +
+        F2 * HD.vel2[Ngc:-Ngc, Ngc:-Ngc]) 
 
     return ResM, Res1, Res2, Res3, ResE
 
