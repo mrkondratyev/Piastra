@@ -36,8 +36,8 @@ def boundCond_adv(grid, BC, adv, BC_fixed=None):
 
     Returns
     -------
-    fluid : object
-        Fluid object with ghost cells updated according to BCs.
+    adv : object
+        Object with ghost cells updated according to BCs.
     """
     Ngc = grid.Ngc
     
