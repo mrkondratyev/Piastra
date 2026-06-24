@@ -31,16 +31,16 @@ The approach separates scalar and vector fields for clarity and correctness:
    - For 3-component vector quantities (e.g., velocity, cell-centered magnetic field).
    - Treats the normal component differently for reflective (wall) boundaries
      while leaving tangential components unchanged.
+     
+2. ``apply_bc_fixed(V1, V2, V3, ...)``
+   - Pin ghost cells to prescribed (Dirichlet) values on one face
 
 The face-centered z-electric field (Efld3 along x1/x2) needed for CT MHD is
 implemented as a separate function ``boundCond_electric_field`` in the
-corresponding MHD solver modules (MHD_one_step_CT.py, rMHD_one_step.py).
+corresponding MHD solver modules (MHD_step_CT.py, rMHD_step.py).
 
 Author: mrkondratyev
 """
-
-import numpy as np
-
 
 def apply_bc_scalar(var, Ngc, BC_type, axis=1, side='inner'):
     """
@@ -206,5 +206,44 @@ def apply_bc_vector(V1, V2, V3, Ngc, BC_type, axis=1, side='inner'):
 
 
 
+def apply_bc_fixed(state_fields, Ngc, N1, N2, face, patches):
+    """
+    Pin ghost cells to prescribed (Dirichlet) values on one face.
 
+    Applied AFTER the standard apply_bc_* fill, so the fixed region overwrites
+    the zero-gradient/reflecting ghost values there. Because the prescribed
+    state lives in the ghost cells, the boundary-face Riemann solve produces
+    the correct inlet flux with NO change to the flux routine.
 
+    Parameters
+    ----------
+    state_fields : dict[str, ndarray]
+        Maps field name -> full array (with ghosts), e.g.
+        {'dens': fluid.dens, 'vel1': fluid.vel1, ...}. Only fields named in a
+        patch's dict are touched.
+    Ngc : int                  number of ghost cells.
+    N1, N2 : int               full array sizes (incl. ghosts) along axis 0, 1.
+    face : int                 0=x1_inner, 1=x2_inner, 2=x1_outer, 3=x2_outer.
+    patches : list of (start, end, dict)
+        Each tuple gives an INTERIOR index range [start, end) along the
+        boundary (0-based from the first interior cell) and a {field: value}
+        dict of prescribed values.
+    """
+    for (start, end, sdict) in patches:
+        t0 = Ngc + start          # interior index -> full-array index (tangential)
+        t1 = Ngc + end
+
+        for name, value in sdict.items():
+            if name not in state_fields:
+                continue
+            arr = state_fields[name]
+
+            if face == 0:            # x1 inner: ghost rows [0:Ngc], tangential = x2
+                arr[0:Ngc, t0:t1] = value
+            elif face == 2:          # x1 outer: ghost rows [N1-Ngc:N1]
+                arr[N1 - Ngc:N1, t0:t1] = value
+            elif face == 1:          # x2 inner: ghost cols [0:Ngc], tangential = x1
+                arr[t0:t1, 0:Ngc] = value
+            elif face == 3:          # x2 outer: ghost cols [N2-Ngc:N2]
+                arr[t0:t1, N2 - Ngc:N2] = value
+    return state_fields
