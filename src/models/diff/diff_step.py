@@ -88,7 +88,7 @@ Author: mrkondratyev
 import numpy as np
 import copy
 
-from src.common.boundaries import apply_bc_scalar
+from src.common.boundaries import apply_bc_scalar, apply_bc_fixed
 from src.grid.grid_misc import *
 
 
@@ -96,7 +96,7 @@ from src.grid.grid_misc import *
 #   Top-level solver class
 # ============================================================================
 
-class Diffusion2D:
+class Diff2D:
     """
     Container class for 2D thermal-diffusion routines.
 
@@ -131,19 +131,15 @@ class Diffusion2D:
     par  : parameters
     """
 
-    def __init__(self, g, diff, par, solver='expl', rkl2_stages=10):
+    def __init__(self, g, diff, par):
         self.g      = g
         self.diff   = diff
         self.par    = par
-        self.solver = solver
-        self.s      = int(rkl2_stages)
-
-        if solver not in ('expl', 'rkl2'):
-            raise ValueError(
-                f"Unknown solver '{solver}'. Choose 'expl' or 'rkl2'."
-            )
-        if solver == 'rkl2':
-            if self.s < 2:
+        self.s      = par.rkl2_stages
+        
+        #initialising the coefficients for RKL2 method 
+        if self.par.solver_type == 'rkl2':
+            if (par.rkl2_stages < 2):
                 raise ValueError("rkl2_stages must be >= 2.")
             self._b, self._mu, self._nu, self._gamma = _rkl2_coefs(self.s)
 
@@ -162,18 +158,24 @@ class Diffusion2D:
         """
         dt_cfl = _CFL_condition_diff(self.g, self.diff, self.par.CFL)
 
-        if self.solver == 'expl':
+        if self.par.solver_type == 'expl': # explicit solver 
             dt = min(dt_cfl, self.par.timefin - self.par.timenow)
             self.diff = _explicit_step_diff(self.g, self.diff, self.par, dt)
 
-        else:  # rkl2
+        elif self.par.solver_type == 'rkl2':  # RKL2 super time-stepping 
             dt_super = dt_cfl * (self.s**2 + self.s - 2) / 4.0
             dt = min(dt_super, self.par.timefin - self.par.timenow)
             self.diff = _rkl2_step_diff(
                 self.g, self.diff, self.par, dt,
                 self._b, self._mu, self._nu, self._gamma, self.s
             )
-
+        
+        else: 
+            
+            raise ValueError(
+                f"Invalid diff_solver: '{self.par.solver_type}'. "
+                f"Expected 'expl' or 'rkl2'.")
+        
         self.par.timenow += dt
         return self.diff
 
@@ -225,13 +227,21 @@ def _apply_bc_diff(g, diff, par):
     ----------
     g    : Grid
     diff : SimState  (modified in place)
-    par  : parameters  (par.BC[0..3])
+    par  : parameters  (par.BC[0..3], BC_fixed)
     """
     Ngc = g.Ngc
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[0], axis=1, side='inner')
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[1], axis=2, side='inner')
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[2], axis=1, side='outer')
     diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[3], axis=2, side='outer')
+    
+    # --- fixed (Dirichlet) ghost-fill, applied LAST so it overrides the above ---
+    if par.BC_fixed is not None:
+        N1, N2 = diff.T.shape
+        state_fields = {'T': diff.T}
+        for face in (0, 1, 2, 3):
+            if par.BC_fixed.get(face):
+                apply_bc_fixed(state_fields, Ngc, N1, N2, face, par.BC_fixed[face])
     
     return diff
 
