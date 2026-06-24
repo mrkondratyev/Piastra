@@ -17,6 +17,9 @@ uniform Cartesian grids and includes the following reconstruction schemes:
     4. PPMorig: Standard Piecewise Parabolic Method (3rd order)
     5. PPM    : Fifth-order improved PPM (Mignone 2014)
     6. MP5    : Fifth-order monotonicity preserving scheme (Suresh & Huynh 1997)
+    
+Additionally, a swap to PLM for a mask with troubled cells is included in this file:
+    7. _swap_troubled 
 
 Key routines
 ------------
@@ -37,10 +40,10 @@ Notes
 References
 ----------
 - Colella, P. & Woodward, P. R. (1984). The Piecewise Parabolic Method (PPM)
-  for gas-dynamical simulations. JCP 54, 174.
+  for gas-dynamical simulations. Journal of Computational Physics, 54, 174.
 - Mignone, A. (2014). High-order conservative reconstruction schemes for
   finite volume methods in cylindrical and spherical coordinates.
-  JCP 270, 784.
+  Journal of Computational Physics, 270, 784.
 - Balsara, D. S. (2017). Higher-order accurate space-time schemes for
   computational astrophysics—Part I: finite volume methods.
   Living Rev Comput Astrophys 3:2.
@@ -134,6 +137,17 @@ def VarReconstruct(var, grid, rec_type, dim, limiter_type=None):
             f"Unknown rec_type: {rec_type}. "
             f"Expected one of ['PCM', 'PLM', 'WENO', 'PPMorig', 'PPM']."
         )
+        
+
+# ─── fallback to PLM in the vicinity of strong discontinuities ───────────────
+
+def _swap_troubled(L, R, var, g, dim, limiter, troubled):
+    """Overwrite L, R with PLM values where 'troubled' is True."""
+    if troubled.any():
+        Llo, Rlo = VarReconstruct(var, g, 'PLM', dim, limiter_type = limiter)
+        L = np.where(troubled, Llo, L)
+        R = np.where(troubled, Rlo, R)
+    return L, R
 
 
 # ─── PLM reconstruction ──────────────────────────────────────────────────────
@@ -289,7 +303,7 @@ def limiter(x, y, limiter_type):
         df = 0.0
 
     elif limiter_type == 'NO':
-        # Unlimited second-order reconstruction (may produce oscillations)
+        # Unlimited second-order reconstruction (may produce oscillations and crashes)
         df = x  # Lax-Wendroff-like scheme
 
     else:
@@ -328,11 +342,12 @@ def rec_WENO(Ngc, Nr, var, dim):
     Description
     -----------
     WENO uses higher-order polynomial extensions based on several candidate stencils.
-    Three stencils (left, central, right) each provide second-order reconstructions.
+    Three stencils (left, central, right) each provide thrid-order reconstructions.
     Their smoothness indicators (IS) determine weights: discontinuous stencils are
     suppressed while smooth ones dominate, yielding up to fifth-order accuracy.
 
     Currently restricted to uniform Cartesian grids.
+    (it can be used with other geometries, but axis artefacts may appear)
 
     References
     ----------
@@ -371,8 +386,13 @@ def rec_WENO(Ngc, Nr, var, dim):
 
     # --- WENO5 nonlinear weights ---
     # Linear weights for fifth-order accuracy
-    gammal, gammac, gammar = 0.1, 0.6, 0.3
-    IS_deg = 2  # exponent in weight denominator
+    #gammal, gammac, gammar = 0.1, 0.6, 0.3
+    #IS_deg = 2  # exponent in weight denominator
+    
+    # --- CWENO nonlinear weights ---
+    #linear weights and IS degree in the denominator for CWENO reconstruction
+    gammal, gammac, gammar = 1.0, 200.0, 1.0
+    IS_deg = 4  
 
     # Unnormalized weights (smooth stencils get large weights)
     wl = gammal / (ISl + 1e-12) ** IS_deg
@@ -407,7 +427,7 @@ def rec_WENO(Ngc, Nr, var, dim):
 
 def rec_PPMorig(Ngc, Nr, var, dim):
     """
-    Standard third-order Piecewise Parabolic Method (PPM) following Collela & Woodward (1984).
+    Standard third-order Piecewise Parabolic Method (PPM) following Collela & Woodward, JCP (1984).
 
     Parameters
     ----------
@@ -436,6 +456,7 @@ def rec_PPMorig(Ngc, Nr, var, dim):
       4. Regulate curvature to prevent new extrema inside cells.
 
     Works only for uniform Cartesian grids.
+    (it can be used with other geometries, but axis artefacts may appear)
 
     References
     ----------
@@ -533,7 +554,8 @@ def rec_PPM5(Ngc, Nr, var, dim):
       3. Adjust reconstructed states based on local extrema and slope ratios.
 
     Works only for uniform Cartesian grids.
-
+    (it can be used with other geometries, but axis artefacts may appear)
+    
     References
     ----------
     - Mignone, A. (2014). JCP.
@@ -595,12 +617,11 @@ def rec_PPM5(Ngc, Nr, var, dim):
 
 
 
-
 # ─── MP5 reconstruction ───────────────────────────────────────────────────────
 
 def rec_MP5(Ngc, Nr, var, dim):
     """
-    Fifth-order Monotonicity-Preserving (MP5) reconstruction following Suresh & Huynh (1997).
+    Fifth-order Monotonicity-Preserving (MP5) reconstruction following Suresh & Huynh, JCP (1997).
 
     Parameters
     ----------
@@ -627,7 +648,7 @@ def rec_MP5(Ngc, Nr, var, dim):
     The procedure follows Appendix A of Suresh & Huynh (1997) exactly:
       1. Compute the original (unlimited) fifth-order interface value VOR (Eq. 2.1).
       2. Compute VMP, the simple monotonicity-preserving bound (Eq. 2.12).
-      3. If VOR already satisfies the MP constraint (Eq. 2.29), accept it as-is.
+      3. If VOR already satisfies the MP constraint (Eq. 2.30), accept it as-is.
       4. Otherwise compute the accuracy-preserving bounds using the four-argument
          minmod d^M4 (Eq. 2.24), then UL, MD, and LC estimates (Eqs. 2.8, 2.25, 2.26),
          and finally clamp VOR into [vmin, vmax] via median (Eq. 2.28).
@@ -636,6 +657,7 @@ def rec_MP5(Ngc, Nr, var, dim):
     directly from the paper.
 
     Works only for uniform Cartesian grids.
+    (it can be used with other geometries, but axis artefacts may appear)
 
     References
     ----------
@@ -683,7 +705,7 @@ def rec_MP5(Ngc, Nr, var, dim):
         # Step 2 — simple MP bound (Eq. 2.12)
         vmp = vj + MM(vjp1 - vj, alpha * (vj - vjm1))
 
-        # Step 3 — bypass test (Eq. 2.29): accept VOR when already in [vj, vmp]
+        # Step 3 — bypass test (Eq. 2.30): accept VOR when already in [vj, vmp]
         bypass = (vor - vj) * (vor - vmp) <= epsm
 
         # Step 4 — accuracy-preserving bounds (only needed where bypass is False)
