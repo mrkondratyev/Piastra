@@ -78,6 +78,9 @@ def IC_MHD_user_defined(grid, MHD, par):
 
 
 
+# ============================================================================
+#   1D problems
+# ============================================================================
 def IC_MHD1D_Alfven(grid, MHD, par):
     """
     1D circularly polarised Alfven wave test.
@@ -350,6 +353,9 @@ def IC_MHD1D_RJ(grid, MHD, par):
 
 
 
+# ============================================================================
+#   2D problems
+# ============================================================================
 def IC_MHD2D_blast_cart(grid, MHD, par):
     """
     2D magnetized explosion test (planar Cartesian geometry).
@@ -535,7 +541,7 @@ def IC_MHD2D_blast_sph(grid, MHD, par):
     MHD.fb1 = (Aphi[:,1:]*grid.edg3[:,1:]  - Aphi[:,:-1]*grid.edg3[:,:-1])/(grid.fS1[:,:]+1e-30)
     MHD.fb2 = -(Aphi[1:,:]*grid.edg3[1:,:] - Aphi[:-1,:]*grid.edg3[:-1,:])/(grid.fS2[:,:]+1e-30)
     
-    MHD.bfi1[Ngc:Nx1r, Ngc:Nx2r], MHD.bfi1[Ngc:Nx1r, Ngc:Nx2r] = \
+    MHD.bfi1[Ngc:Nx1r, Ngc:Nx2r], MHD.bfi2[Ngc:Nx1r, Ngc:Nx2r] = \
         interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
     
     MHD.pres[:, :] = np.where(grid.cx1 < 0.1, 10.0, 0.1)
