@@ -63,28 +63,24 @@ def IC_rHD_user_defined(grid, state, par):
     """
     print("rHD – user-defined problem")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.4
-
-    par.BC[:] = 'free'
+    par.timenow = 0.0; par.timefin = 0.4
 
     eos = EOSdata(5.0 / 3.0)
 
     # ----- Set your initial condition below -----
     state.dens[:, :] = 1.0
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
+    state.vel1[:, :] = state.vel2[:, :] = state.vel3[:, :] = 0.0
     state.pres[:, :] = 1.0
 
     raise ValueError(
         "User-defined rHD problem – see 'rHD_init_cond.py', "
         "set your ICs and remove this line."
     )
+
+    par.BC[:] = 'free'
 
     return grid, state, par, eos
 
@@ -114,25 +110,22 @@ def IC_rHD1D_RP1(grid, state, par):
     """
     print("rHD 1D – Mignone & Bodo (2005) Riemann Problem 1")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.4
-
-    par.BC[:] = 'free'
+    par.timenow = 0.0; par.timefin = 0.4
 
     eos = EOSdata(5.0 / 3.0)
 
-    xmid = 0.5 * (x1ini + x1fin)
-    mask_L = grid.cx1 < xmid
+    xc = 0.5 * (x1ini + x1fin)
+    left = grid.cx1 < xc
 
-    state.dens[:, :] = np.where(mask_L, 1.0,  1.0)
-    state.vel1[:, :] = np.where(mask_L, 0.9,  0.0)
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
-    state.pres[:, :] = np.where(mask_L, 1.0, 10.0)
+    state.dens[:, :] = np.where(left, 1.0,  1.0)
+    state.vel1[:, :] = np.where(left, 0.9,  0.0)
+    state.vel2[:, :] = 0.0; state.vel3[:, :] = 0.0
+    state.pres[:, :] = np.where(left, 1.0, 10.0)
+
+    par.BC[:] = 'free'
 
     return grid, state, par, eos
 
@@ -157,25 +150,21 @@ def IC_rHD1D_RP3(grid, state, par):
     """
     print("rHD 1D – Mignone & Bodo (2005) Riemann Problem 3 (strong shock)")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.4
-
-    par.BC[:] = 'free'
+    par.timenow = 0.0; par.timefin = 0.4
 
     eos = EOSdata(5.0 / 3.0)
 
-    xmid = 0.5 * (x1ini + x1fin)
-    mask_L = grid.cx1 < xmid
+    xc = 0.5 * (x1ini + x1fin)
+    left = grid.cx1 < xc
 
-    state.dens[:, :] = np.where(mask_L, 10.0, 1.0)
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
-    state.pres[:, :] = np.where(mask_L, 40.0 / 3.0, 2.0 / 3.0 * 1e-6)
+    state.dens[:, :] = np.where(left, 10.0, 1.0)
+    state.vel1[:, :] = state.vel2[:, :] = state.vel3[:, :] = 0.0
+    state.pres[:, :] = np.where(left, 40.0 / 3.0, 2.0 / 3.0 * 1e-6)
+    
+    par.BC[:] = 'free'
 
     return grid, state, par, eos
 
@@ -200,26 +189,22 @@ def IC_rHD1D_RP4(grid, state, par):
     """
     print("rHD 1D – Mignone & Bodo (2005) Riemann Problem 4 (ultra-relativistic)")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.4
-
-    par.BC[:] = 'free'
+    par.timenow = 0.0; par.timefin = 0.4
 
     eos = EOSdata(5.0 / 3.0)
 
-    xmid = 0.5 * (x1ini + x1fin)
-    mask_L = grid.cx1 < xmid
+    xc = 0.5 * (x1ini + x1fin)
+    left = grid.cx1 < xc
 
     state.dens[:, :] = 1.0
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
-    state.pres[:, :] = np.where(mask_L, 1000.0, 0.01)
+    state.vel1[:, :] = state.vel2[:, :] = state.vel3[:, :] = 0.0
+    state.pres[:, :] = np.where(left, 1000.0, 0.01)
 
+    par.BC[:] = 'free'
+    
     return grid, state, par, eos
 
 
@@ -246,25 +231,23 @@ def IC_rHD1D_RP5(grid, state, par):
     """
     print("rHD 1D – shock tube with tangential velocity (RP5)")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.4
-
-    par.BC[:] = 'free'
+    par.timenow = 0.0; par.timefin = 0.4
 
     eos = EOSdata(5.0 / 3.0)
 
-    xmid = 0.5 * (x1ini + x1fin)
-    mask_L = grid.cx1 < xmid
+    xc = 0.5 * (x1ini + x1fin)
+    left = grid.cx1 < xc
 
     state.dens[:, :] = 1.0
     state.vel1[:, :] = 0.0
-    state.vel2[:, :] = np.where(mask_L, 0.0, 0.99)
+    state.vel2[:, :] = np.where(left, 0.0, 0.99)
     state.vel3[:, :] = 0.0
-    state.pres[:, :] = np.where(mask_L, 1000.0, 0.01)
+    state.pres[:, :] = np.where(left, 1000.0, 0.01)
+
+    par.BC[:] = 'free'
 
     return grid, state, par, eos
 
@@ -305,38 +288,27 @@ def IC_rHD2D_RP(grid, state, par):
     """
     print("rHD 2D – Riemann problem (Mignone & Bodo 2005)")
 
-    x1ini, x1fin = -1.0, 1.0
-    x2ini, x2fin = -1.0, 1.0
+    x1ini, x1fin = -1.0, 1.0; x2ini, x2fin = -1.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.8
-
-    par.BC[:] = 'free'
-
+    par.timenow = 0.0; par.timefin = 0.8
+    
     eos = EOSdata(5.0 / 3.0)
+    
+    cx1 = grid.cx1; cx2 = grid.cx2
 
-    cx1 = grid.cx1
-    cx2 = grid.cx2
+    m1 = (cx1 > 0.0) & (cx2 > 0.0) # Quadrant I: x > 0, y > 0
+    m2 = (cx1 < 0.0) & (cx2 > 0.0) # Quadrant II: x < 0, y > 0
+    m3 = (cx1 < 0.0) & (cx2 < 0.0) # Quadrant III: x < 0, y < 0
+    m4 = (cx1 > 0.0) & (cx2 < 0.0) # Quadrant IV: x > 0, y < 0
 
-    # Quadrant I: x > 0, y > 0
-    m1 = (cx1 > 0.0) & (cx2 > 0.0)
-    # Quadrant II: x < 0, y > 0
-    m2 = (cx1 < 0.0) & (cx2 > 0.0)
-    # Quadrant III: x < 0, y < 0
-    m3 = (cx1 < 0.0) & (cx2 < 0.0)
-    # Quadrant IV: x > 0, y < 0
-    m4 = (cx1 > 0.0) & (cx2 < 0.0)
-
-    state.dens[:, :] = (  0.1 * m1 + 0.1  * m2
-                        + 0.5 * m3 + 0.1  * m4)
-    state.vel1[:, :] = (  0.0 * m1 + 0.99 * m2
-                        + 0.0 * m3 + 0.0  * m4)
-    state.vel2[:, :] = (  0.0 * m1 + 0.0  * m2
-                        + 0.0 * m3 + 0.99 * m4)
+    state.dens[:, :] = (0.1 * m1 + 0.1  * m2 + 0.5 * m3 + 0.1  * m4)
+    state.vel1[:, :] = (0.0 * m1 + 0.99 * m2 + 0.0 * m3 + 0.0  * m4)
+    state.vel2[:, :] = (0.0 * m1 + 0.0  * m2 + 0.0 * m3 + 0.99 * m4)
     state.vel3[:, :] = 0.0
-    state.pres[:, :] = (  0.01 * m1 + 1.0 * m2
-                        + 1.0  * m3 + 1.0 * m4)
+    state.pres[:, :] = (0.01 * m1 + 1.0 * m2 + 1.0  * m3 + 1.0 * m4)
+    
+    par.BC[:] = 'free'
 
     return grid, state, par, eos
 
@@ -369,19 +341,11 @@ def IC_rHD2D_RTI(grid, state, par):
     """
     print("rHD 2D – relativistic Rayleigh-Taylor instability")
 
-    x1ini, x1fin = -1.0, 1.0
-    x2ini, x2fin =  0.0, 1.0
+    #grid creation
+    x1ini, x1fin = -1.0, 1.0; x2ini, x2fin =  0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 10.0
-
-    # reflecting walls in x1, periodic in x2
-    # BC order: [x1_inner, x2_inner, x1_outer, x2_outer]
-    par.BC[0] = 'wall'
-    par.BC[1] = 'peri'
-    par.BC[2] = 'wall'
-    par.BC[3] = 'peri'
+    par.timenow = 0.0; par.timefin = 10.0
 
     eos = EOSdata(5.0 / 3.0)
 
@@ -408,66 +372,15 @@ def IC_rHD2D_RTI(grid, state, par):
         P1 + cx1 * g_ff * rho_u,
         P0 + (cx1 + 1.0) * g_ff * rho_d
     )
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0; state.vel3[:, :] = 0.0
 
     # Gravitational source term
-    state.F1[:, :] = g_ff
-    state.F2[:, :] = 0.0
-
-    return grid, state, par, eos
-
-
-
-def IC_rHD1D_perturbed_shock(grid, state, par):
-    """
-    Relativistic version of the perturbed shock test.
-
-    A Mach ~3 relativistic shock runs into a small sinusoidal density
-    perturbation. This is the SR analogue of the Shu-Osher problem
-    and tests the scheme's ability to capture fine post-shock
-    oscillations in the relativistic regime.
-
-    Left  state (x < -4): rho=3.86, v=0.68, p=42.5
-    Right state (x > -4): rho=1+0.2*sin(5x), v=0, p=1
-    Gamma = 5/3, domain [-5, 5], t_fin = 1.8
-
-    Parameters
-    ----------
-    grid  : Grid  (Nx2 = 1 for 1D)
-    state : SimState
-    par   : Parameters
-
-    Returns
-    -------
-    grid, state, par, eos
-    """
-    print("rHD 1D - relativistic perturbed shock (SR Shu-Osher analogue)")
-
-    x1ini, x1fin = -5.0, 5.0
-    x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0
-    par.timefin = 1.8
-    par.BC[:] = 'free'
-    eos = EOSdata(5.0 / 3.0)
-
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            if grid.fx1[i, j] < -4.0:
-                state.dens[i, j] = 3.86
-                state.vel1[i, j] = 0.68
-                state.vel2[i, j] = 0.0
-                state.vel3[i, j] = 0.0
-                state.pres[i, j] = 42.5
-            else:
-                state.dens[i, j] = 1.0 + 0.2 * np.sin(5.0 * grid.cx1[i, j])
-                state.vel1[i, j] = 0.0
-                state.vel2[i, j] = 0.0
-                state.vel3[i, j] = 0.0
-                state.pres[i, j] = 1.0
+    state.F1[:, :] = g_ff; state.F2[:, :] = 0.0
+    
+    # reflecting walls in x1, periodic in x2
+    # BC order: [x1_inner, x2_inner, x1_outer, x2_outer]
+    par.BC[0] = 'wall'; par.BC[1] = 'peri'
+    par.BC[2] = 'wall'; par.BC[3] = 'peri'
 
     return grid, state, par, eos
 
@@ -476,25 +389,28 @@ def IC_rHD1D_perturbed_shock(grid, state, par):
 #   2D astrophysical problems
 # ============================================================================
 
-def IC_rHD2D_jet(grid, state, par):
+def IC_rHD2D_jet_cart(grid, state, par):
     """
-    Relativistic 2D jet propagation problem.
+    Relativistic 2D jet propagation problem (Cartesian).
 
-    A relativistic jet is injected from the left boundary into a
-    uniform ambient medium. The jet develops a cocoon, bow shock,
-    and internal shock structure characteristic of astrophysical
-    relativistic jets (e.g. AGN jets, GRB afterglows).
+    A relativistic beam (v = 0.99, Lorentz factor ~ 7) is injected through a
+    nozzle on the LEFT boundary (x1-inner, face 0) over |y| < r_jet, into a
+    uniform, pressure-matched ambient medium. The jet develops a cocoon, bow
+    shock and internal shocks characteristic of AGN / GRB jets.
 
-    Domain: [0, 10] x [-2, 2]
-    Ambient: rho=10, p=0.01, v=0
-    Jet (injected at x1=0, |x2| < 0.5): rho=0.1, v=0.99, p=0.01
-    Gamma = 5/3, t_fin = 15
+    Coordinate system : Cartesian (x, y) = (x1, x2)
+    Domain            : x in [0, 10], y in [-2, 2]
+    Inlet (face 0)    : |y| < 0.5, rho=0.1, v_x=0.99, p=0.01
+    Ambient           : rho=10, v=0, p=0.01
 
-    The jet is realized by setting the left boundary ghost cells
-    in the jet region to the beam state (handled through the IC
-    by placing beam values in the left portion of the domain and
-    using 'free' BC at x1=0 inner boundary, with the jet nozzle
-    implemented via initial conditions at the first active cells).
+    The inlet is a fixed (Dirichlet) ghost-fill in par.BC_fixed[0]; the interior
+    starts as pure ambient, so the jet is entirely a boundary condition (no
+    internal seed, hence no initial discontinuity / start-up transient). Because
+    the beam is relativistic (all characteristics inward at the inlet), the
+    soft ghost-pin inlet is exact enough; the flux routine is untouched.
+
+    Requires Parameters to define BC_fixed = {0:[],1:[],2:[],3:[]} and
+    boundCond_rHD to apply apply_bc_fixed (after the standard fills).
 
     Parameters
     ----------
@@ -510,60 +426,48 @@ def IC_rHD2D_jet(grid, state, par):
     ----------
     Marti, J. M. & Mueller, E. (2003), Living Rev. Relativ. 6, 7
     """
-    print("rHD 2D - relativistic jet propagation")
+    print("rHD 2D - relativistic jet propagation (Cartesian, inlet BC)")
 
+    # --- grid + time ---
     x1ini, x1fin = 0.0, 10.0
-    x2ini, x2fin = -2.0, 2.0
+    x2ini, x2fin = -4.0, 4.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
     par.timenow = 0.0
     par.timefin = 15.0
     eos = EOSdata(5.0 / 3.0)
 
-    # Ambient medium
+    # --- aliases ---
+    Ngc  = grid.Ngc
+    Nx2  = grid.Nx2; Nx2r = grid.Nx2r
+
+    # --- jet / ambient parameters (pressure-matched) ---
     rho_amb = 10.0
-    p_amb = 0.01
-
-    # Jet parameters
+    p_amb   = 0.01
     rho_jet = 0.1
-    v_jet = 0.99
-    r_jet = 0.5  # jet half-width
+    v_jet   = 0.99            # Lorentz factor W ~ 7.09
+    r_jet   = 0.5            # jet half-width in y
 
+    # --- uniform ambient everywhere (incl. ghosts) ---
     state.dens[:, :] = rho_amb
     state.pres[:, :] = p_amb
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
+    state.vel1[:, :] = state.vel2[:, :] = state.vel3[:, :] = 0.0
 
-    # Set jet nozzle at x1 = 0 (first few active cells)
-    for i in range(grid.Ngc, grid.Ngc + 3):
-        for j in range(grid.Ngc, grid.Nx2r):
-            if np.abs(grid.cx2[i, j]) < r_jet:
-                state.dens[i, j] = rho_jet
-                state.vel1[i, j] = v_jet
-                state.pres[i, j] = p_amb
+    # --- nozzle extent along y (tangential to the left face) ---
+    yc = grid.cx2[Ngc, Ngc:Nx2r]            # 1D interior y cell-centres
+    in_jet = np.nonzero(np.abs(yc) < r_jet)[0]
+    j_start = int(in_jet[0])
+    j_end   = int(in_jet[-1]) + 1
 
-    # Find the interior x2-index range for the jet nozzle (|y| < r_jet)
-    j_start = None
-    j_end = 0
-    for j in range(grid.Nx2):
-        if np.abs(grid.cx2[grid.Ngc, j + grid.Ngc]) < r_jet:
-            if j_start is None:
-                j_start = j
-            j_end = j + 1
-    if j_start is None:
-        j_start = 0
-
-    # Register fixed BC for the jet nozzle on the x1-inner boundary (face 0)
+    # --- fixed (Dirichlet) inlet on the left face (x1-inner = face 0) ---
     par.BC_fixed[0] = [
-        (j_start, j_end, {'dens': rho_jet, 'vel1': v_jet, 'vel2': 0.0,
-                           'vel3': 0.0, 'pres': p_amb})
+        (j_start, j_end, {'dens': rho_jet, 'pres': p_amb,
+                          'vel1': v_jet, 'vel2': 0.0, 'vel3': 0.0})
     ]
 
-    par.BC[0] = 'free'
-    par.BC[1] = 'free'
-    par.BC[2] = 'free'
-    par.BC[3] = 'free'
+    par.BC[0] = 'free'    # x1 inner (left)  -- nozzle via BC_fixed[0]
+    par.BC[1] = 'free'    # x2 inner (bottom)
+    par.BC[2] = 'free'    # x1 outer (right)
+    par.BC[3] = 'free'    # x2 outer (top)
 
     return grid, state, par, eos
 
@@ -572,18 +476,24 @@ def IC_rHD2D_jet_cyl(grid, state, par):
     """
     Axisymmetric relativistic jet in cylindrical (R, Z) coordinates.
 
-    A light, ultra-relativistic jet (Lorentz factor W ~ 7) is injected
-    along the symmetry axis into a denser ambient medium. The jet
-    develops a bow shock, cocoon, Mach disk, and reconfinement shocks.
-    This is the standard setup for modelling FR-II radio galaxy jets
-    and gamma-ray burst afterglows.
+    A light, ultra-relativistic beam (v_Z = 0.99, Lorentz factor ~ 7) is
+    injected along the symmetry axis through a nozzle on the BOTTOM boundary
+    (x2-inner, face 1) over R < r_jet, into a denser, pressure-matched ambient
+    medium. The jet develops a bow shock, cocoon, Mach disk and reconfinement
+    shocks (FR-II radio-galaxy / GRB-afterglow morphology).
 
-    Coordinate system: cylindrical (R, Z)
-    Domain: R in [0, 6], Z in [0, 25]
-    Jet nozzle: R < 1 at Z = 0, rho=0.01, v_Z=0.99, p=0.01/3
-    Ambient: rho=1, v=0, p=0.01/3
-    Density ratio eta = rho_jet/rho_amb = 0.01
-    Gamma = 5/3, t_fin = 30
+    Coordinate system : cylindrical (R, Z) = (x1, x2)
+    Domain            : R in [0, 6], Z in [0, 25]
+    Inlet (face 1)    : R < 1, rho=0.01, v_Z=0.99, p=0.01/3
+    Ambient           : rho=1, v=0, p=0.01/3      (eta = rho_jet/rho_amb = 0.01)
+
+    The inlet is a fixed (Dirichlet) ghost-fill in par.BC_fixed[1]; the interior
+    starts as pure ambient (no internal seed). The beam is relativistic (all
+    characteristics inward at the inlet), so the soft ghost-pin inlet is exact
+    enough and the flux routine is untouched.
+
+    Requires Parameters to define BC_fixed = {0:[],1:[],2:[],3:[]} and
+    boundCond_rHD to apply apply_bc_fixed (after the standard fills).
 
     Parameters
     ----------
@@ -597,113 +507,53 @@ def IC_rHD2D_jet_cyl(grid, state, par):
 
     References
     ----------
-    Marti, J. M. & Mueller, E. (1997), J. Fluid Mech. 258, 317
+    Marti, J. M. et al. (1997), ApJ 479, 151
     Mignone, A., Plewa, T. & Bodo, G. (2005), ApJS 160, 199
     """
-    print("rHD 2D - axisymmetric relativistic jet (cylindrical)")
+    print("rHD 2D - axisymmetric relativistic jet (cylindrical, inlet BC)")
 
+    # --- grid + time ---
     R_in, R_out = 0.0, 6.0
     Z_in, Z_out = 0.0, 25.0
     grid.CylindricalGrid(R_in, R_out, Z_in, Z_out)
-
     par.timenow = 0.0
     par.timefin = 30.0
     eos = EOSdata(5.0 / 3.0)
 
-    # Jet parameters
+    # --- aliases ---
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1
+    Nx1r = grid.Nx1r
+
+    # --- jet / ambient parameters (pressure-matched) ---
     rho_jet = 0.01
-    v_jet = 0.99          # Lorentz factor ~ 7
-    p_match = 0.01 / 3.0  # pressure-matched jet
-    r_jet = 1.0            # jet radius
+    v_jet   = 0.99            # v_Z; Lorentz factor W ~ 7.09
+    p_match = 0.01 / 3.0
+    r_jet   = 1.0            # jet radius
+    rho_amb = 1.0            # eta = rho_jet/rho_amb = 0.01
 
-    # Ambient medium
-    rho_amb = 1.0
-
+    # --- uniform ambient everywhere (incl. ghosts) ---
     state.dens[:, :] = rho_amb
     state.pres[:, :] = p_match
     state.vel1[:, :] = 0.0
     state.vel2[:, :] = 0.0
     state.vel3[:, :] = 0.0
 
-    # Jet nozzle at Z = 0: set first active cells to jet values
-    for i in range(grid.Ngc, grid.Ngc + 3):
-        for j in range(grid.Ngc, grid.Nx2r):
-            if grid.cx1[i, j] < r_jet:
-                state.dens[i, j] = rho_jet
-                state.vel2[i, j] = v_jet  # v_Z in cylindrical
-                state.pres[i, j] = p_match
+    # --- nozzle extent along R (tangential to the bottom face) ---
+    Rc = grid.cx1[Ngc:Nx1r, Ngc]            # 1D interior R cell-centres
+    in_jet = np.nonzero(Rc < r_jet)[0]      # contiguous from the axis
+    start  = int(in_jet[0])                 # 0
+    end    = int(in_jet[-1]) + 1
 
-    # Find the interior x1-index where R exceeds the jet radius
-    idx_jet = 0
-    for i in range(grid.Nx1):
-        if grid.cx1[i + grid.Ngc, grid.Ngc] < r_jet:
-            idx_jet = i + 1
-
-    # Register fixed BC for the jet nozzle on the x2-inner boundary (face 1)
+    # --- fixed (Dirichlet) inlet on the bottom face (x2-inner = face 1) ---
     par.BC_fixed[1] = [
-        (0, idx_jet, {'dens': rho_jet, 'vel1': 0.0, 'vel2': v_jet,
-                       'vel3': 0.0, 'pres': p_match})
+        (start, end, {'dens': rho_jet, 'pres': p_match,
+                      'vel1': 0.0, 'vel2': v_jet, 'vel3': 0.0})
     ]
 
-    par.BC[0] = 'axis'
-    par.BC[1] = 'wall'
-    par.BC[2] = 'free'
-    par.BC[3] = 'free'
-
-    return grid, state, par, eos
-
-
-
-def IC_rHD1D_shock_heating(grid, state, par):
-    """
-    Relativistic shock heating test (Thompson 1986).
-
-    A cold fluid with high bulk Lorentz factor (W=10) runs into a
-    wall. All kinetic energy is converted to thermal energy.
-    The exact post-shock state can be computed analytically
-    from the relativistic Rankine-Hugoniot conditions, making
-    this an excellent validation test.
-
-    Initial state: rho=1, v=sqrt(1-1/W^2), p=1e-6
-    Wall at x=1 (reflecting BC)
-    Gamma = 4/3 (ultra-relativistic EOS), t_fin = 0.4
-
-    Parameters
-    ----------
-    grid  : Grid  (Nx2 = 1 for 1D)
-    state : SimState
-    par   : Parameters
-
-    Returns
-    -------
-    grid, state, par, eos
-
-    References
-    ----------
-    Thompson, K. W. (1986), J. Fluid Mech. 171, 365
-    """
-    print("rHD 1D - relativistic shock heating (Thompson 1986)")
-
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0
-    par.timefin = 0.4
-    eos = EOSdata(4.0 / 3.0)
-
-    W = 10.0  # Lorentz factor
-    v_bulk = np.sqrt(1.0 - 1.0 / W**2)
-
-    state.dens[:, :] = 1.0
-    state.vel1[:, :] = v_bulk
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
-    state.pres[:, :] = 1.0e-6
-
-    par.BC[0] = 'free'
-    par.BC[1] = 'free'
-    par.BC[2] = 'wall'
-    par.BC[3] = 'free'
+    par.BC[0] = 'axis'    # x1 inner (R = 0)
+    par.BC[1] = 'wall'    # x2 inner (Z = 0, nozzle via BC_fixed[1])
+    par.BC[2] = 'free'    # x1 outer (R = 6)
+    par.BC[3] = 'free'    # x2 outer (Z = 25)
 
     return grid, state, par, eos
