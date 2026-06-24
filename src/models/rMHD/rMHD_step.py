@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-rMHD_one_step.py
+rMHD_step.py
 ================
 
 Container class and time-stepping routines for 2D Special-Relativistic
@@ -105,6 +105,12 @@ def CFLcondition_rMHD(g, MHD, eos, CFL):
     Returns
     -------
     dt : float
+    
+    Notes
+    -------
+    Lame coefficient hx2 is included in the CFL calculation 
+    in order to adjust the correct timestep for the simulations in the polar coordinates, 
+    e.g. dt ~ rdφ for the cylindrical polar geometry
     """
     Ngc = g.Ngc
 
@@ -125,7 +131,7 @@ def CFLcondition_rMHD(g, MHD, eos, CFL):
 
     dt_inv = np.max(
         lam1 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] +
-        lam2 / g.dx2[Ngc:-Ngc, Ngc:-Ngc]
+        lam2 / (g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc])
     )
     return CFL / dt_inv
 
@@ -493,14 +499,23 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
     ResB1 = (Efld3[:, 1:] * g.edg3[:, 1:] - Efld3[:, :-1] * g.edg3[:, :-1]) / (g.fS1 + 1e-30)
     ResB2 = -(Efld3[1:, :] * g.edg3[1:, :] - Efld3[:-1, :] * g.edg3[:-1, :]) / (g.fS2 + 1e-30)
 
-    # ----------------------------------------------------------------
-    # External force source terms (gravity, etc.)
-    # ----------------------------------------------------------------
-    ResV1 += -MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * MHD.F1
-    ResV2 += -MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * MHD.F2
-    ResE  += -MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * (
-        MHD.F1 * MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] +
-        MHD.F2 * MHD.vel2[Ngc:-Ngc, Ngc:-Ngc])
+    #relativistic "force" (actually it is approximate, since we do not solve GRMHD)
+    rhoh = MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * \
+        eos.enthalpy_sr(MHD.dens[Ngc:-Ngc, Ngc:-Ngc],  \
+        MHD.pres[Ngc:-Ngc, Ngc:-Ngc])
+    F1 = rhoh * W_full[Ngc:-Ngc, Ngc:-Ngc]**2 * MHD.F1
+    F2 = rhoh * W_full[Ngc:-Ngc, Ngc:-Ngc]**2 * MHD.F2
+    
+    #assume Newtonian force 
+    #F1 = MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * MHD.F1
+    #F2 = MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * MHD.F2
+    
+    #finally, here we add the external force and curvature source terms
+    #we add forces in momentum res, while in energy we add Power = Force*Vel 
+    ResV1 += - F1 - STv1; ResV2 += - F2 - STv2; ResV3 += - STv3
+    # gravity works on a matter momentum only, which is incosistent with full GR 
+    ResE  += -(F1 * MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] +
+        F2 * MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) 
 
     return ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3
 
@@ -563,3 +578,122 @@ def boundCond_electric_field_rMHD(g, Efld3x1, Efld3x2, BC):
             Efld3x2[Nx1 + Ngc + i, :] = Efld3x2[Ngc + i, :]
 
     return Efld3x1, Efld3x2
+
+
+
+def curv_source_rMHD_CT(g, MHD, eos):
+    """
+    Compute geometric source terms for the SR MHD equations
+    in curvilinear coordinates (finite-volume formulation for CT MHD).
+
+    In Cartesian coordinates the SRMHD equations are source-free; in curvilinear
+    geometries the divergence of the stress tensor in a non-Cartesian basis
+    produces momentum source terms. As with CT MHD, only the momentum equations
+    require geometric sources here, because the magnetic field is advanced by the
+    discrete analogue of Faraday's law (constrained transport).
+
+    The relativistic stress tensor (lab frame, c = 1) is
+
+        W_ij = (rho h + b^2) W^2 v_i v_j  -  b_i b_j  +  p_tot delta_ij
+
+    matching the flux convention of rMHD_phys.py, where
+
+        W       = 1/sqrt(1 - v^2)                  Lorentz factor
+        v.B     = v_i B_i
+        b^2     = B^2 / W^2 + (v.B)^2              covariant magnetic invariant
+        b_i     = B_i / W + W (v.B) v_i            lab-frame spatial 4-vector b
+        p_tot   = p + b^2 / 2                      total (gas + magnetic) pressure
+        rho h   = rho * eos.enthalpy_sr(rho, p)    relativistic enthalpy density
+
+    Parameters
+    ----------
+    g   : object
+        Grid: geom ('cart'/'cyl'/'pol'/'sph'), cx1, fx2, Ngc, Nx1, Nx2.
+    MHD : object
+        Primitive state: dens, pres, vel1, vel2, vel3 (3-velocities),
+        bfi1, bfi2, bfi3 (lab-frame magnetic field).
+    eos : object
+        Equation of state providing enthalpy_sr(rho, p) 
+
+    Returns
+    -------
+    STv1, STv2, STv3 : ndarray, shape (Nx1, Nx2)
+        Momentum source terms.
+
+    Notes
+    -----
+    - Arrays are allocated on the real grid (ghost cells excluded).
+    """
+    Ngc = g.Ngc
+    STv1 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    STv2 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    STv3 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+
+    # source-free; nothing further to do
+    if g.geom == 'cart':
+        return STv1, STv2, STv3
+
+    # --- interior primitives ---
+    r    = g.cx1[Ngc:-Ngc, Ngc:-Ngc]
+    dens = MHD.dens[Ngc:-Ngc, Ngc:-Ngc]
+    pres = MHD.pres[Ngc:-Ngc, Ngc:-Ngc]
+    v1   = MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]
+    v2   = MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]
+    v3   = MHD.vel3[Ngc:-Ngc, Ngc:-Ngc]
+    b1   = MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc]
+    b2   = MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc]
+    b3   = MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc]
+
+    # --- relativistic stress-tensor building blocks (lab frame, c = 1) ---
+    vsq  = v1 * v1 + v2 * v2 + v3 * v3
+    W2   = 1.0 / (1.0 - vsq)                    # Lorentz factor squared
+    W    = np.sqrt(W2)
+    vdB  = v1 * b1 + v2 * b2 + v3 * b3          # v . B
+    Bsq  = b1 * b1 + b2 * b2 + b3 * b3          # B^2 (lab frame)
+    bsq  = Bsq / W2 + vdB * vdB                 # covariant invariant b^2
+    rhoh = dens * eos.enthalpy_sr(dens, pres)   # rho * h
+    ZZ   = (rhoh + bsq) * W2                    # momentum-flux prefactor (rho h + b^2) W^2
+    ptot = pres + 0.5 * bsq                     # total pressure
+
+    # lab-frame spatial components of the magnetic 4-vector b^mu
+    bb1  = b1 / W + W * vdB * v1
+    bb2  = b2 / W + W * vdB * v2
+    bb3  = b3 / W + W * vdB * v3
+
+    # Stress-tensor components needed by the geometric sources:
+    #   W_ij = ZZ v_i v_j - bb_i bb_j + ptot delta_ij
+
+    # --- cylindrical (R, Z): 1=R, 2=Z, 3=phi ---
+    if g.geom == 'cyl':
+        STv1 = (ptot + ZZ * v3 * v3 - bb3 * bb3) / r          #  W_phiphi / R
+        STv3 = (bb1 * bb3 - ZZ * v1 * v3) / r                 # -W_Rphi / R
+
+    # --- polar (R, phi): 1=R, 2=phi, 3=Z ---
+    elif g.geom == 'pol':
+        STv1 = (ptot + ZZ * v2 * v2 - bb2 * bb2) / r          #  W_phiphi / R
+        STv2 = (bb1 * bb2 - ZZ * v1 * v2) / r                 # -W_Rphi / R
+
+    # --- spherical-polar (r, theta): 1=r, 2=theta, 3=phi ---
+    elif g.geom == 'sph':
+
+        # cotangent of theta, evaluated volume-consistently from face sin/cos
+        if g.Nx2 > 1:
+            sin_theta = np.sin(g.fx2[Ngc:g.Nx1 + Ngc, Ngc:g.Nx2 + Ngc + 1])
+            cos_theta = np.cos(g.fx2[Ngc:g.Nx1 + Ngc, Ngc:g.Nx2 + Ngc + 1])
+            cot = (sin_theta[:, 1:] - sin_theta[:, :-1]) / \
+                  (cos_theta[:, :-1] - cos_theta[:, 1:])
+        else:
+            cot = np.zeros_like(r)
+
+        Wtt = ptot + ZZ * v2 * v2 - bb2 * bb2      # W_thetatheta
+        Wpp = ptot + ZZ * v3 * v3 - bb3 * bb3      # W_phiphi
+        Wrt = ZZ * v1 * v2 - bb1 * bb2             # W_rtheta
+        Wrp = ZZ * v1 * v3 - bb1 * bb3             # W_rphi
+        Wtp = ZZ * v2 * v3 - bb2 * bb3             # W_thetaphi
+
+        STv1 = (Wtt + Wpp) / r
+        STv2 = Wpp * cot / r - Wrt / r
+        STv3 = -Wtp * cot / r - Wrp / r
+
+    return STv1, STv2, STv3
+  
