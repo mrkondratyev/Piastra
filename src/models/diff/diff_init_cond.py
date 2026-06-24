@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-diffusion_init_cond.py
+diff_init_cond.py
 ===============================================================================
 
 Initial condition functions for 2D thermal diffusion test problems.
@@ -31,7 +31,7 @@ Author: mrkondratyev
 import numpy as np
 
 
-def IC_diffusion_user_defined(grid, diff, par):
+def IC_diff_user_defined(grid, diff, par):
     """
     Template for a user-defined diffusion problem.
 
@@ -47,31 +47,33 @@ def IC_diffusion_user_defined(grid, diff, par):
     """
     print("Thermal diffusion – user-defined problem")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    #grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.1
-
-    # Boundary conditions: 'free' (zero gradient), 'wall' (same), 'peri' (periodic)
-    par.BC[:] = 'free'
-
-    # Constant diffusivity
-    diff.kappa = 1.0
+    par.timenow = 0.0; par.timefin = 0.1
+    
+    diff.kappa = 1.0 # Constant diffusivity
 
     # ----- Set your initial condition for T below -----
-    diff.T[:, :] = 0.0
+    diff.T[:, :] = 1.0
+    
+    #source term
+    diff.ST[:, :] = 0.0
+
+    # Boundary conditions: 'free' (zero gradient), 'wall' (same), 'peri' (periodic), 'axis'
+    par.BC[:] = 'free'
 
     raise ValueError(
-        "User-defined diffusion problem – see 'diffusion_init_cond.py', "
+        "User-defined diffusion problem – see 'diff_init_cond.py', "
         "set your ICs and remove this line."
     )
 
     return grid, diff, par
 
 
-def IC_diffusion2D_gaussian(grid, diff, par):
+
+def IC_diff2D_gaussian(grid, diff, par):
     """
     2D Cartesian diffusion of a single Gaussian temperature pulse.
 
@@ -98,15 +100,12 @@ def IC_diffusion2D_gaussian(grid, diff, par):
     """
     print("Thermal diffusion – 2D Gaussian pulse")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.5
+    par.timenow = 0.0; par.timefin = 0.5
 
-    par.BC[:] = 'free'
-
+    #diffusion coefficient 
     diff.kappa = 0.01
 
     # Gaussian centred in the domain
@@ -114,14 +113,15 @@ def IC_diffusion2D_gaussian(grid, diff, par):
     y0 = 0.5 * (x2ini + x2fin)
     sigma0 = 0.08
 
-    diff.T[:, :] = np.exp(
-        -((grid.cx1 - x0)**2 + (grid.cx2 - y0)**2) / sigma0**2
-    )
-
+    diff.T[:, :] = np.exp(-((grid.cx1 - x0)**2 + (grid.cx2 - y0)**2) / sigma0**2)
+    
+    par.BC[:] = 'free'
+    
     return grid, diff, par
 
 
-def IC_diffusion2D_cross(grid, diff, par):
+
+def IC_diff2D_cross(grid, diff, par):
     """
     2D Cartesian diffusion of two orthogonal Gaussian hot bands (cross shape).
 
@@ -144,17 +144,15 @@ def IC_diffusion2D_cross(grid, diff, par):
     """
     print("Thermal diffusion – 2D crossed Gaussian ridges")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.5
+    par.timenow = 0.0; par.timefin = 0.5
 
-    par.BC[:] = 'free'
-
+    #diffusion coefficient 
     diff.kappa = 0.005
 
+    #center of the cross 
     x0 = 0.5 * (x1ini + x1fin)
     y0 = 0.5 * (x2ini + x2fin)
     sigma_narrow = 0.04   # narrow direction of each ridge
@@ -163,21 +161,21 @@ def IC_diffusion2D_cross(grid, diff, par):
     # ridge along x = x0  (narrow in x1, wide in x2)
     T_ridge1 = np.exp(
         -((grid.cx1 - x0)**2 / sigma_narrow**2 +
-          (grid.cx2 - y0)**2 / sigma_wide**2)
-    )
+          (grid.cx2 - y0)**2 / sigma_wide**2))
 
     # ridge along y = y0  (wide in x1, narrow in x2)
     T_ridge2 = np.exp(
         -((grid.cx1 - x0)**2 / sigma_wide**2 +
-          (grid.cx2 - y0)**2 / sigma_narrow**2)
-    )
+          (grid.cx2 - y0)**2 / sigma_narrow**2))
 
     diff.T[:, :] = T_ridge1 + T_ridge2
-
+    
+    par.BC[:] = 'free'
+    
     return grid, diff, par
 
 
-def IC_diffusion2D_ring(grid, diff, par):
+def IC_diff2D_ring(grid, diff, par):
     """
     2D Cartesian diffusion of a hot annular ring.
 
@@ -202,17 +200,15 @@ def IC_diffusion2D_ring(grid, diff, par):
     """
     print("Thermal diffusion – 2D annular ring")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.2
+    par.timenow = 0.0; par.timefin = 0.2
 
-    par.BC[:] = 'free'
-
+    #diffusion coefficient 
     diff.kappa = 0.005
 
+    #center of the ring  
     x0 = 0.5 * (x1ini + x1fin)
     y0 = 0.5 * (x2ini + x2fin)
     r0    = 0.25   # ring radius
@@ -221,10 +217,12 @@ def IC_diffusion2D_ring(grid, diff, par):
     r = np.sqrt((grid.cx1 - x0)**2 + (grid.cx2 - y0)**2)
     diff.T[:, :] = np.exp(-((r - r0) / sigma)**2)
 
+    par.BC[:] = 'free'
+
     return grid, diff, par
 
 
-def IC_diffusion1D_gaussian(grid, diff, par):
+def IC_diff1D_gaussian(grid, diff, par):
     """
     1D Cartesian diffusion of a Gaussian pulse (Nx2 = 1).
 
@@ -248,27 +246,26 @@ def IC_diffusion1D_gaussian(grid, diff, par):
     """
     print("Thermal diffusion – 1D Gaussian pulse")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.5
+    par.timenow = 0.0; par.timefin = 0.5
 
-    par.BC[:] = 'free'
-
+    #diffusion coefficient 
     diff.kappa = 0.01
 
-    x0     = 0.5 * (x1ini + x1fin)
-    sigma0 = 0.08
+    x0 = 0.5 * (x1ini + x1fin) #center of the gaussian 
+    sigma0 = 0.08 #semi-width
 
     diff.T[:, :] = np.exp(-((grid.cx1 - x0) / sigma0)**2)
+
+    par.BC[:] = 'free'
 
     return grid, diff, par
 
 
 
-def IC_diffusion1D_step(grid, diff, par):
+def IC_diff1D_step(grid, diff, par):
     """
     1D diffusion of a step-function initial condition (Nx2 = 1).
 
@@ -295,26 +292,26 @@ def IC_diffusion1D_step(grid, diff, par):
     """
     print("Thermal diffusion - 1D step function")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.5
+    par.timenow = 0.0; par.timefin = 0.5
 
-    par.BC[0] = 'wall'
-    par.BC[1] = 'free'
-    par.BC[2] = 'wall'
-    par.BC[3] = 'free'
-
+    #diffusion coefficient 
     diff.kappa = 0.01
+    
+    x0 = 0.5 * (x1ini + x1fin) #center of the bump
+    sigma0 = 0.08 #semi-width
 
-    diff.T[:, :] = np.where(grid.cx1 < 0.5, 1.0, 0.0)
+    diff.T[:, :] = np.where(np.abs(grid.cx1 - x0) < sigma0, 2.0, 1.0)
+
+    par.BC[0] = 'wall'; par.BC[1] = 'free'
+    par.BC[2] = 'wall'; par.BC[3] = 'free'
 
     return grid, diff, par
 
 
-def IC_diffusion2D_cyl(grid, diff, par):
+def IC_diff2D_cyl(grid, diff, par):
     """
     2D diffusion with cylindrical symmetry on a Cartesian grid.
 
@@ -341,18 +338,12 @@ def IC_diffusion2D_cyl(grid, diff, par):
     """
     print("Thermal diffusion - 2D cylindrical symmetry test")
 
-    x1ini, x1fin = 0.0, 0.5
-    x2ini, x2fin = 0.0, 0.5
+    x1ini, x1fin = 0.0, 0.5; x2ini, x2fin = 0.0, 0.5
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.3
+    par.timenow = 0.0; par.timefin = 0.3
 
-    par.BC[0] = 'wall'
-    par.BC[1] = 'wall'
-    par.BC[2] = 'free'
-    par.BC[3] = 'free'
-
+    #diffusion coefficient 
     diff.kappa = 0.005
 
     r = np.sqrt(grid.cx1**2 + grid.cx2**2)
@@ -360,11 +351,14 @@ def IC_diffusion2D_cyl(grid, diff, par):
     sigma = 0.04
     diff.T[:, :] = np.exp(-((r - r0) / sigma)**2)
 
+    par.BC[0] = 'wall'; par.BC[1] = 'wall'
+    par.BC[2] = 'free'; par.BC[3] = 'free'
+
     return grid, diff, par
 
 
 
-def IC_diffusion1D_sine(grid, diff, par):
+def IC_diff1D_sine(grid, diff, par):
     """
     1D diffusion of a sinusoidal initial condition (Nx2 = 1).
 
@@ -388,21 +382,19 @@ def IC_diffusion1D_sine(grid, diff, par):
     grid, diff, par
     """
     print("Thermal diffusion - 1D sinusoidal mode decay")
-
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    
+    #grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.5
+    par.timenow = 0.0; par.timefin = 0.5
 
-    par.BC[0] = 'peri'
-    par.BC[1] = 'free'
-    par.BC[2] = 'peri'
-    par.BC[3] = 'free'
-
+    #diffusion coefficient 
     diff.kappa = 0.01
 
     diff.T[:, :] = np.sin(2.0 * np.pi * grid.cx1)
+
+    par.BC[0] = 'peri'; par.BC[1] = 'free'
+    par.BC[2] = 'peri'; par.BC[3] = 'free'
 
     return grid, diff, par
