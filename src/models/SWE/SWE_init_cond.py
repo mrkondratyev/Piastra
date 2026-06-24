@@ -8,7 +8,7 @@ Initial condition functions for the 2D Shallow Water Equations.
 
 Each function follows the standard Piastra IC signature:
 
-    IC_SWE_<name>(grid, state, par)  ->  grid, state, par, eos=None
+    IC_SWE1/2D_<name>(grid, state, par)  ->  grid, state, par, eos=None
 
 The function is responsible for:
   - Setting the grid geometry (always CartesianGrid for SWE)
@@ -56,20 +56,27 @@ def IC_SWE_user_defined(grid, state, par):
     """
     print("SWE -- user-defined problem")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 1.0
-    par.BC[:]   = 'free'
+    par.timenow = 0.0; par.timefin = 1.0
 
-    state.g_ff  = 1.0
-    state.h   [:, :] = 1.0
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
+    state.g_ff = 1.0
+    state.h[:, :] = 1.0
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
+    
+    #center of the domain
+    x0 = 0.5 * (x1ini + x1fin); y0 = 0.5 * (x2ini + x2fin)
 
-    # Flat bathymetry; gradients remain zero (already allocated as zeros)
+    # Beta-plane Coriolis parameter can be added (usual beta-plane)
+    f0 = 1.0e-4 # mid-latitude f₀ (rad/s)
+    beta  = 1.6e-11 # df/dy (rad/m/s)
+    state.f_c[:, :] = f0 + beta * (grid.cx2 - y0)
+
+    # flat bathimetry -- can be adjusted here 
+    state.b_x[:, :] = state.b_y[:, :] = 0.0
+    
+    par.BC[:] = 'free'
 
     raise NotImplementedError(
         "User-defined SWE problem -- set your ICs in SWE_init_cond.py "
@@ -79,11 +86,12 @@ def IC_SWE_user_defined(grid, state, par):
     return grid, state, par, None
 
 
+
 # ============================================================================
 # Dam break
 # ============================================================================
 
-def IC_SWE_dam_break(grid, state, par):
+def IC_SWE1D_dam(grid, state, par):
     """
     1D dam break problem.
 
@@ -97,15 +105,16 @@ def IC_SWE_dam_break(grid, state, par):
     """
     print("SWE -- dam break")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.3
-    par.BC[:]   = 'free'
+    par.timenow = 0.0; par.timefin = 0.3
 
-    mask_L = grid.cx1 < 0.5
+    left = grid.cx1 < 0.5
+    state.h[:, :] = np.where(left, 1.0, 0.125)
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
+    
+    par.BC[:] = 'free'
 
     return grid, state, par, None
 
@@ -114,7 +123,7 @@ def IC_SWE_dam_break(grid, state, par):
 # Circular dam break (radially symmetric 2D Riemann problem)
 # ============================================================================
 
-def IC_SWE_circular_dam_break(grid, state, par):
+def IC_SWE2D_dam(grid, state, par):
     """
     Circular dam break — radially symmetric 2D Riemann-like problem.
 
@@ -144,27 +153,23 @@ def IC_SWE_circular_dam_break(grid, state, par):
     """
     print("SWE -- circular dam break (2D radial Riemann problem)")
 
-    x1ini, x1fin = 0.0, 2.0
-    x2ini, x2fin = 0.0, 2.0
+    x1ini, x1fin = 0.0, 2.0; x2ini, x2fin = 0.0, 2.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.25
-    par.BC[:]   = 'free'
+    par.timenow = 0.0; par.timefin = 0.25
 
-    x_c = 0.5 * (x1ini + x1fin)
-    y_c = 0.5 * (x2ini + x2fin)
+    x_c = 0.5 * (x1ini + x1fin); y_c = 0.5 * (x2ini + x2fin)
 
-    r0    = 0.5
-    h_in  = 2.5
-    h_out = 0.5
+    r0 = 0.5
+    h_in = 2.5; h_out = 0.5
 
     r = np.sqrt((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2)
 
-    state.g_ff       = 1.0
+    state.g_ff = 1.0
     state.h   [:, :] = np.where(r < r0, h_in, h_out)
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
+    
+    par.BC[:] = 'free'
 
     return grid, state, par, None
 
@@ -173,7 +178,7 @@ def IC_SWE_circular_dam_break(grid, state, par):
 # Bathtub (closed basin with gravity waves)
 # ============================================================================
 
-def IC_SWE_bathtub(grid, state, par):
+def IC_SWE2D_bathtub(grid, state, par):
     """
     Gravity wave propagation in a closed square basin.
 
@@ -186,34 +191,34 @@ def IC_SWE_bathtub(grid, state, par):
     """
     print("SWE -- bathtub (gravity waves in closed basin)")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 1.5            # ~6-7 wave traversals (c≈4.4, domain=1)
-    par.BC[:]   = 'wall'
+    # ~6-7 wave traversals (c≈4.4, domain=1)
+    par.timenow = 0.0; par.timefin = 1.5  
 
-    x_c = 0.5 * (x1ini + x1fin)
-    y_c = 0.5 * (x2ini + x2fin)
+    # center of the bump
+    x_c = 0.5 * (x1ini + x1fin); y_c = 0.5 * (x2ini + x2fin)
 
     r = np.sqrt((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2)
     func = np.sinc(r / np.pi)          # np.sinc includes the pi factor
     func[r > np.pi] = 0.0
     
-    state.g_ff       = 9.81
+    state.g_ff = 9.81
     state.h   [:, :] = 1.0 + func
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
+              
+    par.BC[:]   = 'wall'
 
     return grid, state, par, None
+
 
 
 # ============================================================================
 # Cylindrical explosion (SWE blast wave)
 # ============================================================================
 
-def IC_SWE_explosion(grid, state, par):
+def IC_SWE2D_expl(grid, state, par):
     """
     Cylindrical SWE explosion.
 
@@ -227,31 +232,31 @@ def IC_SWE_explosion(grid, state, par):
     """
     print("SWE -- cylindrical explosion (SWE blast wave)")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 0.30          # shock reaches wall ~0.3 time units in
-    par.BC[:]   = 'wall'
+    # shock reaches wall at ~0.3 time units in
+    par.timenow = 0.0; par.timefin = 0.30   
 
-    x_c = 0.5 * (x1ini + x1fin)
-    y_c = 0.5 * (x2ini + x2fin)
+    #center of the explosion
+    x_c = 0.5 * (x1ini + x1fin); y_c = 0.5 * (x2ini + x2fin)
     r   = np.sqrt((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2)
 
-    state.g_ff       = 1.0
-    state.h   [:, :] = np.where(r < 0.1, 10.0, 0.1)
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-
+    state.g_ff = 1.0
+    state.h[:, :] = np.where(r < 0.1, 10.0, 0.1)
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
+           
+    par.BC[:]   = 'wall'
+    
     return grid, state, par, None
+
 
 
 # ============================================================================
 # Tsunami propagation
 # ============================================================================
 
-def IC_SWE_tsunami(grid, state, par):
+def IC_SWE2D_tsunami(grid, state, par):
     """
     Tsunami propagation over a deep ocean.
 
@@ -269,21 +274,22 @@ def IC_SWE_tsunami(grid, state, par):
     """
     print("SWE -- tsunami propagation over deep ocean")
 
-    x1ini, x1fin = 0.0, 1.0e6
-    x2ini, x2fin = 0.0, 1.0e6
+    x1ini, x1fin = 0.0, 1.0e6; x2ini, x2fin = 0.0, 1.0e6
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 3600.0          # 1 hour — wave crosses ~70% of domain
-    par.BC[:]   = 'wall'          # let the wave leave the domain
+    # 1 hour — wave crosses ~70% of domain
+    par.timenow = 0.0; par.timefin = 3600.0          
 
     x_c = 0.5 * (x1ini + x1fin)
     y_c = 0.5 * (x2ini + x2fin)
-
+    
+    #free-fall acceleration
     state.g_ff      = 9.81
-    state.f_c[:, :] = 0.0         # Coriolis irrelevant on tsunami timescales
-                                  # (period 2π/f ≈ 17 hr ≫ t_fin = 1 hr)
-
+    
+    # Coriolis irrelevant on tsunami timescales
+    # (period 2π/f ≈ 17 hr ≫ t_fin = 1 hr)
+    state.f_c[:, :] = 0.0         
+    
     # Flat bathymetry (b = 0); customise here for variable bed.
     # state.b[:, :] = ...
     state.b_x[:, :], state.b_y[:, :] = _gradient_full(grid, state.b)
@@ -295,9 +301,11 @@ def IC_SWE_tsunami(grid, state, par):
 
     state.h[:, :] = H0 + eta0 * np.exp(
         -((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2) / sigma**2)
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
+    
+    # let the wave leave the domain
+    par.BC[:] = 'free'
+    
     return grid, state, par, None
 
 
@@ -305,7 +313,7 @@ def IC_SWE_tsunami(grid, state, par):
 # Geostrophic ocean flow
 # ============================================================================
 
-def IC_SWE_ocean(grid, state, par):
+def IC_SWE2D_ocean(grid, state, par):
     """
     Geostrophic ocean eddy on a beta-plane.
 
@@ -377,7 +385,7 @@ def IC_SWE_ocean(grid, state, par):
 # Geostrophic atmospheric flow
 # ============================================================================
 
-def IC_SWE_atmosphere(grid, state, par):
+def IC_SWE2D_atmo(grid, state, par):
     """
     Shallow-water atmospheric ridge with seeded instability.
 
@@ -453,7 +461,7 @@ def IC_SWE_atmosphere(grid, state, par):
 # Barotropic instability of a Bickley jet
 # ============================================================================
 
-def IC_SWE_bickley_jet(grid, state, par):
+def IC_SWE2D_bickley(grid, state, par):
     """
     Barotropic (Rayleigh-Kuo) instability of a zonal jet.
 
@@ -532,8 +540,7 @@ def IC_SWE_bickley_jet(grid, state, par):
 # ============================================================================
 # Shallow-water Kelvin-Helmholtz instability
 # ============================================================================
-
-def IC_SWE_kh_swe(grid, state, par):
+def IC_SWE2D_KH(grid, state, par):
     """
     Shallow-water analogue of the Kelvin-Helmholtz instability.
 
@@ -554,21 +561,18 @@ def IC_SWE_kh_swe(grid, state, par):
     almost identical to the incompressible 2D KHI.
 
     The contact wave (which carries the shear) is exactly where the
-    new exact Riemann solver outperforms HLL — running this with HLL
+    exact Riemann solver outperforms HLL — running this with HLL
     gives a notably more diffuse roll-up than the exact solver.
 
     Domain: [0, 1] × [0, 1], periodic in both directions.
     Reference: layered version in Hesthaven & Warburton, Sec. 13.3.
     """
-    print("SWE -- Kelvin-Helmholtz instability (shear layer)")
+    print("SWE -- 'Kelvin-Helmholtz' instability (shear layer)")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 2.0
-    par.BC[:]   = 'peri'
+    par.timenow = 0.0; par.timefin = 2.0
 
     y_c = 0.5 * (x2ini + x2fin)
 
@@ -597,6 +601,8 @@ def IC_SWE_kh_swe(grid, state, par):
 
     # Uniform height
     state.h[:, :] = h0
+    
+    par.BC[:]   = 'peri'
 
     return grid, state, par, None
 
@@ -604,8 +610,7 @@ def IC_SWE_kh_swe(grid, state, par):
 # ============================================================================
 # Flow over a bump (transcritical with hydraulic jump)
 # ============================================================================
-
-def IC_SWE_flow_bump(grid, state, par):
+def IC_SWE1D_bump(grid, state, par):
     """
     Steady (asymptotic) supercritical flow over a smooth bump.
 
@@ -639,14 +644,10 @@ def IC_SWE_flow_bump(grid, state, par):
     """
     print("SWE -- transcritical flow over a bump")
 
-    x1ini, x1fin = 0.0, 25.0
-    x2ini, x2fin = 0.0,  5.0
+    x1ini, x1fin = 0.0, 25.0; x2ini, x2fin = 0.0, 5.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 50.0
-    par.BC[:]   = 'free'        # let waves leave both ends
-
+    par.timenow = 0.0; par.timefin = 12.0     
     state.g_ff      = 9.81
     state.f_c[:, :] = 0.0
 
@@ -668,6 +669,8 @@ def IC_SWE_flow_bump(grid, state, par):
     state.h[:, :]    = np.maximum(H0 - state.b, 0.1)   # avoid dry cells
     state.vel1[:, :] = q / state.h
     state.vel2[:, :] = 0.0
+    
+    par.BC[:]   = 'free'
 
     return grid, state, par, None
 
