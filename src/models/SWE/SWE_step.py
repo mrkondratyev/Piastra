@@ -32,13 +32,15 @@ Example usage
 
 import numpy as np
 import copy
-from src.models.SWE.SWE_phys import *
+from src.models.SWE.SWE_phys import ( 
+    boundCond_SWE, 
+    Riemann_SWE)
 from src.common.high_order_rec import VarReconstruct
 
 
 class SWE2D:
     """
-    Container class for 2D compressible hydrodynamics routines.
+    Container class for 2D shallow water hydrodynamics routines.
 
     Attributes
     ----------
@@ -47,14 +49,14 @@ class SWE2D:
     HD : object
         FluidState object containing primitive and conservative variables.
     par : object
-        Simulation parameters including CFL, RK_order, HDux_type, rec_type, phystime, phystimefin.
+        Simulation parameters including CFL, RK_order, flux_type, rec_type, phystime, phystimefin.
     eos : object
         Equation of state object.
     """
 
     def __init__(self, g, SWE, par):
         """
-        Initialize the Hydro2D container.
+        Initialize the SWE2D container.
 
         Parameters
         ----------
@@ -65,6 +67,10 @@ class SWE2D:
         par : object
             Simulation parameters object.
         """
+        if g.geom != 'cart':
+            raise ValueError(
+                f"Invalid geometry for SWE: '{g.geom}'. "
+                f"Expected 'cart'.")
         self.g = g
         self.SWE = SWE
         self.par = par
@@ -129,7 +135,7 @@ def CFLcondition_SWE(g, SWE, CFL):
     Ngc = g.Ngc
     
     #gravity wavespeed calculation for whole domain
-    gwave = np.sqrt(SWE.h[Ngc:-Ngc, Ngc:-Ngc]*SWE.g_ff)
+    gwave = np.sqrt(SWE.h[Ngc:-Ngc, Ngc:-Ngc] * SWE.g_ff)
     
     #FIRST APPROACH
     #maximal possible timestep in each direction
@@ -138,7 +144,8 @@ def CFLcondition_SWE(g, SWE, CFL):
     #return CFL * min(dt1, dt2)
     
     #SECOND APPROACH 
-    dt_inv = np.max((np.abs(SWE.vel1[Ngc:-Ngc, Ngc:-Ngc]) + gwave)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
+    dt_inv = \
+        np.max((np.abs(SWE.vel1[Ngc:-Ngc, Ngc:-Ngc]) + gwave)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
         (np.abs(SWE.vel2[Ngc:-Ngc, Ngc:-Ngc]) + gwave)/g.dx2[Ngc:-Ngc, Ngc:-Ngc])
     return CFL/dt_inv
 
@@ -206,7 +213,7 @@ def oneStep_SWE_RK(g, SWE, par, dt):
     - At each stage:
         1. Fill ghost zones according to boundary conditions.
         2. Reconstruct primitive variables at cell faces.
-        3. Compute HDuxes via Riemann solver.
+        3. Compute fluxes via Riemann solver.
         4. Compute residuals.
         5. Update conservative variables.
         6. Recover primitive variables for next stage.
@@ -263,10 +270,9 @@ def oneStep_SWE_RK(g, SWE, par, dt):
         SWE.mom2 = SWE_h.mom2
     
     #second-order Runge-Kutta scheme
-    if (par.RK_order == 'RK2'):
+    elif (par.RK_order == 'RK2'):
         
         #Primitive variables recovery after predictor stage
-        #auxilary fluid height and 2 components of velocity are evaluated 
         SWE_h.h[Ngc:-Ngc, Ngc:-Ngc]    = SWE_h.H
         SWE_h.vel1[Ngc:-Ngc, Ngc:-Ngc] = SWE_h.mom1/SWE_h.H
         SWE_h.vel2[Ngc:-Ngc, Ngc:-Ngc] = SWE_h.mom2/SWE_h.H 
@@ -279,10 +285,9 @@ def oneStep_SWE_RK(g, SWE, par, dt):
         SWE.mom1 = (SWE_h.mom1 + SWE.mom1) / 2.0 - dt * Res1 / 2.0 
         SWE.mom2 = (SWE_h.mom2 + SWE.mom2) / 2.0 - dt * Res2 / 2.0 
     
-    if (par.RK_order == 'RK3'):
+    elif (par.RK_order == 'RK3'):
         
         #Primitive variables recovery after 1st RK stage
-        #auxilary fluid height and 2 components of velocity are evaluated 
         SWE_h.h[Ngc:-Ngc, Ngc:-Ngc]    = SWE_h.H
         SWE_h.vel1[Ngc:-Ngc, Ngc:-Ngc] = SWE_h.mom1/SWE_h.H
         SWE_h.vel2[Ngc:-Ngc, Ngc:-Ngc] = SWE_h.mom2/SWE_h.H 
@@ -305,12 +310,16 @@ def oneStep_SWE_RK(g, SWE, par, dt):
         #3rd Runge-Kutta iteration 
         ResH, Res1, Res2 = flux_calc_SWE(g, SWE_h, par)
         
-        # Conservative update - final 3rd RK iteration
-        # update mass, three components of momentum and total energy
-        
+        # Conservative update - final 3rd RK iteration        
         SWE.H    = (2.0 * SWE_h.H    + SWE.H   ) / 3.0 - 2.0 * dt * ResH / 3.0
         SWE.mom1 = (2.0 * SWE_h.mom1 + SWE.mom1) / 3.0 - 2.0 * dt * Res1 / 3.0 
         SWE.mom2 = (2.0 * SWE_h.mom2 + SWE.mom2) / 3.0 - 2.0 * dt * Res2 / 3.0 
+        
+    else:
+        
+        raise ValueError(
+            f"Invalid RK_order: '{par.RK_order}'. "
+            f"Expected one of ['RK1', 'RK2', 'RK3'].")
         
     # Primitive variables recovery at the end of the timestep
     SWE.h[Ngc:-Ngc, Ngc:-Ngc]    = SWE.H
@@ -331,7 +340,7 @@ def flux_calc_SWE(g, SWE, par):
     Residuals are calculated using a Godunov-type method:
     - boundary conditions are taken into account via ghost cells,
     - primitive variables are reconstructed to cell faces,
-    - fluxes are computed via approximate Riemann solvers,
+    - fluxes are computed via (approximate) Riemann solvers,
     - source terms are calculated, if needed, 
     - residuals are obtained via finite-volume integral form.    
     
@@ -357,15 +366,12 @@ def flux_calc_SWE(g, SWE, par):
     #fill the ghost cells
     SWE = boundCond_SWE(g, par.BC, SWE)
     
-    #make copies of ghost cell numbers to simplify indexing below 
-    Ngc = g.Ngc 
-    
     #residuals initialization (only for real cells)
     ResH = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     Res1 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     Res2 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     
-    #HDuxes in 1-dimension 
+    #fluxes in 1-dimension 
     if (g.Nx1 > 1): #check if we even need to consider this dimension
         
         #primitive variables reconstruction in 1-dim
@@ -373,10 +379,10 @@ def flux_calc_SWE(g, SWE, par):
         vel1_L, vel1_R = VarReconstruct(SWE.vel1, g, par.rec_type, 1)
         vel2_L, vel2_R = VarReconstruct(SWE.vel2, g, par.rec_type, 1)
 
-        #fluxes calculation with approximate Riemann solver (see HDux_type) in 1-dim
+        #fluxes calculation with approximate Riemann solver (see flux_type) in 1-dim
         Fh, Fx, Fy = \
             Riemann_SWE(h_L, h_R, \
-                vel1_L, vel1_R, vel2_L, vel2_R, SWE.g_ff, par.flux_type, 1)
+            vel1_L, vel1_R, vel2_L, vel2_R, SWE.g_ff, par.solver_type, 1)
         
         #residuals calculation for mass, 3 components of momentum and total energy in 1-dim
         ResH = ( Fh[1:,:]*g.fS1[1:,:] - Fh[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
@@ -384,7 +390,7 @@ def flux_calc_SWE(g, SWE, par):
         Res2 = ( Fy[1:,:]*g.fS1[1:,:] - Fy[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         
         
-    #HDuxes in 2-dimension
+    #fluxes in 2-dimension
     if (g.Nx2 > 1): #check if we even need to consider this dimension
         
         #primitive variables reconstruction in 2-dim
@@ -395,10 +401,10 @@ def flux_calc_SWE(g, SWE, par):
         #fluxes calculation with approximate Riemann solver (see flux_type) in 2-dim
         Fh, Fx, Fy = \
             Riemann_SWE(h_L, h_R, \
-                vel1_L, vel1_R, vel2_L, vel2_R, SWE.g_ff, par.flux_type, 2)
+            vel1_L, vel1_R, vel2_L, vel2_R, SWE.g_ff, par.solver_type, 2)
         
         #residuals calculation for mass, 3 components of momentum and total energy in 2-dim
-        #here we add the HDuxes differences to the residuals after 1-dim calculation
+        #here we add the fluxes differences to the residuals after 1-dim calculation
         ResH += ( Fh[:,1:]*g.fS2[:,1:] - Fh[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         Res1 += ( Fx[:,1:]*g.fS2[:,1:] - Fx[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         Res2 += ( Fy[:,1:]*g.fS2[:,1:] - Fy[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
