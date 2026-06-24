@@ -32,19 +32,20 @@ mrkondratyev
 """
 
 import numpy as np
-from src.models.HD.riemann_exact import exact_riemann_godunov_state
+from src.models.HD.HD_riemann_exact import exact_riemann_godunov_state
 from src.common.boundaries import (
     apply_bc_scalar, 
-    apply_bc_vector)
-from src.models.HD.riemann_approx import (
+    apply_bc_vector,
+    apply_bc_fixed)
+from src.models.HD.HD_riemann_approx import (
     LLF_flux,
     HLL_flux,
     HLLC_flux,
     Roe_flux,
-    nr_hydro_cons_and_flux)
+    cons_and_flux_HD)
 
 
-def prim2cons_nr_hydro(dens, vel1, vel2, vel3, pres, eos):
+def prim2cons_HD(dens, vel1, vel2, vel3, pres, eos):
     """
     Convert primitive variables to conservative variables for ideal hydrodynamics.
 
@@ -80,7 +81,8 @@ def prim2cons_nr_hydro(dens, vel1, vel2, vel3, pres, eos):
     return mass, mom1, mom2, mom3, etot
 
 
-def cons2prim_nr_hydro(mass, mom1, mom2, mom3, etot, eos):
+
+def cons2prim_HD(mass, mom1, mom2, mom3, etot, eos):
     """
     Convert conservative variables to primitive variables for ideal hydrodynamics.
 
@@ -106,16 +108,21 @@ def cons2prim_nr_hydro(mass, mom1, mom2, mom3, etot, eos):
     """
     
     dens = mass
+    #apply density floor for problematic flows 
+    dens = np.maximum(dens, 1e-10)
     vel1 = mom1 / dens; vel2 = mom2 / dens; vel3 = mom3 / dens
     #internal energy
     eint = etot - dens * (vel1**2 + vel2**2 + vel3**2) / 2.0 
     #get pressure from internal energy 
     pres = eos.pres(dens, eint)
+    #apply pressure floor for very cold/problematic flows 
+    pres = np.maximum(pres, 1e-10)
     
     return dens, vel1, vel2, vel3, pres
 
 
-def boundCond_HD(grid, BC, fluid):
+
+def boundCond_HD(grid, BC, fluid, BC_fixed=None):
     """
     Apply boundary conditions to hydrodynamic variables.
 
@@ -158,10 +165,25 @@ def boundCond_HD(grid, BC, fluid):
     fluid.vel1, fluid.vel2, fluid.vel3 = \
         apply_bc_vector(fluid.vel1, fluid.vel2, fluid.vel3, Ngc, BC[3], axis=2, side='outer')
     
+    # --- fixed (Dirichlet) ghost-fill, applied LAST so it overrides the above ---
+    if BC_fixed is not None:
+        N1, N2 = fluid.dens.shape
+        state_fields = {
+            'dens': fluid.dens, 'pres': fluid.pres,
+            'vel1': fluid.vel1, 'vel2': fluid.vel2, 'vel3': fluid.vel3,
+        }
+        for face in (0, 1, 2, 3):
+            if BC_fixed.get(face):
+                apply_bc_fixed(state_fields, Ngc, N1, N2, face, BC_fixed[face])
+    
     return fluid
 
 
-def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux_type, dim):
+
+
+
+
+def Riemann_HD(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, solver_type, dim):
     """
    Approximate Riemann solver for the Euler equations of gas dynamics.
 
@@ -175,7 +197,7 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
        Left and right pressures.
    eos : object
        Equation of state object with attribute `GAMMA`.
-   flux_type : str
+   solver_type : str
        Type of flux solver: 'LLF', 'HLL', 'HLLC', 'Roe', 'Exact'.
    dim : int
        Coordinate direction (1 or 2). Other directions obtained by rotation.
@@ -197,28 +219,38 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
         vyl, vyr = -templ, -tempr
         
     #here we calculate the flux using various Riemann solvers
-    if flux_type == 'LLF':
+    if solver_type == 'LLF':
         
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
             LLF_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos)
         
-    elif flux_type == 'HLL':  
+    elif solver_type == 'HLL':  
         
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
             HLL_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos)
                
-    elif flux_type == 'HLLC':
+    elif solver_type == 'HLLC':
         
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
             HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos)
     
-    elif flux_type == 'Roe':
+    elif solver_type == 'Roe':
+        
+        if (eos.ideal != 1):
+            raise ValueError(
+                f"Roe HD Riemann works only with ideal gamma-law EOS!" 
+                f"Expected eos.ideal = {1} and eos.GAMMA > {1}.")
         
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
             Roe_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos)
 
-    elif flux_type == 'Exact':
+    elif solver_type == 'Exact':
 
+        if (eos.ideal != 1):
+            raise ValueError(
+                f"Exact HD Riemann works only with ideal gamma-law EOS!" 
+                f"Expected eos.ideal = {1} and eos.GAMMA > {1}.")
+        
         #solve exact Riemann problem and sample Godunov state at x/t = 0
         dens0, vel0, pres0, ustar = exact_riemann_godunov_state(
             rhol, rhor, vxl, vxr, pl, pr, eos.GAMMA)
@@ -230,12 +262,14 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
         #compute Godunov fluxes and conservatives from the exact sampled state       
         mass, momx, momy, momz, etot, \
         Fmass, Fmomx, Fmomy, Fmomz, Fetot = \
-            nr_hydro_cons_and_flux(dens0, vel0, vy0, vz0, pres0, eos)
+            cons_and_flux_HD(dens0, vel0, vy0, vz0, pres0, eos)
 
     else:
 
-        #flux_type is incorrect
-        raise ValueError(f"Unknown flux_type: {flux_type}. Expected one of ['LLF', 'HLL', 'HLLC', 'Roe', 'Exact'].")
+        #solver_type is incorrect -> throw an error
+        raise ValueError(
+            f"Unknown HD solver_type: {solver_type}. " 
+            f"Expected one of ['LLF', 'HLL', 'HLLC', 'Roe', 'Exact'].")
     
     #check in what direction we solve the problem
     if dim == 2: #2-direction -- rotate the coordinate system
@@ -243,6 +277,6 @@ def Riemann_nr_hydro(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos, flux
         Fmomx = -Fmomy
         Fmomy = temp
         
-    #return approximate Riemann flux for gas dynamics -- 
+    #return Riemann flux for gas dynamics -- 
     #5 fluxes for conservative variables (mass, three components of momentum and energy)
     return Fmass, Fmomx, Fmomy, Fmomz, Fetot
