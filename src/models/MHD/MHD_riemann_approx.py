@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-riemann_approx.py
+MHD_riemann_approx.py
 
 Approximate Riemann solvers for non-relativistic MHD.
 
@@ -8,9 +8,10 @@ Implemented solvers, in increasing order of accuracy/cost:
 
     LLF   - Local Lax-Friedrichs / Rusanov (1961)
     HLL   - Harten, Lax, van Leer (1983)
-    HLLD  - HLL with contact restoration (Miyoshi and Kusano 1995)
+    HLLC  - HLL with contact restoration (Li 2005)
+    HLLD  - HLL with contact and Alfven restoration (Miyoshi and Kusano 2005)
 
-All solvers share the same calling convention (see MHD_nr_hydro in 
+All solvers share the same calling convention (see Riemann_MHD in 
                                                MHD_phys file).
 
 Each Riemann solver routine has the following i/o sturcture:
@@ -170,9 +171,97 @@ def HLL_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,
     return Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz
 
 
+"""
+Harten, Lax, and Van Leer + Contact wave (HLLC) flux for Newtonian MHD,
+following Li (2005). Single contact between two fast waves; the transverse
+magnetic field in the star region is the HLL average (no Alfven separation).
+"""
+def HLLC_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos):
+
+    #normal B-field (continuous across the fan)
+    bxn = (bxl + bxr)/2.0
+
+    #left state conservatives and fluxes
+    mass_L, momx_L, momy_L, momz_L, etot_L, bfiy_L, bfiz_L, ptot_L, b2l, \
+    Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L, Fbfiy_L, Fbfiz_L = \
+            nr_MHD_cons_and_flux(rhol, vxl, vyl, vzl, pl, bxn, byl, bzl, eos)
+
+    #right state conservatives and fluxes
+    mass_R, momx_R, momy_R, momz_R, etot_R, bfiy_R, bfiz_R, ptot_R, b2r, \
+    Fmass_R, Fmomx_R, Fmomy_R, Fmomz_R, Fetot_R, Fbfiy_R, Fbfiz_R = \
+            nr_MHD_cons_and_flux(rhor, vxr, vyr, vzr, pr, bxn, byr, bzr, eos)
+
+    #left and right squared sound speeds
+    csl2 = eos.sound_speed_nr(rhol, pl)**2
+    csr2 = eos.sound_speed_nr(rhor, pr)**2
+
+    #left and right fast magnetosonic speeds
+    cfl = np.sqrt( (csl2 + b2l/rhol)/2.0 + np.sqrt((csl2 + b2l/rhol)**2 - 4.0*csl2*bxn**2/rhol)/2.0 )
+    cfr = np.sqrt( (csr2 + b2r/rhor)/2.0 + np.sqrt((csr2 + b2r/rhor)**2 - 4.0*csr2*bxn**2/rhor)/2.0 )
+
+    #maximal and minimal eigenvalues HLL estimate according to Davis (1988)
+    Sl = np.minimum(vxl, vxr) - np.maximum(cfl, cfr)
+    Sr = np.maximum(vxl, vxr) + np.maximum(cfl, cfr)
+
+    #mass fluxes across the left and right fast waves
+    Jl = rhol*(Sl - vxl)
+    Jr = rhor*(Sr - vxr)
+
+    #contact velocity and total pressure between the fast waves 
+    Sm  = ( Jr*vxr - Jl*vxl - (ptot_R - ptot_L) )/( Jr - Jl )
+    pts = ( Jr*ptot_L - Jl*ptot_R + Jl*Jr*(vxr - vxl) )/( Jr - Jl )
+
+    #star region densities
+    rhosl = Jl/(Sl - Sm);    rhosr = Jr/(Sr - Sm)
+
+    #transverse magnetic field in the star region = HLL average (single value,
+    #continuous across the contact: this is what distinguishes HLLC from HLLD)
+    byss = ( Sr*byr - Sl*byl - (Fbfiy_R - Fbfiy_L) )/( Sr - Sl )
+    bzss = ( Sr*bzr - Sl*bzl - (Fbfiz_R - Fbfiz_L) )/( Sr - Sl )
+
+    #transverse velocities consistent with the HLL transverse field
+    #(Jl < 0 and Jr > 0 strictly, so these divisions are safe)
+    vysl = vyl - bxn*(byss - byl)/Jl;    vzsl = vzl - bxn*(bzss - bzl)/Jl
+    vysr = vyr - bxn*(byss - byr)/Jr;    vzsr = vzr - bxn*(bzss - bzr)/Jr
+
+    #LEFT STARRED STATE
+    massS_L = rhosl
+    momxS_L = rhosl*Sm;    momyS_L = rhosl*vysl;    momzS_L = rhosl*vzsl
+    etotS_L = ( (Sl - vxl)*etot_L - ptot_L*vxl + pts*Sm + \
+        bxn*(vxl*bxn + vyl*byl + vzl*bzl - Sm*bxn - vysl*byss - vzsl*bzss) )/(Sl - Sm )
+    bfiyS_L = byss;          bfizS_L = bzss
+
+    #RIGHT STARRED STATE
+    massS_R = rhosr
+    momxS_R = rhosr*Sm;    momyS_R = rhosr*vysr;    momzS_R = rhosr*vzsr
+    etotS_R = ( (Sr - vxr)*etot_R - ptot_R*vxr + pts*Sm + \
+        bxn*(vxr*bxn + vyr*byr + vzr*bzr - Sm*bxn - vysr*byss - vzsr*bzss) )/(Sr - Sm )
+    bfiyS_R = byss;          bfizS_R = bzss
+
+    # calculation of the state using HLLC approximate Riemann fan
+    # 2 star states between left fast wave, contact wave and right fast wave
+    def _hllc_state(FL, FR, UL, UR, ULs, URs):
+        return np.where(Sl >= 0.0, FL,
+            np.where((Sl < 0.0) & (Sm >= 0.0), FL + Sl * (ULs - UL),
+            np.where((Sm < 0.0) & (Sr >= 0.0), FR + Sr * (URs - UR), FR)))
+
+    # calculation of the flux using HLLC approximate Riemann fan
+    Fmass = _hllc_state(Fmass_L, Fmass_R, mass_L, mass_R, massS_L, massS_R)
+    Fmomx = _hllc_state(Fmomx_L, Fmomx_R, momx_L, momx_R, momxS_L, momxS_R)
+    Fmomy = _hllc_state(Fmomy_L, Fmomy_R, momy_L, momy_R, momyS_L, momyS_R)
+    Fmomz = _hllc_state(Fmomz_L, Fmomz_R, momz_L, momz_R, momzS_L, momzS_R)
+    Fetot = _hllc_state(Fetot_L, Fetot_R, etot_L, etot_R, etotS_L, etotS_R)
+    Fbfix = np.zeros_like(Fmass)
+    Fbfiy = _hllc_state(Fbfiy_L, Fbfiy_R, bfiy_L, bfiy_R, bfiyS_L, bfiyS_R)
+    Fbfiz = _hllc_state(Fbfiz_L, Fbfiz_R, bfiz_L, bfiz_R, bfizS_L, bfizS_R)
+
+    #return approximate Riemann flux for MHD
+    return Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz
+
 
 """
-Harten, Lax, and Van Leer + Contact wave (HLLC) flux
+Harten, Lax, and Van Leer + Contact wave + Alfven discontinuity (HLLD) MHD flux,
+following Miyoshi & Kusano (2005).
 """
 def HLLD_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos):
     
