@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-diffusion_one_step.py
+diff_step.py
 ===============================================================================
 
 2D thermal diffusion solver for the Piastra framework.
 
 Solves the parabolic equation
 
-    ∂T/∂t = ∇·(κ ∇T)
+    ∂T/∂t = ∇·(κ ∇T) + f
 
 on the structured 2D grid provided by grid_setup.Grid, using a
 finite-volume discretisation that is consistent with all geometries
@@ -47,20 +47,7 @@ Variable diffusivity
 --------------------
 ``kappa`` in SimState may be a scalar or a 2-D cell-centred array
 (shape grid.grid_shape).  Face-centred values are obtained by arithmetic
-averaging of the two neighbouring cells.
-
-Boundary conditions
--------------------
-Boundary conditions are applied through ``apply_bc_scalar`` from
-``boundaries.py``.  The four-element array ``par.BC`` encodes:
-
-    BC[0] : x1 inner (left / bottom-R)
-    BC[1] : x2 inner (bottom / inner-Z)
-    BC[2] : x1 outer (right / top-R)
-    BC[3] : x2 outer (top / outer-Z)
-
-Supported types: ``'free'`` (zero-gradient), ``'wall'`` (identical to
-``'free'`` for scalars), ``'peri'`` (periodic).
+averaging of the two neighbouring cells. non-linear diffusivity will be added later
 
 Usage
 -----
@@ -78,7 +65,7 @@ Usage
 >>> par.CFL     = 0.9
 >>> par.BC      = np.array(['free', 'free', 'free', 'free'])
 >>>
->>> solver = Diffusion2D(g, state, par, solver='rkl2', rkl2_stages=16)
+>>> solver = Diff2D(g, state, par, solver='rkl2', rkl2_stages=16)
 >>> while par.timenow < par.timefin:
 ...     state = solver.step_RK()
 
@@ -86,11 +73,13 @@ Author: mrkondratyev
 """
 
 import numpy as np
-import copy
 
-from src.common.boundaries import apply_bc_scalar, apply_bc_fixed
-from src.grid.grid_misc import *
-
+from src.grid.grid_misc import (
+    face_gradient,
+    div_face_vector)
+from src.models.diff.diff_phys import ( 
+    boundCond_diff,
+    nonlinear_coef_diff)
 
 # ============================================================================
 #   Top-level solver class
@@ -156,16 +145,16 @@ class Diff2D:
         diff : SimState
             Updated diffusion state.
         """
-        dt_cfl = _CFL_condition_diff(self.g, self.diff, self.par.CFL)
+        dt_cfl = CFLcondition_diff(self.g, self.diff, self.par.CFL)
 
         if self.par.solver_type == 'expl': # explicit solver 
             dt = min(dt_cfl, self.par.timefin - self.par.timenow)
-            self.diff = _explicit_step_diff(self.g, self.diff, self.par, dt)
+            self.diff = explicit_step_diff(self.g, self.diff, self.par, dt)
 
         elif self.par.solver_type == 'rkl2':  # RKL2 super time-stepping 
             dt_super = dt_cfl * (self.s**2 + self.s - 2) / 4.0
             dt = min(dt_super, self.par.timefin - self.par.timenow)
-            self.diff = _rkl2_step_diff(
+            self.diff = rkl2_step_diff(
                 self.g, self.diff, self.par, dt,
                 self._b, self._mu, self._nu, self._gamma, self.s
             )
@@ -183,8 +172,7 @@ class Diff2D:
 # ============================================================================
 #   CFL condition
 # ============================================================================
-
-def _CFL_condition_diff(g, diff, CFL):
+def CFLcondition_diff(g, diff, CFL):
     """
     Compute the CFL-limited explicit timestep for diffusion.
 
@@ -215,41 +203,10 @@ def _CFL_condition_diff(g, diff, CFL):
     return dt
 
 
-# ============================================================================
-#   Boundary conditions
-# ============================================================================
-
-def _apply_bc_diff(g, diff, par):
-    """
-    Fill ghost cells of diff.T using par.BC.
-
-    Parameters
-    ----------
-    g    : Grid
-    diff : SimState  (modified in place)
-    par  : parameters  (par.BC[0..3], BC_fixed)
-    """
-    Ngc = g.Ngc
-    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[0], axis=1, side='inner')
-    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[1], axis=2, side='inner')
-    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[2], axis=1, side='outer')
-    diff.T = apply_bc_scalar(diff.T, Ngc, par.BC[3], axis=2, side='outer')
-    
-    # --- fixed (Dirichlet) ghost-fill, applied LAST so it overrides the above ---
-    if par.BC_fixed is not None:
-        N1, N2 = diff.T.shape
-        state_fields = {'T': diff.T}
-        for face in (0, 1, 2, 3):
-            if par.BC_fixed.get(face):
-                apply_bc_fixed(state_fields, Ngc, N1, N2, face, par.BC_fixed[face])
-    
-    return diff
-
 
 # ============================================================================
 #   Spatial operator  L(T) = ∇·(κ ∇T)
 # ============================================================================
-
 def _face_kappa(kappa, Ngc, Nx1r, Nx2r):
     """
     Compute the arithmetic-mean face-centred diffusivity.
@@ -274,7 +231,7 @@ def _face_kappa(kappa, Ngc, Nx1r, Nx2r):
     return kf1, kf2
 
 
-def _spatial_operator_diff(g, diff):
+def spatial_operator_diff(g, diff):
     """
     Evaluate the finite-volume diffusion operator on the interior cells.
 
@@ -299,7 +256,8 @@ def _spatial_operator_diff(g, diff):
     LT : ndarray, shape (Nx1, Nx2)
         Rate-of-change contribution from diffusion on each interior cell.
     """
-    Ngc  = g.Ngc; Nx1r = g.Nx1r; Nx2r = g.Nx2r # Nx1r=Nx1+Ngc, same for x2
+    
+    Ngc = g.Ngc; Nx1r = g.Nx1r; Nx2r = g.Nx2r 
 
     # Face-centred diffusivities
     kf1, kf2 = _face_kappa(diff.kappa, Ngc, Nx1r, Nx2r)
@@ -310,17 +268,16 @@ def _spatial_operator_diff(g, diff):
     # Diffusive fluxes (gradient × face diffusivity)
     flux1 = kf1 * g1; flux2 = kf2 * g2
 
-    # Finite-volume divergence 
-    LT = div_face_vector(g, flux1, flux2)
+    # Finite-volume divergence + source term addition (ST = f for ∂T/∂t = ∇·(κ ∇T) + f)
+    LT = div_face_vector(g, flux1, flux2) + diff.ST
 
     return LT
 
 
 # ============================================================================
-#   Explicit Euler step
+#   Explicit forward Euler step
 # ============================================================================
-
-def _explicit_step_diff(g, diff, par, dt):
+def explicit_step_diff(g, diff, par, dt):
     """
     One explicit forward-Euler timestep for the diffusion equation.
 
@@ -339,18 +296,18 @@ def _explicit_step_diff(g, diff, par, dt):
         Updated state (T modified in place).
     """
     Ngc = g.Ngc
-    diff = _apply_bc_diff(g, diff, par)
+    diff = boundCond_diff(g, par.BC, diff, par.BC_fixed)
 
-    LT = _spatial_operator_diff(g, diff)
+    LT = spatial_operator_diff(g, diff)
     diff.T[Ngc:-Ngc, Ngc:-Ngc] += dt * LT
 
     return diff
 
 
+
 # ============================================================================
 #   RKL2 super time-stepping
 # ============================================================================
-
 def _rkl2_coefs(s):
     """
     Pre-compute the RKL2 recursion coefficients for s stages.
@@ -383,7 +340,8 @@ def _rkl2_coefs(s):
     return b, mu, nu, gamma
 
 
-def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
+
+def rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
     """
     One RKL2 super-step for the diffusion equation.
 
@@ -419,9 +377,9 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
         Updated state.
     """
     Ngc = g.Ngc
-    w1  = 4.0 / (s**2 + s - 2.0)
+    w1 = 4.0 / (s**2 + s - 2.0)
 
-    diff = _apply_bc_diff(g, diff, par)
+    diff = boundCond_diff(g, par.BC, diff, par.BC_fixed)
 
     # Keep a reference to the original T array so the final result can be
     # written back in-place.  This makes RKL2 consistent with the explicit
@@ -431,40 +389,39 @@ def _rkl2_step_diff(g, diff, par, dt, b, mu, nu, gamma, s):
     T_out = diff.T
 
     # Save T^n; pre-compute L(T^n) once — both are reused at every stage.
-    Tn  = diff.T.copy()                         # T^n, never modified
-    LT0 = _spatial_operator_diff(g, diff)       # L(T^n), shape (Nx1, Nx2)
+    Tn = diff.T.copy()                         # T^n, never modified
+    LT0 = spatial_operator_diff(g, diff)       # L(T^n), shape (Nx1, Nx2)
 
     # ---- stage 1 ----
     # Pre-allocate three rotating buffers (avoids per-stage allocation)
     Y0 = Tn.copy()                              # Y_{j-2} initialised to T^n
     Y1 = Tn.copy()
     Y1[Ngc:-Ngc, Ngc:-Ngc] = Tn[Ngc:-Ngc, Ngc:-Ngc] + (w1 / 3.0) * dt * LT0
-    Y2 = np.empty_like(Tn)                      # scratch buffer, reused each stage
+    Y2 = np.empty_like(Tn)   # scratch buffer, reused each stage
 
     # ---- stages 2 … s ----
     for j in range(2, s + 1):
 
         # Apply BCs to Y_{j-1} before evaluating L(Y_{j-1})
         diff.T = Y1
-        diff   = _apply_bc_diff(g, diff, par)
-        Y1     = diff.T
+        diff = boundCond_diff(g, par.BC, diff, par.BC_fixed)
+        Y1 = diff.T
 
-        LT1 = _spatial_operator_diff(g, diff)   # L(Y_{j-1})
+        LT1 = spatial_operator_diff(g, diff)   # L(Y_{j-1})
 
         # Copy ghost cells from Y1 into scratch buffer, then overwrite interior
         np.copyto(Y2, Y1)
-        Y2[Ngc:-Ngc, Ngc:-Ngc] = (
-              mu[j]                      * Y1[Ngc:-Ngc, Ngc:-Ngc]   # μ_j · Y_{j-1}
-            + nu[j]                      * Y0[Ngc:-Ngc, Ngc:-Ngc]   # ν_j · Y_{j-2}
-            + w1 * mu[j] * dt            * LT1                       # w1·μ_j·dt·L(Y_{j-1})
-            + (1.0 - mu[j] - nu[j])     * Tn[Ngc:-Ngc, Ngc:-Ngc]   # (1−μ−ν)·T^n
-            + gamma[j] * dt              * LT0                       # γ_j·dt·L(T^n)
-        )
-
+        Y2[Ngc:-Ngc, Ngc:-Ngc] = (mu[j] * Y1[Ngc:-Ngc, Ngc:-Ngc]   # μ_j · Y_{j-1}
+            + nu[j] * Y0[Ngc:-Ngc, Ngc:-Ngc]   # ν_j · Y_{j-2}
+            + w1 * mu[j] * dt * LT1                       # w1·μ_j·dt·L(Y_{j-1})
+            + (1.0 - mu[j] - nu[j]) * Tn[Ngc:-Ngc, Ngc:-Ngc]   # (1−μ−ν)·T^n
+            + gamma[j] * dt * LT0)                     # γ_j·dt·L(T^n)
+        
         Y0, Y1, Y2 = Y1, Y2, Y0   # rotate buffers (no allocation)
 
     # Write the final stage result back into the original T array in-place,
     # then restore diff.T to point to that array.
     np.copyto(T_out, Y1)
     diff.T = T_out
+    
     return diff
