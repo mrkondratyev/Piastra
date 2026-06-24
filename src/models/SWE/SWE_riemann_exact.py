@@ -30,7 +30,7 @@ where c = sqrt(g h) is the gravity-wave (shallow-water) speed.
 SWE are mathematically equivalent to the isentropic gas-dynamics equations
 with an adiabatic exponent γ = 2 and the pressure law p = g h²/2.
 This means the exact-solution algorithm mirrors the gas-dynamics case
-(Toro 2009, Ch.5), with the following substitutions:
+(Toro 2009), with the following substitutions:
 
     gas dynamics   ↔   SWE
     ─────────────────────────────────────
@@ -49,7 +49,7 @@ Across a shock (Rankine-Hugoniot):
 Eliminating S gives the shock-speed formula and the jump condition:
     vx* - vx_K = ±(h* - h_K) sqrt( g/(2 h_K h*) * (h_K + h*) / 2 )
 
-which is the SWE analogue of Toro (2009), Eq. (5.54).
+which is the SWE analogue of Toro (2009)
 
 Contact wave
 ------------
@@ -70,10 +70,10 @@ Two public interfaces
 
 References
 ----------
-E. F. Toro, "Riemann Solvers and Numerical Methods for Fluid Dynamics",
-3rd edition, Springer (2009) – Chapter 5 (isentropic gas dynamics / SWE).
+(1) E. F. Toro, "Riemann Solvers and Numerical Methods for Fluid Dynamics" (2009) 
+(2) E. F. Toro, "Computational Algorithms for Shallow Water Equations" (2025)
 
-Author: mrkondratyev (exact solver);  tutorial style follows riemann_exact.py
+Author: mrkondratyev; tutorial style follows riemann_exact.py
 """
 
 import numpy as np
@@ -131,8 +131,6 @@ def _pressure_fn_deriv(h_star, h_K, c_K, g):
     Shock:        df/dh* = g (3 h* + h_K) / (4 h* c_shk)
                   where c_shk = sqrt(g(h*+h_K)/(2 h* h_K)) * (h*-h_K) would
                   be the full expression; we differentiate the exact formula.
-
-    References: Toro (2009) §5.3.1 (SWE / isentropic Euler, γ=2).
     """
     c_star = np.sqrt(g * np.maximum(h_star, 0.0))
 
@@ -159,7 +157,7 @@ def _pressure_fn_deriv(h_star, h_K, c_K, g):
 
 def _initial_height_guess(h_L, vx_L, c_L, h_R, vx_R, c_R, g):
     """
-    Adaptive initial guess for h* (SWE analogue of Toro 2009 §9.3).
+    Adaptive initial guess for h*.
 
     Three estimates are blended:
 
@@ -167,7 +165,6 @@ def _initial_height_guess(h_L, vx_L, c_L, h_R, vx_R, c_R, g):
         h_pvrs = ((c_L + c_R) - (vx_R - vx_L)/2)^2 / (4g)  ... wait,
         more precisely the primitive-variable Riemann solver gives
         h_pvrs = (c_L + c_R - (vx_R - vx_L)/4)^2 / g
-        (Toro 2009, Eq.5.83 adapted for SWE)
 
     Two-rarefaction (TRR): from setting both waves to rarefactions
         h_trr = ((c_L + c_R - (vx_R - vx_L)/2) / (2*sqrt(g)) )^2
@@ -213,8 +210,7 @@ def _solve_star_height(h_L, vx_L, c_L, h_R, vx_R, c_R, g,
 
     Solves  F(h*) = f_L(h*) + f_R(h*) + (vx_R - vx_L) = 0
 
-    where f_K is defined in _pressure_fn.  This is the SWE analogue of
-    Toro (2009), §5.3.1.
+    where f_K is defined in _pressure_fn.  
 
     Parameters
     ----------
@@ -258,7 +254,7 @@ def _compute_star_velocity(h_star, h_L, vx_L, c_L, h_R, vx_R, c_R, g):
     """
     Star-region normal velocity  vx*  from h*.
 
-    From adding the two wave conditions (Toro 2009, Eq. 5.52–5.53):
+    From adding the two wave conditions:
         vx* = 0.5*(vx_L + vx_R) + 0.5*(f_R(h*) - f_L(h*))
 
     Parameters  mirror _solve_star_height.
@@ -318,8 +314,8 @@ def _sample_solution(S, h_L, vx_L, c_L, vy_L,
 
     # Height and velocity inside left rarefaction fan
     # From Riemann invariant  vx + 2c = vx_L + 2c_L  at all points in fan:
-    #   c_fan = (c_L + (vx_L - S)/2)  ... wait for SWE γ=2:
-    #   vx_fan = (vx_L + 2 c_L + 2 S) / 3    (Toro §5.3.2, γ=2 case)
+    #   c_fan = (c_L + (vx_L - S)/2)  
+    #   vx_fan = (vx_L + 2 c_L + 2 S) / 3  
     #   c_fan  = (vx_L + 2 c_L - S) / 3
     vx_fan_L = (vx_L + 2.0 * c_L + 2.0 * S) / 3.0
     c_fan_L  = (vx_L + 2.0 * c_L - S) / 3.0
