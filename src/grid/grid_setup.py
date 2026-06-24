@@ -431,21 +431,21 @@ class Grid:
         self.fx1 = np.tile(fx1, (Nx2 + Ngc * 2, 1)).T
         self.fx2 = np.tile(fx2, (Nx1 + Ngc * 2, 1))
 
-        # Cell centers
-        cx1 = np.linspace(x1ini - (Ngc - 0.5) * dx1uc, x1fin + (Ngc - 0.5) * dx1uc, Nx1 + Ngc * 2)
-        cx2 = np.linspace(x2ini - (Ngc - 0.5) * dx2uc, x2fin + (Ngc - 0.5) * dx2uc, Nx2 + Ngc * 2)
-        self.cx1 = np.tile(cx1, (Nx2 + Ngc * 2, 1)).T
-        self.cx2 = np.tile(cx2, (Nx1 + Ngc * 2, 1))
-
-        # Volumetric centroid in r: ∫r·r²dr / ∫r²dr = 3(r⁴₊−r⁴₋) / (4(r³₊−r³₋))
+        #helpers for radial face coordinates
         r_lo = self.fx1[:-1, :]
         r_hi = self.fx1[1:,  :]
+        # Cell center in r
+        self.cx1 = 2.0 * (r_hi**3 - r_lo**3) / (3.0 * (r_hi**2 - r_lo**2))
+        # Volumetric centroid in r: ∫r·r²dr / ∫r²dr = 3(r⁴₊−r⁴₋) / (4(r³₊−r³₋))
         self.ax1 = 3.0 * (r_hi**4 - r_lo**4) / (4.0 * (r_hi**3 - r_lo**3))
 
-        # Volumetric centroid in θ: ∫θ·sinθ dθ / ∫sinθ dθ
-        # Antiderivative of θ sinθ is sinθ − θ cosθ.
+        #helpers for θ face coordinates
         th_lo = self.fx2[:, :-1]
         th_hi = self.fx2[:, 1:]
+        # Cell center in θ
+        self.cx2 = (th_hi + th_lo) / 2.0
+        # Volumetric centroid in θ: ∫θ·sinθ dθ / ∫sinθ dθ
+        # Antiderivative of θ sinθ is sinθ − θ cosθ.
         num_ax2 = (np.sin(th_hi) - th_hi * np.cos(th_hi)) - \
                   (np.sin(th_lo) - th_lo * np.cos(th_lo))
         den_ax2 = np.cos(th_lo) - np.cos(th_hi)
