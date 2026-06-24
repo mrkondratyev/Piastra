@@ -49,10 +49,10 @@ class SimState:
     ----------
     grid : Grid
         Grid object providing geometry and array sizes.  Must define
-        ``grid.grid_shape``, ``grid.Nx1``, and ``grid.Nx2``.
+        ``grid.grid_shape``, ``grid.Nx1``, ``grid.Nx2``.
     par : Parameters
         Simulation parameters.  ``par.mode`` controls which arrays are
-        allocated: 'adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff', or 'SWE'.
+        allocated: 'adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff', 'SWE'.
 
     Attributes
     ----------
@@ -94,9 +94,13 @@ class SimState:
     fb2 : ndarray, shape (Nx1, Nx2+1)
         Face-centred B-field component normal to x2-faces (staggered).
     bcon1, bcon2, bcon3 : ndarray, shape (Nx1, Nx2)
-        Conservative magnetic flux densities (interior only).
+        Conservative magnetic densities (interior only).
     divB : ndarray, shape (Nx1, Nx2)
         Divergence of the magnetic field (diagnostic monitor).
+    bglm : ndarray, shape grid.grid_shape
+        GLM divergence cleaner (primitive).
+    glmcon : ndarray, shape (Nx1, Nx2)
+        GLM divergence cleaner (conservative).
 
     Diffusion mode ('diff')
     ~~~~~~~~~~~~~~~~~~~~~~~
@@ -104,6 +108,8 @@ class SimState:
         Temperature field (with ghost cells).
     kappa : float
         Uniform thermal diffusivity coefficient.
+     ST : ndarray, shape (Nx1, Nx2)
+        Source term (heating/cooling etc).
 
     Shallow water mode ('SWE')
     ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -123,16 +129,20 @@ class SimState:
     """
 
     def __init__(self, grid, par):
+        
+        #shape for the interior cells (i.e. w/o ghost zones)
+        shape = (grid.Nx1, grid.Nx2)
 
         if par.mode == 'adv':
             self.dens = np.zeros(grid.grid_shape, dtype=np.double)
             # Advection velocities (constant)
-            self.vel1 = 0.0
-            self.vel2 = 0.0
+            self.vel1 = 0.0; self.vel2 = 0.0
 
         if par.mode == 'diff':
-            self.T     = np.zeros(grid.grid_shape, dtype=np.double)
+            self.T = np.zeros(grid.grid_shape, dtype=np.double)
             self.kappa = 1.0
+            # Source term (interior only)
+            self.ST = np.zeros(shape, dtype=np.double)
 
         if par.mode == 'SWE':
             # Primitive variables (with ghost cells)
@@ -162,7 +172,6 @@ class SimState:
             self.pres = np.zeros(grid.grid_shape, dtype=np.double)
 
             # Conservative variables (interior only)
-            shape = (grid.Nx1, grid.Nx2)
             self.mass = np.zeros(shape, dtype=np.double)
             self.mom1 = np.zeros(shape, dtype=np.double)
             self.mom2 = np.zeros(shape, dtype=np.double)
@@ -182,9 +191,17 @@ class SimState:
             # Staggered fields
             self.fb1 = np.zeros((grid.Nx1 + 1, grid.Nx2), dtype=np.double)
             self.fb2 = np.zeros((grid.Nx1, grid.Nx2 + 1), dtype=np.double)
-
+            
+            # GLM divergence cleaner + conservative variable == bglm
+            self.bglm = np.zeros(grid.grid_shape, dtype=np.double)
+            self.glmcon = np.zeros(shape, dtype=np.double)
+            
             # Conservative variables (interior only)
+            # they are introduced for completeness, and 
+            # bcon_i == bfi_i for flat spaces  
             self.bcon1 = np.zeros(shape, dtype=np.double)
             self.bcon2 = np.zeros(shape, dtype=np.double)
             self.bcon3 = np.zeros(shape, dtype=np.double)
+            
+            #magnetic field divergence 
             self.divB  = np.zeros(shape, dtype=np.double)
