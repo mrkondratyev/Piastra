@@ -35,7 +35,8 @@ mrkondratyev
 
 import numpy as np
 from src.common.eos_setup import EOSdata
-
+from src.grid.grid_misc import (
+    interp_face_to_cell)
 
 # ============================================================================
 # User-defined placeholder
@@ -62,26 +63,21 @@ def IC_rMHD_user_defined(grid, state, par):
     """
     print("rMHD -- user-defined problem")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timefin = 0.4
-    par.timenow = 0.0
-    par.BC[:] = 'free'
+    par.timenow = 0.0; par.timefin = 0.4
 
     eos = EOSdata(4.0 / 3.0)
 
     state.dens[:, :] = 1.0
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
+    state.vel1[:, :] = state.vel2[:, :] = state.vel3[:, :] = 0.0
     state.pres[:, :] = 1.0
-    state.bfi1[:, :] = 0.0
-    state.bfi2[:, :] = 0.0
-    state.bfi3[:, :] = 0.0
-    state.fb1[:, :]  = 0.0
-    state.fb2[:, :]  = 0.0
+    state.bfi1[:, :] = 0.0; state.bfi2[:, :] = 0.0; state.bfi3[:, :] = 0.0
+    state.fb1[:, :]  = 0.0; state.fb2[:, :]  = 0.0
+    
+    par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
 
     raise ValueError(
         "User-defined rMHD problem – see 'rMHD_init_cond.py', "
@@ -97,7 +93,7 @@ def IC_rMHD_user_defined(grid, state, par):
 # ============================================================================
 def IC_rMHD1D_BW(grid, MHD, par):
     """
-    Brio–Wu 1D rMHD extension.
+    Brio–Wu 1D special-relativistic MHD extension.
     
     A classical Riemann problem in magnetized fluids used to test the 
     ability of numerical schemes to capture fast/slow shocks, 
@@ -125,48 +121,35 @@ def IC_rMHD1D_BW(grid, MHD, par):
     """
     print("Brio-Wu 1D relativistic MHD shock tube test")
     
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    #grid creation, by default x and y are in range [0..1]
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0 
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
-    MHD.bfi3[:, :] = 0.0
-    
-    MHD.bfi1[:, :] = 0.0 + 0.75    
-        
-    MHD.fb1[:,:] = 0.75
-    
-    par.timefin = 0.1
-    par.timenow = 0.0
-    
+    # GAMMA EOS initialization
     eos = EOSdata(2.0)
     
-    for i in range(grid.Nx1):
-        if (grid.fx1[i+grid.Ngc,1]<0.5):
-            MHD.fb2[i, :] = 1.0
-        else: 
-            MHD.fb2[i, :] = -1.0
+    par.timenow = 0.0; par.timefin = 0.4
     
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r+1):
-            if grid.fx1[i, j] < 0.5:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 1.0
-                MHD.bfi2[i, j] = 1.0
-            else:
-                MHD.dens[i, j] = 0.125
-                MHD.pres[i, j] = 0.1
-                MHD.bfi2[i, j] = -1.0
-                
+    MHD.vel1[:, :] = 0.0; MHD.vel2[:, :] = 0.0; MHD.vel3[:, :] = 0.0 
+    MHD.bfi3[:, :] = 0.0
+    
+    MHD.bfi1[:, :] = 0.5
+    MHD.fb1[:,:] = 0.5
+    
+    left = grid.cx1 < 0.5
+    
+    MHD.dens[:, :] = np.where(left, 1.0, 0.125)
+    MHD.pres[:, :] = np.where(left, 1.0, 0.1)
+    MHD.bfi2[:, :] = np.where(left, 1.0, -1.0)
+    
+    # facial B-field 
+    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5 # shape (Nx1,)
+    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 1.0, -1.0)
+    
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
-
 
 
 
@@ -201,46 +184,32 @@ def IC_rMHD1D_RP2(grid, MHD, par):
     """
     print("RP2 rMHD shock tube 1D test")
     
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    #grid creation, by default x and y are in range [0..1]
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
-    
-    MHD.bfi1[:, :] = 0.0 + 5.0    
-        
-    MHD.fb1[:,:] = 5.0
-    
-    par.timefin = 0.4
-    par.timenow = 0.0
+    par.timenow = 0.0; par.timefin = 0.4
     
     eos = EOSdata(5.0/3.0)
     
-    for i in range(grid.Nx1):
-        if (grid.fx1[i+grid.Ngc,1]<0.5):
-            MHD.fb2[i, :] = 6.0
-        else: 
-            MHD.fb2[i, :] = 0.7
+    MHD.dens[:, :] = 1.0
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0    
+    MHD.bfi3[:, :] = 0.0
     
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r+1):
-            if grid.fx1[i, j] < 0.5:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 30.0
-                MHD.bfi2[i, j] = 6.0
-                MHD.bfi3[i, j] = 6.0
-            else:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 1.0
-                MHD.bfi2[i, j] = 0.7
-                MHD.bfi3[i, j] = 0.7
+    MHD.bfi1[:, :] = 5.0
+    MHD.fb1[:,:] = 5.0
+    
+    left = grid.cx1 < 0.5
+    MHD.pres[:, :] = np.where(left, 30.0, 1.0)
+    MHD.bfi2[:, :] = np.where(left, 6.0, 0.7)
+    MHD.bfi3[:, :] = np.where(left, 6.0, 0.7)
+    
+    # facial B-field 
+    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5 # shape (Nx1,)
+    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 6.0, 0.7)
                 
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
 
@@ -277,47 +246,32 @@ def IC_rMHD1D_RP3(grid, MHD, par):
     """
     print("RP3 rMHD shock tube 1D test -- strong shock")
     
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    #grid creation, by default x and y are in range [0..1]
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
-    MHD.bfi3[:, :] = 0.0
-    
-    MHD.bfi1[:, :] = 0.0 + 10.0    
-        
-    MHD.fb1[:,:] = 10.0
-    
-    par.timefin = 0.4
-    par.timenow = 0.0
+    par.timenow = 0.0; par.timefin = 0.4
     
     eos = EOSdata(5.0/3.0)
     
-    for i in range(grid.Nx1):
-        if (grid.fx1[i+grid.Ngc,1] < 0.5):
-            MHD.fb2[i, :] = 7.0
-        else: 
-            MHD.fb2[i, :] = 0.7
+    MHD.dens[:, :] = 1.0
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0    
+    MHD.bfi3[:, :] = 0.0
     
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r+1):
-            if grid.fx1[i, j] < 0.5:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 1000.0
-                MHD.bfi2[i, j] = 7.0
-                MHD.bfi3[i, j] = 7.0
-            else:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 0.1
-                MHD.bfi2[i, j] = 0.7
-                MHD.bfi3[i, j] = 0.7
-                
+    MHD.bfi1[:, :] = 10.0
+    MHD.fb1[:,:] = 10.0
+    
+    left = grid.cx1 < 0.5
+    MHD.pres[:, :] = np.where(left, 1000.0, 0.1)
+    MHD.bfi2[:, :] = np.where(left, 7.0, 0.7)
+    MHD.bfi3[:, :] = np.where(left, 7.0, 0.7)
+    
+    # facial B-field 
+    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5
+    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 7.0, 0.7)
+
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
 
@@ -354,49 +308,33 @@ def IC_rMHD1D_RP4(grid, MHD, par):
     """
     print("RP4 rMHD shock tube 1D test -- ultrarelativistic shocks")
     
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    #grid creation, by default x and y are in range [0..1]
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
-    MHD.bfi3[:, :] = 0.0
-    
-    MHD.bfi1[:, :] = 0.0 + 10.0    
-        
-    MHD.fb1[:,:] = 10.0
-    
-    par.timefin = 0.4
-    par.timenow = 0.0
+    par.timenow = 0.0; par.timefin = 0.4
     
     eos = EOSdata(5.0/3.0)
     
-    for i in range(grid.Nx1):
-        if (grid.fx1[i+grid.Ngc,1]<0.5):
-            MHD.fb2[i, :] = 7.0
-        else: 
-            MHD.fb2[i, :] = -7.0
+    MHD.dens[:, :] = 1.0
+    MHD.pres[:, :] = 0.1
+    MHD.vel2[:, :] = 0.0; MHD.vel3[:, :] = 0.0    
+    MHD.bfi3[:, :] = 0.0
     
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r+1):
-            if grid.cx1[i, j] < 0.5:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 0.1
-                MHD.bfi2[i, j] = 7.0
-                MHD.bfi3[i, j] = 7.0
-                MHD.vel1[i, j] = 0.999
-            else:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 0.1
-                MHD.bfi2[i, j] = -7.0
-                MHD.bfi3[i, j] = -7.0
-                MHD.vel1[i, j] = -0.999
+    MHD.bfi1[:, :] = 10.0
+    MHD.fb1[:,:] = 10.0
+    
+    left = grid.cx1 < 0.5
+    MHD.vel1[:, :] = np.where(left, 0.999, -0.999)
+    MHD.bfi2[:, :] = np.where(left, 7.0, -7.0)
+    MHD.bfi3[:, :] = np.where(left, 7.0, -7.0)
+            
+    # facial B-field 
+    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5 # shape (Nx1,)
+    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 7.0, -7.0)
                 
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
 
@@ -430,74 +368,53 @@ def IC_rMHD2D_blast(grid, MHD, par):
     # ------------------------------------------------------------------
     # Domain
     # ------------------------------------------------------------------
-    x1ini, x1fin = -6.0, 6.0
-    x2ini, x2fin = -6.0, 6.0
-    
+    x1ini, x1fin = -6.0, 6.0; x2ini, x2fin = -6.0, 6.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
-    # ------------------------------------------------------------------
-    # Initial uniform state (ambient medium)
-    # ------------------------------------------------------------------
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0
-    
-    MHD.bfi1[:, :] = 0.1   # uniform magnetic field (x-direction)
-    MHD.bfi2[:, :] = 0.0
-    MHD.bfi3[:, :] = 0.0
-    
-    MHD.fb1[:, :] = 0.1
-    MHD.fb2[:, :] = 0.0
-    
-    # ------------------------------------------------------------------
-    # Time control
-    # ------------------------------------------------------------------
-    par.timefin = 4.0
-    par.timenow = 0.0
+    par.timenow = 0.0; par.timefin = 4.0
     
     # Relativistic EOS
     eos = EOSdata(4.0/3.0)
     
     # ------------------------------------------------------------------
+    # Initial uniform state (ambient medium)
+    # ------------------------------------------------------------------
+    MHD.vel1[:, :] = 0.0; MHD.vel2[:, :] = 0.0; MHD.vel3[:, :] = 0.0
+    
+    # uniform magnetic field (x-direction)
+    MHD.bfi1[:, :] = 0.1; MHD.bfi2[:, :] = 0.0; MHD.bfi3[:, :] = 0.0
+    
+    MHD.fb1[:, :] = 0.1
+    MHD.fb2[:, :] = 0.0
+    
+    # ------------------------------------------------------------------
     # Explosion parameters
     # ------------------------------------------------------------------
-    x0 = 0.5
-    y0 = 0.5
-    r0 = 0.08   # blast radius
+    x0 = 0.0; y0 = 0.0; r0 = 0.08   # blast radius
     
     # Ambient state
-    rho_out = 1.0e-4
-    p_out   = 3.0e-5
+    rho_out = 1.0e-4; p_out   = 3.0e-5
     
     # Inner (explosion) state
-    rho_in = 0.01
-    p_in   = 1.0   # high pressure → explosion
+    rho_in = 0.01; p_in   = 1.0   # high pressure → explosion
+    
+    #raidal coordinate 
+    x = grid.cx1; y = grid.cx2
+    r = np.sqrt((x - x0)**2 + (y - y0)**2)
     
     # ------------------------------------------------------------------
     # Fill domain
     # ------------------------------------------------------------------
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            
-            x = grid.cx1[i, j]
-            y = grid.cx2[i, j]
-            
-            r = ((x - x0)**2 + (y - y0)**2)**0.5
-            
-            if r < r0:
-                MHD.dens[i, j] = rho_in
-                MHD.pres[i, j] = p_in
-            elif r < 1.0:
-                MHD.dens[i, j] = (rho_in*(1.0 - r) + rho_out*(r - r0))/(1.0 - r0)
-                MHD.pres[i, j] = (p_in*(1.0 - r) + p_out*(r - r0))/(1.0 - r0)
-            else:
-                MHD.dens[i, j] = rho_out
-                MHD.pres[i, j] = p_out
+    MHD.dens[:,:] = np.where(r < r0, rho_in, \
+        np.where(r < r0, (rho_in*(1.0 - r) + rho_out*(r - r0))/(1.0 - r0), rho_out))
+    MHD.pres[:,:] = np.where(r < r0, p_in, \
+        np.where(r < r0, (p_in*(1.0 - r) + p_out*(r - r0))/(1.0 - r0), p_out))
     
     # ------------------------------------------------------------------
     # Boundary conditions
     # ------------------------------------------------------------------
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
 
@@ -528,30 +445,26 @@ def IC_rMHD2D_rotor(grid, state, par):
     """
     print("rMHD 2D -- relativistic rotor (Del Zanna et al. 2003)")
 
-    x1ini, x1fin = -0.5, 0.5
-    x2ini, x2fin = -0.5, 0.5
+    # grid creation
+    x1ini, x1fin = -0.5, 0.5; x2ini, x2fin = -0.5, 0.5
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timefin = 0.4
-    par.timenow = 0.0
-    par.BC = np.array(['free', 'free', 'free', 'free'], dtype=object)
-
+    par.timenow = 0.0; par.timefin = 0.4
+    
     eos = EOSdata(5.0 / 3.0)
 
-    x = grid.cx1
-    y = grid.cx2
-    r = np.sqrt(x**2 + y**2)
+    x = grid.cx1; y = grid.cx2; r = np.sqrt(x**2 + y**2)
 
     # Ambient medium
     state.dens[:, :] = 1.0
-    state.vel1[:, :] = 0.0
-    state.vel2[:, :] = 0.0
-    state.vel3[:, :] = 0.0
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0; state.vel3[:, :] = 0.0
     state.pres[:, :] = 1.0
-    state.bfi1[:, :] = 1.0
-    state.bfi2[:, :] = 0.0
-    state.bfi3[:, :] = 0.0
+    state.bfi1[:, :] = 1.0; state.bfi2[:, :] = 0.0; state.bfi3[:, :] = 0.0
 
+    # Initialise staggered B (uniform Bx)
+    state.fb1[:, :] = 1.0
+    state.fb2[:, :] = 0.0
+    
     # Rotating cylinder
     r0    = 0.1
     omega = 9.95   # chosen so that v_max ~ 0.995 at r = r0
@@ -567,9 +480,11 @@ def IC_rMHD2D_rotor(grid, state, par):
         fac = 0.995 / vmax
         state.vel1[mask] *= fac
         state.vel2[mask] *= fac
-
-    # Initialise staggered B (uniform Bx)
-    state.fb1[:, :] = 1.0
-    state.fb2[:, :] = 0.0
+        
+    # ------------------------------------------------------------------
+    # Boundary conditions
+    # ------------------------------------------------------------------
+    par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
 
     return grid, state, par, eos
