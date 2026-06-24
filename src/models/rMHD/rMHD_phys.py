@@ -63,7 +63,7 @@ from src.common.boundaries import apply_bc_scalar, apply_bc_vector
 
 
 # ============================================================================
-# Helper: derived quantities from primitives
+# Helpers: derived quantities from primitives
 # ============================================================================
 
 def _lorentz(v1, v2, v3):
@@ -102,9 +102,9 @@ def _b_squared(W, v1, v2, v3, B1, B2, B3):
 # Primitive -> conservative
 # ============================================================================
 
-def prim2cons_sr_MHD(dens, vel1, vel2, vel3, pres, B1, B2, B3, eos):
+def prim2cons_rMHD(dens, vel1, vel2, vel3, pres, B1, B2, B3, eos):
     """
-    Convert primitive to conservative variables for an ideal-gas SRMHD fluid.
+    Convert primitive to conservative variables for an ideal-gas SRMHD MHD.
 
     Parameters
     ----------
@@ -141,7 +141,7 @@ def prim2cons_sr_MHD(dens, vel1, vel2, vel3, pres, B1, B2, B3, eos):
 # Conservative -> primitive  (Newton-Raphson inversion)
 # ============================================================================
 
-def cons2prim_sr_MHD(mass, mom1, mom2, mom3, ener, Bcon1, Bcon2, Bcon3, x_init, eos):
+def cons2prim_rMHD(mass, mom1, mom2, mom3, ener, Bcon1, Bcon2, Bcon3, x_init, eos):
     """
     Recover primitive variables from conservative variables for SRMHD.
 
@@ -164,46 +164,57 @@ def cons2prim_sr_MHD(mass, mom1, mom2, mom3, ener, Bcon1, Bcon2, Bcon3, x_init, 
     -------
     dens,vel1,vel2,vel3,pres,B1,B2,B3 : ndarray  primitive variables
     """
+    
+    #floor variables for density, pressure, and Lorenz factor 
+    dens_floor=1.0e-11; pres_floor=1.0e-11; W_ceiling=1.0e4
+    
     msqr = mom1**2 + mom2**2 + mom3**2
     SdB  = mom1 * Bcon1 + mom2 * Bcon2 + mom3 * Bcon3
     Bsqr = Bcon1**2 + Bcon2**2 + Bcon3**2
     SdB2 = SdB**2
     gamma_r = eos.GAMMA / (eos.GAMMA - 1.0)
     
-    B1 = Bcon1 
-    B2 = Bcon2 
-    B3 = Bcon3
+    B1 = Bcon1; B2 = Bcon2; B3 = Bcon3
 
     x = _newton_rMHD(x_init, mass, ener, SdB2, msqr, Bsqr, gamma_r)
-
+    
+    #squared velocity and Lorenz factor 
+    vsq = (msqr * x**2 + SdB2 * (2.0 * x + Bsqr)) / \
+        (x**2 * (x + Bsqr)**2 + 1e-28)
+    vsq = np.clip(vsq, 0.0, 1.0 - 1e-14)
+    W   = 1.0 / np.sqrt(1.0 - vsq)
+    
+    # baryon density
+    dens = np.maximum(mass / W, dens_floor)
+    
     # velocity from the momentum equation:
     #   v_i = [S_i + (S.B / x) B_i] / [x + B^2]
     vel1 = (mom1 + SdB * B1 / (x + 1e-28)) / (x + Bsqr + 1e-28)
     vel2 = (mom2 + SdB * B2 / (x + 1e-28)) / (x + Bsqr + 1e-28)
     vel3 = (mom3 + SdB * B3 / (x + 1e-28)) / (x + Bsqr + 1e-28)
-    
-    W = 1.0/np.sqrt(1.0 - vel1**2 - vel2**2 - vel3**2)
-    
-    ## Lorentz factor from the velocity magnitude
-    #vsq = (msqr * x**2 + SdB2 * (2.0 * x + Bsqr)) / \
-    #      (x**2 * (x + Bsqr)**2 + 1e-28)
-   # vsq = np.clip(vsq, 0.0, 1.0 - 1e-14)
-    #W  = 1.0 / np.sqrt(1.0 - vsq)
-
-    # baryon density
-    dens = mass / W
 
     # pressure from the definition of x = rho h W^2
-    pres = (x - mass * W) / (gamma_r * W**2)
-    pres = np.maximum(pres, 1e-14)
+    pres = np.maximum((x - mass * W) / (gamma_r * W**2), pres_floor)
+    
+    # --- Super-luminal safeguard ---
+    # here we clip the maximal Lorenz factor with W_ceiling for problematic cells
+    v2       = vel1**2 + vel2**2 + vel3**2
+    too_fast = v2 >= 1.0
+    n_clip   = int(np.count_nonzero(too_fast))
+    if n_clip > 0:
+        v_max = np.sqrt(1.0 - 1.0 / W_ceiling**2)
+        fac   = np.where(too_fast, v_max / np.sqrt(v2 + 1e-30), 1.0)
+        vel1 *= fac; vel2 *= fac; vel3 *= fac
+        print(f"[rMHD] cons2prim: clipped {n_clip} super-luminal cell(s) "
+              f"to W = {W_ceiling:.1f}")
 
     return dens, vel1, vel2, vel3, pres, B1, B2, B3
+
 
 
 # ============================================================================
 #   Nonlinear rMHD solver (Newton-Raphson with numerical derivative)
 # ============================================================================
-
 def _x_eqn_rMHD(x, mass, etot, SdB2, msqr, Bsqr, gamma_r):
     """
     Nonlinear equation f(x) = 0 whose root gives x = rho h W^2.
@@ -238,9 +249,10 @@ def _x_eqn_rMHD(x, mass, etot, SdB2, msqr, Bsqr, gamma_r):
     # pressure from x = rho h W^2  =>  p = (x - D W) / (gamma_r W^2)
     pg = (x - mass * W) / (gamma_r * W2)
 
-    func = x - pg + (1.0 - 0.5 / W2) * Bsqr - SdB2 / (2.0 * x**2 + 1e-28) - etot
+    func = x - pg + (1.0 - 0.5 / W2) * Bsqr - SdB2 / (2.0 * x**2 + 1e-30) - etot
 
     return func
+
 
 
 def _newton_rMHD(x_init, mass, etot, SdB2, msqr, Bsqr, gamma_r):
@@ -267,59 +279,53 @@ def _newton_rMHD(x_init, mass, etot, SdB2, msqr, Bsqr, gamma_r):
     """
     tol    = 1.0e-8
     dx_rel = 1.0e-8   # relative step for numerical derivative
-    maxitr = 100
+    maxitr = 50
+    eps_f  = 1.0e-10     # cushion above the x > mass floor
 
-    x = np.maximum(x_init, 1.0e-14)
-
-    res  = _x_eqn_rMHD(x, mass, etot, SdB2, msqr, Bsqr, gamma_r)
-    eps1 = np.max(np.abs(res))
-    eps2 = 1.0
+    # Start from the previous-step x, projected into the valid domain
+    x_lim = (1.0 + eps_f) * mass # per-cell physical lower edge
+    x = np.maximum(x_init, x_lim)
+    active = np.ones_like(x, dtype=bool)
 
     for itr in range(maxitr):
-        if eps1 <= tol and eps2 <= tol:
+        if not active.any():
             break
-
-        dx   = x * (1.0 + dx_rel)
+        
+        #calculate the numerical derivative, since the pressure eqn is cumbersome 
+        dx   = x * dx_rel
         f0   = _x_eqn_rMHD(x,      mass, etot, SdB2, msqr, Bsqr, gamma_r)
         f1   = _x_eqn_rMHD(x + dx, mass, etot, SdB2, msqr, Bsqr, gamma_r)
-        deriv = (f1 - f0) / (dx + 1e-28)
+        deriv = (f1 - f0) / (dx + 1e-30)
+        
+        deriv = np.where(np.abs(deriv) > 1.0e-30, deriv, -1.0e-30)
+        
+        x_new = x- f0 / deriv
 
-        update = f0 / (deriv + 1e-28)
-        x    = x - update
-        x    = np.maximum(x, 1.0e-14)
+        # If the full Newton step leaves the valid region or
+        # is non-finite, bisect back toward the boundary instead of crossing it
+        bad   = ~np.isfinite(x_new) | (x_new <= x_lim)
+        x_new = np.where(bad, 0.5 * (x + x_lim), x_new)
 
-        res  = _x_eqn_rMHD(x, mass, etot, SdB2, msqr, Bsqr, gamma_r)
-        eps1 = np.max(np.abs(res))
-        eps2 = np.max(np.abs(update / (x + 1e-28)))
-    else:
-        print(f"[rMHD] Newton solver: did not converge after {maxitr} iterations "
-              f"(residual = {eps1:.3e})")
+        # Move only the still-active cells; freeze the rest
+        x_prev = x
+        x = np.where(active, x_new, x)
+
+        # Per-cell convergence: small residual AND small relative change
+        res = _x_eqn_rMHD(x, mass, etot, SdB2, msqr, Bsqr, gamma_r)
+        rel = np.abs(x - x_prev) / (np.abs(x) + 1e-30)
+        converged = (np.abs(res) <= tol) & (rel <= tol)
+        active = active & ~converged
+
+    # Report the cells that failed to converge 
+    n_bad = int(np.count_nonzero(active))
+    if n_bad > 0:
+        worst = float(np.nanmax(np.abs(
+            _x_eqn_rMHD(x, mass, etot, SdB2, msqr, Bsqr, gamma_r))[active]))
+        print(f"[rMHD] Newton: {n_bad} cell(s) unconverged after {maxitr} "
+              f"iters (max residual = {worst:.3e})")
 
     return x
 
-
-# ============================================================================
-# SR fast magnetosonic speed (upper bound)
-# ============================================================================
-
-def sound_speed_sr_MHD(dens, pres, eos):
-    """
-    Adiabatic sound speed for an ideal relativistic gas (same as rHD).
-
-       cs^2 = GAMMA p / (rho h)
-
-    Parameters
-    ----------
-    dens, pres : ndarray
-    eos        : EOSdata
-
-    Returns
-    -------
-    cs : ndarray   (0 < cs < 1)
-    """
-    enth = 1.0 + pres / (dens + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-    cs2  = eos.GAMMA * pres / (dens * enth + 1e-14)
-    return np.sqrt(np.clip(cs2, 0.0, 1.0 - 1e-14))
 
 
 def fast_magnetosonic_speed_sr(dens, pres, vel1, vel2, vel3, B1, B2, B3, eos):
@@ -344,8 +350,8 @@ def fast_magnetosonic_speed_sr(dens, pres, vel1, vel2, vel3, B1, B2, B3, eos):
     c_f : ndarray  fast magnetosonic speed upper bound  (0 < c_f < 1)
     """
     W    = _lorentz(vel1, vel2, vel3)
-    enth = 1.0 + pres / (dens + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
-    cs2  = eos.GAMMA * pres / (dens * enth + 1e-14)
+    enth = eos.enthalpy_sr(dens, pres)
+    cs2  = eos.sound_speed_sr(dens, pres)**2
 
     b2, _, _ = _b_squared(W, vel1, vel2, vel3, B1, B2, B3)
     vA2 = b2 / (dens * enth + b2 + 1e-14)
@@ -358,11 +364,11 @@ def fast_magnetosonic_speed_sr(dens, pres, vel1, vel2, vel3, B1, B2, B3, eos):
 # Approximate Riemann solvers (LLF and HLL)
 # ============================================================================
 
-def Riemann_sr_MHD(rhol, rhor,
+def Riemann_rMHD(rhol, rhor,
                    vxl, vxr, vyl, vyr, vzl, vzr,
                    pl, pr,
                    bxl, bxr, byl, byr, bzl, bzr,
-                   eos, flux_type, dim):
+                   eos, solver_type, dim):
     """
     Approximate Riemann fluxes for the SRMHD equations.
 
@@ -377,7 +383,7 @@ def Riemann_sr_MHD(rhol, rhor,
     pl, pr                   : ndarray  left/right pressure
     bxl,bxr, byl,byr, bzl,bzr : ndarray  left/right B-field components
     eos                      : EOSdata
-    flux_type                : {'LLF', 'HLL'}
+    solver_type                : {'LLF', 'HLL'}
     dim                      : int  1 or 2
 
     Returns
@@ -392,14 +398,14 @@ def Riemann_sr_MHD(rhol, rhor,
         vxl, vxr, vyl, vyr = vyl, vyr, -vxl, -vxr
         bxl, bxr, byl, byr = byl, byr, -bxl, -bxr
 
-    # Normal B-field: use arithmetic average (as in NR CT-MHD)
+    # Normal B-field: use arithmetic average (as in NR MHD)
     Bxn = 0.5 * (bxl + bxr)
 
     # ----------------------------------------------------------------
     # Derived quantities (left state)
     # ----------------------------------------------------------------
     Wl    = _lorentz(vxl, vyl, vzl)
-    enthl = 1.0 + pl / (rhol + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
+    enthl = eos.enthalpy_sr(rhol, pl)
     b2l, vdBl, Bsql = _b_squared(Wl, vxl, vyl, vzl, Bxn, byl, bzl)
     vsql = vxl**2 + vyl**2 + vzl**2
 
@@ -431,7 +437,7 @@ def Riemann_sr_MHD(rhol, rhor,
     # Derived quantities (right state)
     # ----------------------------------------------------------------
     Wr    = _lorentz(vxr, vyr, vzr)
-    enthr = 1.0 + pr / (rhor + 1e-14) * eos.GAMMA / (eos.GAMMA - 1.0)
+    enthr = eos.enthalpy_sr(rhor, pr)
     b2r, vdBr, Bsqr = _b_squared(Wr, vxr, vyr, vzr, Bxn, byr, bzr)
     vsqr = vxr**2 + vyr**2 + vzr**2
 
@@ -472,9 +478,9 @@ def Riemann_sr_MHD(rhol, rhor,
     # ----------------------------------------------------------------
     # LLF (Local Lax-Friedrichs / Rusanov)
     # ----------------------------------------------------------------
-    if flux_type == 'LLF':
+    if solver_type == 'LLF':
 
-        lam = 1.0#np.maximum(np.abs(Sl), np.abs(Sr))
+        lam = np.maximum(np.abs(Sl), np.abs(Sr)) # 1.0
 
         Fmass = 0.5 * (FDl  + FDr  - lam * (Dr  - Dl ))
         Fmom1 = 0.5 * (FS1l + FS1r - lam * (S1r - S1l))
@@ -488,7 +494,7 @@ def Riemann_sr_MHD(rhol, rhor,
     # ----------------------------------------------------------------
     # HLL (Harten-Lax-van Leer)
     # ----------------------------------------------------------------
-    elif flux_type == 'HLL':
+    elif solver_type == 'HLL':
 
         Sl = np.minimum(Sl, 0.0)
         Sr = np.maximum(Sr, 0.0)
@@ -503,11 +509,11 @@ def Riemann_sr_MHD(rhol, rhor,
         Fbfiz = (Sr * FBzl - Sl * FBzr + Sr * Sl * (bzr - bzl)) / (Sr - Sl)
 
     else:
+        
+        #solver_type is incorrect -> throw an error
         raise ValueError(
-            f"Unknown flux_type '{flux_type}'. "
-            "Expected 'LLF' or 'HLL'.  "
-            "(HLLD for rMHD is not yet implemented.)"
-        )
+            f"Unknown rMHD solver_type '{solver_type}'. " 
+            f"Expected one of ['LLF', 'HLL'].")
 
     # ----------------------------------------------------------------
     # Undo coordinate rotation for dim=2
@@ -523,12 +529,16 @@ def Riemann_sr_MHD(rhol, rhor,
 # Boundary conditions
 # ============================================================================
 
-def boundCond_rMHD(grid, BC, fluid):
+def boundCond_rMHD(grid, BC, BCm, MHD):
     """
     Apply boundary conditions to SRMHD primitive variables.
 
     Mirrors the structure of boundCond_MHD in MHD_phys.py, applying BCs
     to density, pressure, velocity, and cell-centred magnetic field.
+    
+    Notes
+    ----------
+    Fixed boundaries are not supproted yet for CT rMHD
 
     Parameters
     ----------
@@ -548,13 +558,19 @@ def boundCond_rMHD(grid, BC, fluid):
         (1, 'outer', BC[2]),
         (2, 'outer', BC[3]),
     ]:
-        fluid.dens = apply_bc_scalar(fluid.dens, Ngc, bc, axis=axis, side=side)
-        fluid.pres = apply_bc_scalar(fluid.pres, Ngc, bc, axis=axis, side=side)
+        MHD.dens = apply_bc_scalar(MHD.dens, Ngc, bc, axis=axis, side=side)
+        MHD.pres = apply_bc_scalar(MHD.pres, Ngc, bc, axis=axis, side=side)
 
-        fluid.vel1, fluid.vel2, fluid.vel3 = apply_bc_vector(
-            fluid.vel1, fluid.vel2, fluid.vel3, Ngc, bc, axis=axis, side=side)
+        MHD.vel1, MHD.vel2, MHD.vel3 = apply_bc_vector(
+            MHD.vel1, MHD.vel2, MHD.vel3, Ngc, bc, axis=axis, side=side)
 
-        fluid.bfi1, fluid.bfi2, fluid.bfi3 = apply_bc_vector(
-            fluid.bfi1, fluid.bfi2, fluid.bfi3, Ngc, bc, axis=axis, side=side)
+    for axis, side, bc in [
+        (1, 'inner', BCm[0]),
+        (2, 'inner', BCm[1]),
+        (1, 'outer', BCm[2]),
+        (2, 'outer', BCm[3]),
+    ]:
+        MHD.bfi1, MHD.bfi2, MHD.bfi3 = apply_bc_vector(
+            MHD.bfi1, MHD.bfi2, MHD.bfi3, Ngc, bc, axis=axis, side=side)
 
-    return fluid
+    return MHD
