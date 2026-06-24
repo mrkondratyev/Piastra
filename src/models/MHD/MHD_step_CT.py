@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-MHD_one_step_CT.py
+MHD_step_CT.py
 ===============================================================================
 
 2D Magnetohydrodynamics (MHD) Solver with Constrained Transport (CT)
@@ -11,7 +11,7 @@ This module provides routines for solving the 2D compressible
 magnetohydrodynamics (MHD) equations using finite-volume Godunov-type
 methods. The solver employs high-order reconstruction, approximate Riemann
 solvers, and Runge-Kutta (RK) timestepping schemes. Magnetic divergence
-is controlled via the Constrained Transport (CT) method 'flux-CT'.
+is controlled via the Constrained Transport (CT) method 'flux-CT' (see Toth (2000)).
 
 Main Components
 ---------------
@@ -19,28 +19,27 @@ Main Components
 - ``CFLcondition_MHD`` : compute timestep from CFL stability condition.
 - ``oneStep_MHD_RK_CT`` : advance MHD state by one timestep (RK1/RK2/RK3).
 - ``flux_calc_MHD_CT`` : compute residuals of conservative variables.
-- ``MHD_curv_sources`` : evaluate curvature source terms (e.g., cylindrical).
+- ``curv_source_MHD_CT`` : evaluate curvature source terms (e.g., cylindrical).
 - ``boundCond_electric_field`` : Fill ghost cells for face-centered electric field E3 along x1 and x2.
       (E3 = Ez for MHD in 2D XY coordinates, for instance)
 
 Features
 --------
-- Spatial accuracy via piecewise constant, linear, PPM, or WENO-type reconstructions.
-- Riemann solvers: Local Lax-Friedrichs (LLF), HLL, HLLD.
+- Spatial accuracy via piecewise constant, linear, PPM, MP5, or WENO-type reconstructions.
+- Riemann solvers: Local Lax-Friedrichs (LLF), HLL, HLLC, HLLD.
 - Temporal accuracy: TVD Runge-Kutta methods (1st, 2nd, or 3rd order).
 - Divergence-free magnetic field evolution with CT.
-- Curvilinear support (currently cylindrical geometry implemented).
+- Curvilinear support.
 
-@author:
-    mrkondratyev
+@author: mrkondratyev
 """
 
 from src.models.MHD.MHD_phys import (
-    prim2cons_nr_MHD,
+    prim2cons_MHD,
     _prim_recovery,
     max_wavespeed_MHD, 
     boundCond_MHD, 
-    Riemann_flux_nr_MHD)
+    Riemann_MHD)
 from src.common.high_order_rec import VarReconstruct 
 import numpy as np 
 import copy 
@@ -55,8 +54,8 @@ class MHD2D_CT:
 
     Attributes
     ----------
-    grid : object
-        Grid object with domain sizes, spacing, volumes, and face areas.
+    g   : object
+        Grid object with domain sizes, spacing, volumes, face areas, etc.
     MHD : object
         SimState object containing primitive and conservative variables.
     par : object
@@ -65,13 +64,13 @@ class MHD2D_CT:
         Equation of state object.
     """
 
-    def __init__(self, grid, MHD, eos, par):
+    def __init__(self, g, MHD, eos, par):
         """
         Initialize the MHD2D_CT container.
 
         Parameters
         ----------
-        grid : object
+        g   : object
             Grid object.
         MHD : object
             SimState object.
@@ -80,7 +79,7 @@ class MHD2D_CT:
         par : object
             Simulation parameters object.
         """
-        self.grid = grid
+        self.g = g
         self.MHD = MHD
         self.eos = eos
         self.par = par
@@ -94,11 +93,12 @@ class MHD2D_CT:
         MHD : object
             Updated SimState object.
         """
-        dt = min(CFLcondition_MHD(self.grid, self.MHD, self.eos, self.par.CFL),
+        dt = min(CFLcondition_MHD(self.g, self.MHD, self.eos, self.par.CFL),
                  self.par.timefin - self.par.timenow)
-        self.MHD = oneStep_MHD_RK_CT(self.grid, self.MHD, self.eos, self.par, dt)
+        self.MHD = oneStep_MHD_RK_CT(self.g, self.MHD, self.eos, self.par, dt)
         self.par.timenow += dt
         return self.MHD
+
 
 
 # -------------------------
@@ -125,7 +125,7 @@ def _rk_stage(MHD_out, MHD_a, MHD_b, \
     MHD_out.bcon3 = a * MHD_a.bcon3 + b * MHD_b.bcon3 + c * dt * ResB3
 
 
-def CFLcondition_MHD(grid, MHD, eos, CFL):
+def CFLcondition_MHD(g, MHD, eos, CFL):
     """
     Compute timestep based on CFL stability condition for MHD.
     
@@ -134,7 +134,7 @@ def CFLcondition_MHD(grid, MHD, eos, CFL):
     
     Parameters
     ----------
-    grid : object
+    g   : object
         Grid object.
     MHD : object
         Fluid state object.
@@ -147,40 +147,49 @@ def CFLcondition_MHD(grid, MHD, eos, CFL):
     -------
     dt : float
         Stable timestep satisfying CFL condition.
+        
+    Notes
+    -------
+    Lame coefficient hx2 is included in the CFL calculation 
+    in order to adjust the correct timestep for the simulations in the polar coordinates, 
+    e.g. dt ~ rdφ for the cylindrical polar geometry
     """
-    Ngc = grid.Ngc
+    Ngc = g.Ngc
+    
+    dens = MHD.dens[Ngc:-Ngc, Ngc:-Ngc]
+    vel1 = MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]
+    vel2 = MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]
+    pres = MHD.pres[Ngc:-Ngc, Ngc:-Ngc]
+    B1   = MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc]
+    B2   = MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc]
+    B3   = MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc]
     
     #sound speed calculation for whole domain
-    csound = eos.sound_speed_nr(MHD.dens[Ngc:-Ngc, Ngc:-Ngc], MHD.pres[Ngc:-Ngc, Ngc:-Ngc])
+    csound = eos.sound_speed_nr(dens, pres)
     
     #fast magnetosonic speed calculation for whole domain 
-    cfast = max_wavespeed_MHD(csound, \
-        MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.dens[Ngc:-Ngc, Ngc:-Ngc])
+    cfast = max_wavespeed_MHD(csound, B1,B2,B3, dens)
     
     #FIRST APPROACH
-    #dt1 = np.min( grid.dx1[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + cfast) )
-    #dt2 = np.min( grid.dx2[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + cfast) )    
+    #dt1 = np.min( grid.dx1[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(vel1) + cfast) )
+    #dt2 = np.min( grid.dx2[Ngc:-Ngc, Ngc:-Ngc] * grid.hx2[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(vel2) + cfast) )    
     #return  CFL * min(dt1, dt2)
     
     #SECOND APPROACH 
-    dt_inv = np.max((np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + \
-        cfast)/grid.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
-        (np.abs(MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + \
-        cfast)/grid.dx2[Ngc:-Ngc, Ngc:-Ngc])
+    dt_inv = np.max((np.abs(vel1) + cfast)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
+        (np.abs(vel2) + cfast)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
     return CFL/dt_inv
 
+
  
-def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
+def oneStep_MHD_RK_CT(g, MHD, eos, par, dt):
     """
     Advance the MHD state by one timestep using RK1, RK2, or RK3 schemes.
 
     Parameters
     ----------
-    grid : object
+    g   : object
         Computational grid with geometry and metric data.
     MHD : object
         Fluid state containing primitive and conservative variables.
@@ -216,7 +225,7 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
     """
     
     #define local copy of ghost cells number to simplify array indexing
-    Ngc = grid.Ngc
+    Ngc = g.Ngc
     
     #here we define the copy for the auxilary fluid state
     MHD_h = copy.deepcopy(MHD)
@@ -224,7 +233,7 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
     # ---- prim -> cons at beginning of timestep --------------------------
     (MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot,
      MHD.bcon1, MHD.bcon2, MHD.bcon3) = \
-        prim2cons_nr_MHD(
+        prim2cons_MHD(
             MHD.dens[Ngc:-Ngc, Ngc:-Ngc],
             MHD.vel1[Ngc:-Ngc, Ngc:-Ngc],
             MHD.vel2[Ngc:-Ngc, Ngc:-Ngc],
@@ -238,7 +247,7 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
     #residuals for conservative variables calculation
     #1st Runge-Kutta iteration - predictor stage
     ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
-        flux_calc_MHD_CT(grid, MHD, par, eos)
+        flux_calc_MHD_CT(g, MHD, par, eos)
     
     # Conservative update - 1st RK stage (predictor)
     _rk_stage(MHD_h, MHD, MHD, \
@@ -255,34 +264,34 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
         MHD.fb1   = MHD_h.fb1; MHD.fb2 = MHD_h.fb2; MHD.bcon3 = MHD_h.bcon3
     
     #second-order Runge-Kutta scheme
-    if (par.RK_order == 'RK2'):
+    elif (par.RK_order == 'RK2'):
         
         #interpolation from staggererd to cell-centered fields
-        MHD_h.bcon1, MHD_h.bcon2 = interp_face_to_cell(grid, MHD_h.fb1, MHD_h.fb2)
+        MHD_h.bcon1, MHD_h.bcon2 = interp_face_to_cell(g, MHD_h.fb1, MHD_h.fb2)
         
         #Primitive variables recovery after predictor stage
         _prim_recovery(MHD_h, Ngc, eos)
             
         #2nd Runge-Kutta stage - corrector
         ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
-            flux_calc_MHD_CT(grid, MHD_h, par, eos)
+            flux_calc_MHD_CT(g, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         _rk_stage(MHD, MHD_h, MHD, \
            ResM, ResV1, ResV2, ResV3, ResE, \
            ResB1, ResB2, ResB3, dt, 0.5, 0.5, -0.5)
         
-    if (par.RK_order == 'RK3'):
+    elif (par.RK_order == 'RK3'):
         
         #interpolation from staggererd to cell-centered fields
-        MHD_h.bcon1, MHD_h.bcon2 = interp_face_to_cell(grid, MHD_h.fb1, MHD_h.fb2)
+        MHD_h.bcon1, MHD_h.bcon2 = interp_face_to_cell(g, MHD_h.fb1, MHD_h.fb2)
         
         #Primitive variables recovery after predictor stage
         _prim_recovery(MHD_h, Ngc, eos)
             
         #2nd Runge-Kutta stage
         ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
-            flux_calc_MHD_CT(grid, MHD_h, par, eos)
+            flux_calc_MHD_CT(g, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy
@@ -291,42 +300,49 @@ def oneStep_MHD_RK_CT(grid, MHD, eos, par, dt):
            ResB1, ResB2, ResB3, dt, 1.0/4.0, 3.0/4.0, -1.0/4.0)
         
         #interpolation from staggererd to cell-centered fields
-        MHD_h.bcon1, MHD_h.bcon2 = interp_face_to_cell(grid, MHD_h.fb1, MHD_h.fb2)
+        MHD_h.bcon1, MHD_h.bcon2 = interp_face_to_cell(g, MHD_h.fb1, MHD_h.fb2)
         
         # Primitive variables recovery after the second stage
         _prim_recovery(MHD_h, Ngc, eos) 
         
         #3rd Runge-Kutta stage
         ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3 = \
-            flux_calc_MHD_CT(grid, MHD_h, par, eos)
+            flux_calc_MHD_CT(g, MHD_h, par, eos)
         
         # Conservative update - 2nd RK iteration
         # update mass, 3 components of momentum, total energy and 3 comps of magnetic field
         _rk_stage(MHD, MHD_h, MHD, \
            ResM, ResV1, ResV2, ResV3, ResE, \
            ResB1, ResB2, ResB3, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
+            
+    else:
+        
+        raise ValueError(
+            f"Invalid RK_order: '{par.RK_order}'. "
+            f"Expected one of ['RK1', 'RK2', 'RK3'].")
         
     #interpolation from staggererd to cell-centered fields
-    MHD.bcon1, MHD.bcon2 = interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
+    MHD.bcon1, MHD.bcon2 = interp_face_to_cell(g, MHD.fb1, MHD.fb2)
     
     # Primitive variables recovery at the end of the timestep
     #density, 3 components of velocity and pressure are evaluated 
     _prim_recovery(MHD, Ngc, eos)
     
     #evaluate the divergence 
-    MHD.divB = div_face_vector(grid, MHD.fb1, MHD.fb2)
+    MHD.divB = div_face_vector(g, MHD.fb1, MHD.fb2)
     
     #return the updated class object of the fluid state on the next timestep 
     return MHD
 
 
-def flux_calc_MHD_CT(grid, MHD, par, eos):
+
+def flux_calc_MHD_CT(g, MHD, par, eos):
     """
     Compute residuals (flux divergences + sources) of conservative MHD vars.
 
     Parameters
     ----------
-    grid : object
+    g   : object
         Computational grid object.
     MHD : object
         Fluid state (primitive + conservative variables).
@@ -369,107 +385,104 @@ def flux_calc_MHD_CT(grid, MHD, par, eos):
     - Returns residuals in conservative form, ready for RK update.
     """
     #fill the ghost cells
-    MHD = boundCond_MHD(grid, par.BC, MHD)
+    MHD = boundCond_MHD(g, par.BC, par.BCm, MHD)
     
     #make copies of ghost cell and real cell numbers to simplify indexing 
-    Ngc = grid.Ngc 
-    Nx1 = grid.Nx1
-    Nx2 = grid.Nx2
-    Nx1r = grid.Nx1r
-    Nx2r = grid.Nx2r
+    Ngc  = g.Ngc 
+    Nx1  = g.Nx1
+    Nx2  = g.Nx2
+    Nx1r = g.Nx1r
+    Nx2r = g.Nx2r
     
     #nulifying the divergence of the magnetic field 
     MHD.divB[:,:] = 0.0
     
     #residuals initialization (only for real cells)
-    ResM =  np.zeros((Nx1, Nx2))
+    ResM  = np.zeros((Nx1, Nx2))
     ResV1 = np.zeros((Nx1, Nx2))
     ResV2 = np.zeros((Nx1, Nx2))
     ResV3 = np.zeros((Nx1, Nx2))
-    ResE =  np.zeros((Nx1, Nx2))
+    ResE  = np.zeros((Nx1, Nx2))
     ResB1 = np.zeros((Nx1 + 1, Nx2))
     ResB2 = np.zeros((Nx1, Nx2 + 1))
     ResB3 = np.zeros((Nx1, Nx2))
     
-    fluxB21 = np.zeros_like((grid.fx1))
-    fluxB12 = np.zeros_like((grid.fx2))
+    fluxB21 = np.zeros_like((g.fx1))
+    fluxB12 = np.zeros_like((g.fx2))
     #electric field
     Efld3 = np.zeros((Nx1 + 1, Nx2 + 1))
     
     #fluxes in 1-dimension 
-    if (grid.Nx1 > 1): #check if we even need to consider this dimension
+    if (g.Nx1 > 1): #check if we even need to consider this dimension
         
         #primitive variables reconstruction in 1-dim
         #here we reconstruct density, 3 components of velocity and pressure
-        dens_rec_L, dens_rec_R = VarReconstruct(MHD.dens, grid, par.rec_type, 1)
-        vel1_rec_L, vel1_rec_R = VarReconstruct(MHD.vel1, grid, par.rec_type, 1)
-        vel2_rec_L, vel2_rec_R = VarReconstruct(MHD.vel2, grid, par.rec_type, 1)
-        vel3_rec_L, vel3_rec_R = VarReconstruct(MHD.vel3, grid, par.rec_type, 1)
-        pres_rec_L, pres_rec_R = VarReconstruct(MHD.pres, grid, par.rec_type, 1)
-        bfi2_rec_L, bfi2_rec_R = VarReconstruct(MHD.bfi2, grid, par.rec_type, 1)
-        bfi3_rec_L, bfi3_rec_R = VarReconstruct(MHD.bfi3, grid, par.rec_type, 1)
+        dens_rec_L, dens_rec_R = VarReconstruct(MHD.dens, g, par.rec_type, 1)
+        vel1_rec_L, vel1_rec_R = VarReconstruct(MHD.vel1, g, par.rec_type, 1)
+        vel2_rec_L, vel2_rec_R = VarReconstruct(MHD.vel2, g, par.rec_type, 1)
+        vel3_rec_L, vel3_rec_R = VarReconstruct(MHD.vel3, g, par.rec_type, 1)
+        pres_rec_L, pres_rec_R = VarReconstruct(MHD.pres, g, par.rec_type, 1)
+        bfi2_rec_L, bfi2_rec_R = VarReconstruct(MHD.bfi2, g, par.rec_type, 1)
+        bfi3_rec_L, bfi3_rec_R = VarReconstruct(MHD.bfi3, g, par.rec_type, 1)
         
         #fluxes calculation with approximate Riemann solver (see flux_type) in 1-dim
         Fmass, Fmom1, Fmom2, Fmom3, Fetot, \
         Fbfi1, fluxB21[Ngc:Nx1r+1,Ngc:-Ngc], Fbfi3 = \
-            Riemann_flux_nr_MHD(dens_rec_L, dens_rec_R, \
+            Riemann_MHD(dens_rec_L, dens_rec_R, \
             vel1_rec_L, vel1_rec_R, vel2_rec_L, vel2_rec_R, vel3_rec_L, vel3_rec_R, \
             pres_rec_L, pres_rec_R, \
             MHD.fb1[:,:], MHD.fb1[:,:], bfi2_rec_L, bfi2_rec_R, bfi3_rec_L, bfi3_rec_R, \
-            eos, par.flux_type, 1)
+            eos, par.solver_type, 1)
         
         #residuals calculation for mass, 3 components of momentum, 
         #total energy and 3 component of magnetic field in 1-dim
-        ResM =  ( Fmass[1:,:]*grid.fS1[1:,:]  - Fmass[:-1,:]*grid.fS1[:-1,:]  ) / grid.cVol[:,:]
-        ResV1 = ( Fmom1[1:,:]*grid.fS1[1:,:]  - Fmom1[:-1,:]*grid.fS1[:-1,:]  ) / grid.cVol[:,:]
-        ResV2 = ( Fmom2[1:,:]*grid.fS1[1:,:]  - Fmom2[:-1,:]*grid.fS1[:-1,:]  ) / grid.cVol[:,:]
-        ResV3 = ( Fmom3[1:,:]*grid.fS1[1:,:]  - Fmom3[:-1,:]*grid.fS1[:-1,:]  ) / grid.cVol[:,:]
-        ResE =  ( Fetot[1:,:]*grid.fS1[1:,:]  - Fetot[:-1,:]*grid.fS1[:-1,:]  ) / grid.cVol[:,:]
-        ResB3 = ( Fbfi3[1:,:]*grid.edg2[1:,:] - Fbfi3[:-1,:]*grid.edg2[:-1,:] ) / grid.fS3[:,:]
+        ResM =  ( Fmass[1:,:]*g.fS1[1:,:]  - Fmass[:-1,:]*g.fS1[:-1,:]  ) / g.cVol[:,:]
+        ResV1 = ( Fmom1[1:,:]*g.fS1[1:,:]  - Fmom1[:-1,:]*g.fS1[:-1,:]  ) / g.cVol[:,:]
+        ResV2 = ( Fmom2[1:,:]*g.fS1[1:,:]  - Fmom2[:-1,:]*g.fS1[:-1,:]  ) / g.cVol[:,:]
+        ResV3 = ( Fmom3[1:,:]*g.fS1[1:,:]  - Fmom3[:-1,:]*g.fS1[:-1,:]  ) / g.cVol[:,:]
+        ResE =  ( Fetot[1:,:]*g.fS1[1:,:]  - Fetot[:-1,:]*g.fS1[:-1,:]  ) / g.cVol[:,:]
+        ResB3 = ( Fbfi3[1:,:]*g.edg2[1:,:] - Fbfi3[:-1,:]*g.edg2[:-1,:] ) / g.fS3[:,:]
         
     #fluxes in 2-dimension
-    if (grid.Nx2 > 1): #check if we even need to consider this dimension
+    if (g.Nx2 > 1): #check if we even need to consider this dimension
         
         #primitive variables reconstruction in 2-dim
         #here we reconstruct density, 3 components of velocity and pressure
-        dens_rec_L, dens_rec_R = VarReconstruct(MHD.dens, grid, par.rec_type, 2)
-        pres_rec_L, pres_rec_R = VarReconstruct(MHD.pres, grid, par.rec_type, 2)
-        vel1_rec_L, vel1_rec_R = VarReconstruct(MHD.vel1, grid, par.rec_type, 2)
-        vel2_rec_L, vel2_rec_R = VarReconstruct(MHD.vel2, grid, par.rec_type, 2)
-        vel3_rec_L, vel3_rec_R = VarReconstruct(MHD.vel3, grid, par.rec_type, 2)
-        bfi1_rec_L, bfi1_rec_R = VarReconstruct(MHD.bfi1, grid, par.rec_type, 2)
-        bfi3_rec_L, bfi3_rec_R = VarReconstruct(MHD.bfi3, grid, par.rec_type, 2)
+        dens_rec_L, dens_rec_R = VarReconstruct(MHD.dens, g, par.rec_type, 2)
+        pres_rec_L, pres_rec_R = VarReconstruct(MHD.pres, g, par.rec_type, 2)
+        vel1_rec_L, vel1_rec_R = VarReconstruct(MHD.vel1, g, par.rec_type, 2)
+        vel2_rec_L, vel2_rec_R = VarReconstruct(MHD.vel2, g, par.rec_type, 2)
+        vel3_rec_L, vel3_rec_R = VarReconstruct(MHD.vel3, g, par.rec_type, 2)
+        bfi1_rec_L, bfi1_rec_R = VarReconstruct(MHD.bfi1, g, par.rec_type, 2)
+        bfi3_rec_L, bfi3_rec_R = VarReconstruct(MHD.bfi3, g, par.rec_type, 2)
      
         #fluxes calculation with approximate Riemann solver (see flux_type) in 2-dim
         Fmass, Fmom1, Fmom2, Fmom3, Fetot, \
         fluxB12[Ngc:-Ngc,Ngc:Nx2r+1], Fbfi2, Fbfi3 = \
-            Riemann_flux_nr_MHD(dens_rec_L, dens_rec_R, \
+            Riemann_MHD(dens_rec_L, dens_rec_R, \
             vel1_rec_L, vel1_rec_R, vel2_rec_L, vel2_rec_R, vel3_rec_L, vel3_rec_R, \
             pres_rec_L, pres_rec_R, \
             bfi1_rec_L, bfi1_rec_R, MHD.fb2[:,:], MHD.fb2[:,:], bfi3_rec_L, bfi3_rec_R, \
-            eos, par.flux_type, 2)
+            eos, par.solver_type, 2)
         
         #residuals calculation for mass, 3 components of momentum, 
         #total energy and 3 components of magnetic field in 2-dim
         #here we add the fluxes differences to the residuals after 1-dim calculation
-        ResM +=  ( Fmass[:,1:]*grid.fS2[:,1:]  - Fmass[:,:-1]*grid.fS2[:,:-1]  ) / grid.cVol[:,:]
-        ResV1 += ( Fmom1[:,1:]*grid.fS2[:,1:]  - Fmom1[:,:-1]*grid.fS2[:,:-1]  ) / grid.cVol[:,:]
-        ResV2 += ( Fmom2[:,1:]*grid.fS2[:,1:]  - Fmom2[:,:-1]*grid.fS2[:,:-1]  ) / grid.cVol[:,:]
-        ResV3 += ( Fmom3[:,1:]*grid.fS2[:,1:]  - Fmom3[:,:-1]*grid.fS2[:,:-1]  ) / grid.cVol[:,:]
-        ResE +=  ( Fetot[:,1:]*grid.fS2[:,1:]  - Fetot[:,:-1]*grid.fS2[:,:-1]  ) / grid.cVol[:,:]
-        ResB3 += ( Fbfi3[:,1:]*grid.edg1[:,1:] - Fbfi3[:,:-1]*grid.edg1[:,:-1] ) / grid.fS3[:,:]
+        ResM +=  ( Fmass[:,1:]*g.fS2[:,1:]  - Fmass[:,:-1]*g.fS2[:,:-1]  ) / g.cVol[:,:]
+        ResV1 += ( Fmom1[:,1:]*g.fS2[:,1:]  - Fmom1[:,:-1]*g.fS2[:,:-1]  ) / g.cVol[:,:]
+        ResV2 += ( Fmom2[:,1:]*g.fS2[:,1:]  - Fmom2[:,:-1]*g.fS2[:,:-1]  ) / g.cVol[:,:]
+        ResV3 += ( Fmom3[:,1:]*g.fS2[:,1:]  - Fmom3[:,:-1]*g.fS2[:,:-1]  ) / g.cVol[:,:]
+        ResE +=  ( Fetot[:,1:]*g.fS2[:,1:]  - Fetot[:,:-1]*g.fS2[:,:-1]  ) / g.cVol[:,:]
+        ResB3 += ( Fbfi3[:,1:]*g.edg1[:,1:] - Fbfi3[:,:-1]*g.edg1[:,:-1] ) / g.fS3[:,:]
      
     # ----------------------------------------------------------------
     # CT: electric field at cell corners  E_3 = -(v x B)_3
     # ----------------------------------------------------------------
     #apply ghost cells for electric field 
-    fluxB21, fluxB12 = boundCond_electric_field(grid, fluxB21, fluxB12, par.BC)
+    fluxB21, fluxB12 = boundCond_electric_field(g, fluxB21, fluxB12, par.BCm)
     
     #arithemtic average in 2D and 1D 
-    if ((grid.Nx1 > 1) & (grid.Nx2 > 1)):
-        ave = 4.0
-    else: 
-        ave = 2.0
+    ave = 4.0 if ((g.Nx1 > 1) & (g.Nx2 > 1)) else 2.0
     
     #average electric field on the edges
     Efld3 = (
@@ -478,11 +491,11 @@ def flux_calc_MHD_CT(grid, MHD, par, eos):
         )
        
     #residual update (Stokes theorem)
-    ResB1 = (Efld3[:,1:]*grid.edg3[:,1:]  - Efld3[:,:-1]*grid.edg3[:,:-1])/(grid.fS1[:,:]+1e-30)
-    ResB2 = -(Efld3[1:,:]*grid.edg3[1:,:] - Efld3[:-1,:]*grid.edg3[:-1,:])/(grid.fS2[:,:]+1e-30)
+    ResB1 = (Efld3[:,1:]*g.edg3[:,1:]  - Efld3[:,:-1]*g.edg3[:,:-1])/(g.fS1[:,:]+1e-30)
+    ResB2 = -(Efld3[1:,:]*g.edg3[1:,:] - Efld3[:-1,:]*g.edg3[:-1,:])/(g.fS2[:,:]+1e-30)
       
     #curvature source terms
-    STv1, STv2, STv3 = MHD_curv_sources(grid, MHD)
+    STv1, STv2, STv3 = curv_source_MHD_CT(g, MHD)
       
     #finally, here we add the external force and curvature source terms
     #we add forces in momentum res, while in energy we add Power = Force*Vel 
@@ -491,13 +504,14 @@ def flux_calc_MHD_CT(grid, MHD, par, eos):
     ResV3 += - STv3
     ResE += - MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * \
         (MHD.F1 * MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] + \
-         MHD.F2 * MHD.vel2[Ngc:-Ngc, Ngc:-Ngc])        
-        
+         MHD.F2 * MHD.vel2[Ngc:-Ngc, Ngc:-Ngc])
+                  
     #return the residuals for mass, 3 components of momentum, total energy and magnetic field
     return ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3
 
 
-def MHD_curv_sources(grid, MHD):
+
+def curv_source_MHD_CT(g, MHD):
     """
     Compute geometric source terms for the MHD equations 
     in curvilinear coordinates (finite-volume formulation for CT MHD).
@@ -510,7 +524,7 @@ def MHD_curv_sources(grid, MHD):
 
     Parameters
     ----------
-    grid : object
+    g   : object
         Grid object
     MHD : object
         Fluid state containing:
@@ -528,39 +542,42 @@ def MHD_curv_sources(grid, MHD):
     -----
     - Arrays are allocated inside the real grid (excluding ghost cells).
     """
-    Ngc = grid.Ngc 
-    STv1 = np.zeros((grid.Nx1, grid.Nx2), dtype=np.double)
-    STv2 = np.zeros((grid.Nx1, grid.Nx2), dtype=np.double)
-    STv3 = np.zeros((grid.Nx1, grid.Nx2), dtype=np.double)
+    Ngc = g.Ngc 
+    STv1 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    STv2 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
+    STv3 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     
-    if (grid.geom != 'cart'):
-        r = grid.cx1[Ngc:-Ngc,Ngc:-Ngc]
-        dens = MHD.dens[Ngc:-Ngc,Ngc:-Ngc]
-        pres = MHD.pres[Ngc:-Ngc,Ngc:-Ngc]
-        v1 = MHD.vel1[Ngc:-Ngc,Ngc:-Ngc]
-        v2 = MHD.vel2[Ngc:-Ngc,Ngc:-Ngc]
-        v3 = MHD.vel3[Ngc:-Ngc,Ngc:-Ngc]
-        b1 = MHD.bfi1[Ngc:-Ngc,Ngc:-Ngc]
-        b2 = MHD.bfi2[Ngc:-Ngc,Ngc:-Ngc]
-        b3 = MHD.bfi3[Ngc:-Ngc,Ngc:-Ngc]
+    # source-free; nothing further to do
+    if g.geom == 'cart':
+        return STv1, STv2, STv3
+    
+    r    = g.cx1[Ngc:-Ngc,Ngc:-Ngc]
+    dens = MHD.dens[Ngc:-Ngc,Ngc:-Ngc]
+    pres = MHD.pres[Ngc:-Ngc,Ngc:-Ngc]
+    v1   = MHD.vel1[Ngc:-Ngc,Ngc:-Ngc]
+    v2   = MHD.vel2[Ngc:-Ngc,Ngc:-Ngc]
+    v3   = MHD.vel3[Ngc:-Ngc,Ngc:-Ngc]
+    b1   = MHD.bfi1[Ngc:-Ngc,Ngc:-Ngc]
+    b2   = MHD.bfi2[Ngc:-Ngc,Ngc:-Ngc]
+    b3   = MHD.bfi3[Ngc:-Ngc,Ngc:-Ngc]
     
     #cylindrical (R,Z) geometry
-    if (grid.geom == 'cyl'):
+    if (g.geom == 'cyl'):
         STv1 = (pres + (b1**2 + b2**2 - b3**2) / 2.0 + dens * v3**2) / r
         STv3 = (b3 * b1 - dens * v3 * v1) / r
       
     #polar (R,phi) geometry
-    if (grid.geom == 'pol'):
+    if (g.geom == 'pol'):
         STv1 = (pres + (b1**2 + b3**2 - b2**2) / 2.0 + dens * v2**2) / r
         STv2 = (b2 * b1 - dens * v2 * v1) / r
     
     #spherical polar (r,theta) geometry
-    if (grid.geom == 'sph'):
+    if (g.geom == 'sph'):
         
         #cotangent of theta
-        if grid.Nx2 > 1: 
-            sin_theta = np.sin(grid.fx2[Ngc:grid.Nx1+Ngc, Ngc:grid.Nx2+Ngc+1])
-            cos_theta = np.cos(grid.fx2[Ngc:grid.Nx1+Ngc, Ngc:grid.Nx2+Ngc+1])
+        if g.Nx2 > 1: 
+            sin_theta = np.sin(g.fx2[Ngc:g.Nx1+Ngc, Ngc:g.Nx2+Ngc+1])
+            cos_theta = np.cos(g.fx2[Ngc:g.Nx1+Ngc, Ngc:g.Nx2+Ngc+1])
             cot = (sin_theta[:,1:]-sin_theta[:,:-1]) / \
                 (cos_theta[:,:-1]-cos_theta[:,1:])
         else:
@@ -574,7 +591,8 @@ def MHD_curv_sources(grid, MHD):
     return STv1, STv2, STv3
 
 
-def boundCond_electric_field(grid, Efld3x1, Efld3x2, BC):
+
+def boundCond_electric_field(g, Efld3x1, Efld3x2, BC):
     """
     Apply boundary conditions to face-centered third component of the electric field
     (for instance Efld3x1 corresponds to Ez at faces along X-coordinate,
@@ -590,7 +608,7 @@ def boundCond_electric_field(grid, Efld3x1, Efld3x2, BC):
 
     Parameters
     ----------
-    grid : object
+    g : object
         Grid object containing domain information: Nx1, Nx2, Ngc.
     Efld3x1 : np.ndarray
         x3-component of electric field on faces along x1, including ghost cells.
@@ -609,39 +627,37 @@ def boundCond_electric_field(grid, Efld3x1, Efld3x2, BC):
     Efld3x1, Efld3x2 : np.ndarray
         Electric field arrays with updated ghost cells along x1 and x2.
     """
-    Nx1 = grid.Nx1
-    Nx2 = grid.Nx2
-    Ngc = grid.Ngc
+    Nx1 = g.Nx1
+    Nx2 = g.Nx2
+    Ngc = g.Ngc
     
     for i in range(Ngc):
-        # inner boundary
+        # inner x2 boundary (acts on Efld3x1 along x1 direction)
         if BC[1] == 'free':
             Efld3x1[:, i] = Efld3x1[:, 2 * Ngc - 1 - i]
-        elif BC[1] == 'wall':
+        elif BC[1] in ('wall', 'axis'):
             Efld3x1[:, i] = -Efld3x1[:, 2 * Ngc - 1 - i]
         elif BC[1] == 'peri':
             Efld3x1[:, i] = Efld3x1[:, Nx2 + i]
         
-        # outer boundary
+        # outer x2 boundary (acts on Efld3x1 along x1 direction)
         if BC[3] == 'free':
             Efld3x1[:, Nx2 + Ngc + i] = Efld3x1[:, Nx2 + Ngc - 1 - i]
-        elif BC[3] == 'wall':
-            Efld3x1[:, Nx2 + Ngc + i] = Efld3x1[:, Nx2 + Ngc - 1 - i]
+        elif BC[3] in ('wall', 'axis'):
+            Efld3x1[:, Nx2 + Ngc + i] = -Efld3x1[:, Nx2 + Ngc - 1 - i]
         elif BC[3] == 'peri':
             Efld3x1[:, Nx2 + Ngc + i] = Efld3x1[:, Ngc + i]
     
     for i in range(Ngc):
-        # inner boundary
+        # inner x1 boundary (acts on Efld3x2 along x1 direction)
         if BC[0] == 'free':
             Efld3x2[i, :] = Efld3x2[2 * Ngc - 1 - i, :]
-        elif BC[0] == 'wall':
+        elif BC[0] in ('wall', 'axis'):
             Efld3x2[i, :] = -Efld3x2[2 * Ngc - 1 - i, :]
         elif BC[0] == 'peri':
             Efld3x2[i, :] = Efld3x2[Nx1 + i, :]
-        elif BC[0] == 'axis':
-            Efld3x2[i, :] = -Efld3x2[2 * Ngc - 1 - i, :]
         
-        # outer boundary
+        # outer x1 boundary (acts on Efld3x2 along x1 direction)
         if BC[2] == 'free':
             Efld3x2[Nx1 + Ngc + i, :] = Efld3x2[Nx1 + Ngc - 1 - i, :]
         elif BC[2] == 'wall':
