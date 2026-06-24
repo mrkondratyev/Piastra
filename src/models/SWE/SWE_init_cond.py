@@ -88,9 +88,8 @@ def IC_SWE_user_defined(grid, state, par):
 
 
 # ============================================================================
-# Dam break
+#   1D problems
 # ============================================================================
-
 def IC_SWE1D_dam(grid, state, par):
     """
     1D dam break problem.
@@ -119,10 +118,76 @@ def IC_SWE1D_dam(grid, state, par):
     return grid, state, par, None
 
 
-# ============================================================================
-# Circular dam break (radially symmetric 2D Riemann problem)
-# ============================================================================
 
+def IC_SWE1D_bump(grid, state, par):
+    """
+    Steady (asymptotic) supercritical flow over a smooth bump.
+
+    A subcritical inflow on the left enters a channel containing a
+    smooth Gaussian bump in the bed, accelerates over the bump to
+    supercritical, and forms a stationary hydraulic jump downstream
+    where the flow returns to subcritical. This is the SWE analogue
+    of the de Laval nozzle / shock-in-divergent-section problem.
+
+    Bathymetry:
+        b(x₁, x₂) = b_max exp(-((x₁-x_b)/σ_b)²)            (uniform in x₂)
+
+    Initial condition (will adjust to the steady transcritical state
+    as boundary conditions force the solution):
+        h + b = H₀     (lake at rest perturbed by bump)
+        v₁    = q / h  (uniform discharge)
+        v₂    = 0
+
+    Choose Froude number well above 1 just downstream of the bump
+    crest so a jump forms.  Specifically:
+        H₀ = 2.0,   b_max = 0.2,   q = 4.42  (gives Fr ≈ 1 at crest)
+
+    Note on well-balancing: this test will reveal whether the SWE
+    solver preserves "lake at rest" (h + b = const, v = 0) over a
+    non-trivial bathymetry. A naive non-well-balanced scheme produces
+    spurious waves even when the analytical solution is stationary
+    --- a useful warning to the user.
+
+    Domain: [0, 25] × [0, 5], inflow on left (free), outflow on right.
+    Reference: Vázquez-Cendón, J. Comput. Phys. 148, 497 (1999).
+    """
+    print("SWE -- transcritical flow over a bump")
+
+    x1ini, x1fin = 0.0, 25.0; x2ini, x2fin = 0.0, 5.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+
+    par.timenow = 0.0; par.timefin = 12.0     
+    state.g_ff      = 9.81
+    state.f_c[:, :] = 0.0
+
+    # ─── Bathymetry: smooth Gaussian bump centred at x_b ──────────────
+    x_b   = 10.0
+    sig_b =  2.0
+    b_max =  0.2
+
+    state.b[:, :] = b_max * np.exp(-((grid.cx1 - x_b) / sig_b)**2)
+
+    # ─── Bathymetry gradients (geometry-aware central differences) ────
+    state.b_x[:, :], state.b_y[:, :] = _gradient_full(grid, state.b)
+
+    # ─── Initial state: lake at rest perturbed by bump + uniform flow ─
+    # Total free-surface elevation H₀ above z = 0
+    H0 = 2.0
+    q  = 4.42      # discharge per unit width (m²/s); chosen for Fr_crest ≈ 1
+
+    state.h[:, :]    = np.maximum(H0 - state.b, 0.1)   # avoid dry cells
+    state.vel1[:, :] = q / state.h
+    state.vel2[:, :] = 0.0
+    
+    par.BC[:]   = 'free'
+
+    return grid, state, par, None
+
+
+
+# ============================================================================
+#   2D problems
+# ============================================================================
 def IC_SWE2D_dam(grid, state, par):
     """
     Circular dam break — radially symmetric 2D Riemann-like problem.
@@ -174,9 +239,6 @@ def IC_SWE2D_dam(grid, state, par):
     return grid, state, par, None
 
 
-# ============================================================================
-# Bathtub (closed basin with gravity waves)
-# ============================================================================
 
 def IC_SWE2D_bathtub(grid, state, par):
     """
@@ -214,10 +276,6 @@ def IC_SWE2D_bathtub(grid, state, par):
 
 
 
-# ============================================================================
-# Cylindrical explosion (SWE blast wave)
-# ============================================================================
-
 def IC_SWE2D_expl(grid, state, par):
     """
     Cylindrical SWE explosion.
@@ -251,10 +309,6 @@ def IC_SWE2D_expl(grid, state, par):
     return grid, state, par, None
 
 
-
-# ============================================================================
-# Tsunami propagation
-# ============================================================================
 
 def IC_SWE2D_tsunami(grid, state, par):
     """
@@ -309,9 +363,6 @@ def IC_SWE2D_tsunami(grid, state, par):
     return grid, state, par, None
 
 
-# ============================================================================
-# Geostrophic ocean flow
-# ============================================================================
 
 def IC_SWE2D_ocean(grid, state, par):
     """
@@ -381,9 +432,6 @@ def IC_SWE2D_ocean(grid, state, par):
     return grid, state, par, None
 
 
-# ============================================================================
-# Geostrophic atmospheric flow
-# ============================================================================
 
 def IC_SWE2D_atmo(grid, state, par):
     """
@@ -457,9 +505,6 @@ def IC_SWE2D_atmo(grid, state, par):
     return grid, state, par, None
 
 
-# ============================================================================
-# Barotropic instability of a Bickley jet
-# ============================================================================
 
 def IC_SWE2D_bickley(grid, state, par):
     """
@@ -537,9 +582,7 @@ def IC_SWE2D_bickley(grid, state, par):
     return grid, state, par, None
 
 
-# ============================================================================
-# Shallow-water Kelvin-Helmholtz instability
-# ============================================================================
+
 def IC_SWE2D_KH(grid, state, par):
     """
     Shallow-water analogue of the Kelvin-Helmholtz instability.
@@ -606,73 +649,6 @@ def IC_SWE2D_KH(grid, state, par):
 
     return grid, state, par, None
 
-
-# ============================================================================
-# Flow over a bump (transcritical with hydraulic jump)
-# ============================================================================
-def IC_SWE1D_bump(grid, state, par):
-    """
-    Steady (asymptotic) supercritical flow over a smooth bump.
-
-    A subcritical inflow on the left enters a channel containing a
-    smooth Gaussian bump in the bed, accelerates over the bump to
-    supercritical, and forms a stationary hydraulic jump downstream
-    where the flow returns to subcritical. This is the SWE analogue
-    of the de Laval nozzle / shock-in-divergent-section problem.
-
-    Bathymetry:
-        b(x₁, x₂) = b_max exp(-((x₁-x_b)/σ_b)²)            (uniform in x₂)
-
-    Initial condition (will adjust to the steady transcritical state
-    as boundary conditions force the solution):
-        h + b = H₀     (lake at rest perturbed by bump)
-        v₁    = q / h  (uniform discharge)
-        v₂    = 0
-
-    Choose Froude number well above 1 just downstream of the bump
-    crest so a jump forms.  Specifically:
-        H₀ = 2.0,   b_max = 0.2,   q = 4.42  (gives Fr ≈ 1 at crest)
-
-    Note on well-balancing: this test will reveal whether the SWE
-    solver preserves "lake at rest" (h + b = const, v = 0) over a
-    non-trivial bathymetry. A naive non-well-balanced scheme produces
-    spurious waves even when the analytical solution is stationary
-    --- a useful warning to the user.
-
-    Domain: [0, 25] × [0, 5], inflow on left (free), outflow on right.
-    Reference: Vázquez-Cendón, J. Comput. Phys. 148, 497 (1999).
-    """
-    print("SWE -- transcritical flow over a bump")
-
-    x1ini, x1fin = 0.0, 25.0; x2ini, x2fin = 0.0, 5.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 12.0     
-    state.g_ff      = 9.81
-    state.f_c[:, :] = 0.0
-
-    # ─── Bathymetry: smooth Gaussian bump centred at x_b ──────────────
-    x_b   = 10.0
-    sig_b =  2.0
-    b_max =  0.2
-
-    state.b[:, :] = b_max * np.exp(-((grid.cx1 - x_b) / sig_b)**2)
-
-    # ─── Bathymetry gradients (geometry-aware central differences) ────
-    state.b_x[:, :], state.b_y[:, :] = _gradient_full(grid, state.b)
-
-    # ─── Initial state: lake at rest perturbed by bump + uniform flow ─
-    # Total free-surface elevation H₀ above z = 0
-    H0 = 2.0
-    q  = 4.42      # discharge per unit width (m²/s); chosen for Fr_crest ≈ 1
-
-    state.h[:, :]    = np.maximum(H0 - state.b, 0.1)   # avoid dry cells
-    state.vel1[:, :] = q / state.h
-    state.vel2[:, :] = 0.0
-    
-    par.BC[:]   = 'free'
-
-    return grid, state, par, None
 
 
 # ============================================================================
