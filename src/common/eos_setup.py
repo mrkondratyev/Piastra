@@ -27,10 +27,13 @@ class EOSdata:
     ----------
     GAMMA : float
         Adiabatic index.
+    ideal : integer
+        Ideal EOS flag.
     """
 
     def __init__(self, GAMMA):
         self.GAMMA = GAMMA
+        self.ideal = 1 # flag to turn off some solvers 
 
 
     def sound_speed_nr(self, dens, pres):
@@ -51,7 +54,7 @@ class EOSdata:
         cs : ndarray
             Sound speed.
         """
-        return np.sqrt(self.GAMMA * pres / (dens + 1e-30))
+        return np.sqrt(self.GAMMA * pres / dens)
     
     
     # --- Internal-energy density from pressure ---
@@ -83,8 +86,8 @@ class EOSdata:
         -------
         cs : ndarray   –  sound speed  (0 < cs < 1)
         """
-        enth = 1.0 + pres / (dens + 1e-16) * self.GAMMA / (self.GAMMA - 1.0)
-        cs2  = self.GAMMA * pres / (dens * enth + 1e-16)
+        enth = 1.0 + pres / dens * self.GAMMA / (self.GAMMA - 1.0)
+        cs2  = self.GAMMA * pres / (dens * enth)
         return np.sqrt(np.clip(cs2, 0.0, 1.0 - 1e-12))
     
     
@@ -103,7 +106,7 @@ class EOSdata:
         -------
         cs : ndarray   –  enthalpy
         """
-        enth = 1.0 + pres / (dens + 1e-16) * self.GAMMA / (self.GAMMA - 1.0)
+        enth = 1.0 + pres / dens * self.GAMMA / (self.GAMMA - 1.0)
         return enth 
     
     
