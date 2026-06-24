@@ -12,7 +12,9 @@ Date: June 14, 2024
 import numpy as np
 
 
-
+# ============================================================================
+#   User-defined template
+# ============================================================================
 def IC_adv_user_defined(grid, adv, par):
     """
     Initialize a linear advection problem according to initial conditions introduced by user.
@@ -60,6 +62,9 @@ def IC_adv_user_defined(grid, adv, par):
 
 
 
+# ============================================================================
+#   1D problems
+# ============================================================================
 def IC_adv1D_smooth(grid, adv, par):
     """
     Initialize a 1D linear advection test problem with a smooth profile
@@ -162,6 +167,9 @@ def IC_adv1D_disc(grid, adv, par):
 
 
 
+# ============================================================================
+#   2D problems
+# ============================================================================
 def IC_adv2D_smooth(grid, adv, par):
     """
     Initialize a 2D linear advection test problem.
