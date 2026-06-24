@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-MHD_one_step_8wave.py
+MHD_step_8wave.py
 ===============================================================================
 
 2D Magnetohydrodynamics (MHD) Finite-volume Solver
@@ -19,26 +19,26 @@ Main Components
 - ``CFLcondition_MHD`` : compute timestep from CFL stability condition.
 - ``oneStep_MHD_RK_8wave`` : advance MHD state by one timestep (RK1/RK2/RK3).
 - ``flux_calc_MHD_8wave`` : compute residuals of conservative variables.
-- ``MHD_curv_sources`` : evaluate curvature source terms (e.g., cylindrical).
+- ``curv_source_MHD_8wave`` : evaluate curvature source terms.
 
 Features
 --------
-- Spatial accuracy via piecewise constant, linear, PPM, or WENO-type reconstructions.
-- Riemann solvers: Local Lax-Friedrichs (LLF), HLL, HLLD.
+- Spatial accuracy via piecewise constant, linear, PPM, MP5, or WENO-type reconstructions.
+- Riemann solvers: Local Lax-Friedrichs (LLF), HLL, HLLC, HLLD.
 - Temporal accuracy: TVD Runge-Kutta methods (1st, 2nd, or 3rd order).
 - Divergence of the magnetic field is treated via simple Powell's 8-wave approach.
-- Curvilinear support (currently cylindrical geometry implemented).
+- Curvilinear support.
 
 @author:
     mrkondratyev
 """
 
 from src.models.MHD.MHD_phys import (
-    prim2cons_nr_MHD,
+    prim2cons_MHD,
     _prim_recovery,
     max_wavespeed_MHD, 
     boundCond_MHD, 
-    Riemann_flux_nr_MHD)
+    Riemann_MHD)
 from src.grid.grid_misc import div_cell_vector 
 from src.common.high_order_rec import VarReconstruct 
 import numpy as np 
@@ -143,51 +143,42 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     -------
     dt : float
         Stable timestep satisfying CFL condition.
+        
+    Notes
+    -------
+    Lame coefficient hx2 is included in the CFL calculation 
+    in order to adjust the correct timestep for the simulations in the polar coordinates, 
+    e.g. dt ~ rdφ for the cylindrical polar geometry
     """
     Ngc = g.Ngc
     
+    dens = MHD.dens[Ngc:-Ngc, Ngc:-Ngc]
+    vel1 = MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]
+    vel2 = MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]
+    pres = MHD.pres[Ngc:-Ngc, Ngc:-Ngc]
+    B1   = MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc]
+    B2   = MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc]
+    B3   = MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc]
+    
     #sound speed calculation for whole domain
-    csound = eos.sound_speed_nr(MHD.dens[Ngc:-Ngc, Ngc:-Ngc], MHD.pres[Ngc:-Ngc, Ngc:-Ngc])
+    csound = eos.sound_speed_nr(dens, pres)
     
     #fast magnetosonic speed calculation for whole domain 
-    cfast = max_wavespeed_MHD(csound, \
-        MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc], \
-        MHD.dens[Ngc:-Ngc, Ngc:-Ngc])
+    cfast = max_wavespeed_MHD(csound, B1,B2,B3, dens)
     
     #FIRST APPROACH
-    #dt1 = np.min( g.dx1[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + cfast) )
-    #dt2 = np.min( g.dx2[Ngc:-Ngc, Ngc:-Ngc] / (1e-14 + np.abs(MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + cfast) )    
+    #dt1 = np.min( g.dx1[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(vel1) + cfast) )
+    #dt2 = np.min( g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc] / (np.abs(vel2) + cfast) )    
     #return  CFL * min(dt1, dt2)
     
     #SECOND APPROACH 
-    dt_inv = np.max((np.abs(MHD.vel1[Ngc:-Ngc, Ngc:-Ngc]) + cfast)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
-        (np.abs(MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) + cfast)/g.dx2[Ngc:-Ngc, Ngc:-Ngc])
+    dt_inv = np.max((np.abs(vel1) + cfast)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
+        (np.abs(vel2) + cfast)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
     return CFL/dt_inv
 
 
-"""
 
-in the function "oneStep_MHD_RK" we call all the key ingredients of our MHD simulations.
-the high order in space can be adjusted by rec_type = 'PCM' (1st order), 'PLM' (2nd order) or 'WENO' (3rd or 5th order CWENO or WENO5 methods, see reconstuction.py)
-the Riemann problem approximate solution can be switched bewteen Local Lax-Friedrichs (Rusanov) flux ('flux_type = 'LLF'), HLL flux ('HLL') or HLLC flux ('HLLC') 
-here we use multistage Total Variation Diminishing Runge-Kutta timestepping with "RK_order" = 'RK1', 'RK2' or 'RK3'. 
-input: GRID class object (grid), FLUIDSTATE class object (fluid) at time t, EOSdata class object (eos),
-timestep dt, "rec_type" -- type of reconstruction, "flux_type" -- Riemann problem solution approximation method and "RK_order" -- order of temporal integration
-output: FLUIDSTATE class object (fluid) at time t + dt
-
-For RK timestepping one can see (Shu and Osher (1988))
-
-for a given timestep dt and a primitive fluid state, we calculate conservative state and the residuals for them 
-if RK method is beyond the first order, we additionally introduce the intermediate conservative and primitive states
-on the predictor stage, we update the initial fluid state to the intermediate one on each stage, 
-and after the final stage, we update the fluid state itself, using the information from the intermediate stages 
-
-"""
-
-#this function provides one hydro time step
 def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
     """
     Advance the MHD state by one timestep using RK1, RK2, or RK3 schemes.
@@ -238,7 +229,7 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
     #conservative variables at the beginning of timestep
     (MHD.mass, MHD.mom1, MHD.mom2, MHD.mom3, MHD.etot,
      MHD.bcon1, MHD.bcon2, MHD.bcon3) = \
-        prim2cons_nr_MHD(
+        prim2cons_MHD(
             MHD.dens[Ngc:-Ngc, Ngc:-Ngc],
             MHD.vel1[Ngc:-Ngc, Ngc:-Ngc],
             MHD.vel2[Ngc:-Ngc, Ngc:-Ngc],
@@ -270,7 +261,7 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
     
     
     #second-order Runge-Kutta scheme
-    if (par.RK_order == 'RK2'):
+    elif (par.RK_order == 'RK2'):
         
         #Primitive variables recovery after predictor stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
@@ -285,7 +276,7 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
            ResM, ResV1, ResV2, ResV3, ResE, \
            ResB1, ResB2, ResB3, dt, 0.5, 0.5, -0.5)
         
-    if (par.RK_order == 'RK3'):
+    elif (par.RK_order == 'RK3'):
         
         #Primitive variables recovery after predictor stage
         _prim_recovery(MHD_h, Ngc, eos)
@@ -310,6 +301,12 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
         _rk_stage(MHD, MHD_h, MHD, \
            ResM, ResV1, ResV2, ResV3, ResE, \
            ResB1, ResB2, ResB3, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
+            
+    else:
+        
+        raise ValueError(
+            f"Invalid RK_order: '{par.RK_order}'. "
+            f"Expected one of ['RK1', 'RK2', 'RK3'].")
         
     # Primitive variables recovery at the end of the timestep
     _prim_recovery(MHD, Ngc, eos)
@@ -368,7 +365,7 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
     - Returns residuals in conservative form, ready for RK update.
     """
     #fill the ghost cells
-    MHD = boundCond_MHD(g, par.BC, MHD)
+    MHD = boundCond_MHD(g, par.BC, par.BCm, MHD, par.BC_fixed)
     
     #make copies of ghost cell and real cell numbers in each direction
     #to simplify indexing below 
@@ -406,11 +403,11 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
         #fluxes calculation with approximate Riemann solver (see flux_type) in 1-dim
         Fmass, Fmom1, Fmom2, Fmom3, Fetot, \
         Fbfi1, Fbfi2, Fbfi3 = \
-            Riemann_flux_nr_MHD(dens_rec_L, dens_rec_R, \
+            Riemann_MHD(dens_rec_L, dens_rec_R, \
             vel1_rec_L, vel1_rec_R, vel2_rec_L, vel2_rec_R, vel3_rec_L, vel3_rec_R, \
             pres_rec_L, pres_rec_R,\
             bfi1_rec_L, bfi1_rec_R, bfi2_rec_L, bfi2_rec_R, bfi3_rec_L, bfi3_rec_R, \
-            eos, par.flux_type, 1)
+            eos, par.solver_type, 1)
         
         #residuals calculation for mass, 3 components of momentum, 
         #total energy and normal components of magnetic field in 1-dim
@@ -443,11 +440,11 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
         #fluxes calculation with approximate Riemann solver (see flux_type) in 2-dim
         Fmass, Fmom1, Fmom2, Fmom3, Fetot, \
         Fbfi1, Fbfi2, Fbfi3 = \
-            Riemann_flux_nr_MHD(dens_rec_L, dens_rec_R, \
+            Riemann_MHD(dens_rec_L, dens_rec_R, \
             vel1_rec_L, vel1_rec_R, vel2_rec_L, vel2_rec_R, vel3_rec_L, vel3_rec_R, \
             pres_rec_L, pres_rec_R, \
             bfi1_rec_L, bfi1_rec_R, bfi2_rec_L, bfi2_rec_R, bfi3_rec_L, bfi3_rec_R, \
-            eos, par.flux_type, 2)
+            eos, par.solver_type, 2)
         
         #residuals calculation for mass, 3 components of momentum, 
         #total energy and normal components of magnetic field in 2-dim
@@ -473,9 +470,9 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
         MHD.F2 * MHD.vel2[Ngc:-Ngc, Ngc:-Ngc])
     
     #curvature source terms 
-    STv1, STv2, STv3, STm1, STm2, STm3 = MHD_curv_sources(g, MHD)
+    STv1, STv2, STv3, STm1, STm2, STm3 = curv_source_MHD_8wave(g, MHD)
     
-    #Powell 8-wave cleaning method (simply add the sources in RHS)
+    #Powell 8-wave divB cleaning method (simply add the sources in RHS)
     #curvature sources are also added here
     ResV1 += MHD.bfi1[Ngc:-Ngc, Ngc:-Ngc] * MHD.divB - STv1
     ResV2 += MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc] * MHD.divB - STv2
@@ -496,7 +493,7 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
 
 
 
-def MHD_curv_sources(g, MHD):
+def curv_source_MHD_8wave(g, MHD):
     """
     Compute geometric source terms for the MHD equations 
     in curvilinear coordinates (finite-volume formulation).
@@ -537,16 +534,19 @@ def MHD_curv_sources(g, MHD):
     STm2 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     STm3 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     
-    if (g.geom != 'cart'):
-        r = g.cx1[Ngc:-Ngc,Ngc:-Ngc]
-        dens = MHD.dens[Ngc:-Ngc,Ngc:-Ngc]
-        pres = MHD.pres[Ngc:-Ngc,Ngc:-Ngc]
-        v1 = MHD.vel1[Ngc:-Ngc,Ngc:-Ngc]
-        v2 = MHD.vel2[Ngc:-Ngc,Ngc:-Ngc]
-        v3 = MHD.vel3[Ngc:-Ngc,Ngc:-Ngc]
-        b1 = MHD.bfi1[Ngc:-Ngc,Ngc:-Ngc]
-        b2 = MHD.bfi2[Ngc:-Ngc,Ngc:-Ngc]
-        b3 = MHD.bfi3[Ngc:-Ngc,Ngc:-Ngc]
+    # source-free; nothing further to do
+    if g.geom == 'cart':
+        return STv1, STv2, STv3, STm1, STm2, STm3
+    
+    r    = g.cx1[Ngc:-Ngc,Ngc:-Ngc]
+    dens = MHD.dens[Ngc:-Ngc,Ngc:-Ngc]
+    pres = MHD.pres[Ngc:-Ngc,Ngc:-Ngc]
+    v1   = MHD.vel1[Ngc:-Ngc,Ngc:-Ngc]
+    v2   = MHD.vel2[Ngc:-Ngc,Ngc:-Ngc]
+    v3   = MHD.vel3[Ngc:-Ngc,Ngc:-Ngc]
+    b1   = MHD.bfi1[Ngc:-Ngc,Ngc:-Ngc]
+    b2   = MHD.bfi2[Ngc:-Ngc,Ngc:-Ngc]
+    b3   = MHD.bfi3[Ngc:-Ngc,Ngc:-Ngc]
     
     #cylindrical (R,Z) geometry
     if (g.geom == 'cyl'):
