@@ -44,10 +44,10 @@ Example usage
 import numpy as np
 import copy
 from src.common.high_order_rec import VarReconstruct
-from src.common.boundaries import apply_bc_scalar
+from src.common.boundaries import apply_bc_scalar, apply_bc_fixed
 
 
-class Advection2D:
+class Adv2D:
     """
     Container class for 2D linear advection routines.
 
@@ -100,7 +100,7 @@ class Advection2D:
                  self.par.timefin - self.par.timenow)
         self.par.timenow += dt
 
-        self.adv = oneStep_advection_RK(self.g, self.adv, self.par, dt)
+        self.adv = oneStep_adv_RK(self.g, self.adv, self.par, dt)
         
         return self.adv
 
@@ -108,7 +108,7 @@ class Advection2D:
 # -------------------------
 # Function definitions
 # -------------------------
-def oneStep_advection_RK(g, adv, par, dt):
+def oneStep_adv_RK(g, adv, par, dt):
     """
     Perform one Runge-Kutta timestep for 2D linear advection.
 
@@ -143,10 +143,11 @@ def oneStep_advection_RK(g, adv, par, dt):
 
     # Predictor stage
     Res = flux_adv(g, adv, par, dt)
-    adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] = adv.dens[Ngc:-Ngc, Ngc:-Ngc] - dt * Res
+    adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] = \
+        adv.dens[Ngc:-Ngc, Ngc:-Ngc] - dt * Res
 
     #Lax-Wendroff scheme
-    if par.flux_type == 'LW':
+    if par.solver_type == 'LW':
         adv.dens = adv_h.dens
         return adv
     
@@ -160,27 +161,30 @@ def oneStep_advection_RK(g, adv, par, dt):
         Res = flux_adv(g, adv_h, par, dt)
         adv.dens[Ngc:-Ngc, Ngc:-Ngc] = \
             (1.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
-             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 2.0 - 1.0 * dt * Res / 2.0
+             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 2.0 - \
+             1.0 * dt * Res / 2.0
     
     elif par.RK_order == 'RK3':
         
         Res = flux_adv(g, adv_h, par, dt)
         adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] = \
             (1.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
-             3.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 4.0 - 1.0 * dt * Res / 4.0
+             3.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 4.0 - \
+             1.0 * dt * Res / 4.0
         
         Res = flux_adv(g, adv_h, par, dt)
         adv.dens[Ngc:-Ngc, Ngc:-Ngc] = \
             (2.0 * adv_h.dens[Ngc:-Ngc, Ngc:-Ngc] + \
-             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 3.0 - 2.0 * dt * Res / 3.0
+             1.0 * adv.dens[Ngc:-Ngc, Ngc:-Ngc]) / 3.0 - \
+             2.0 * dt * Res / 3.0
     
     else:
         
-        raise ValueError("Wrong RK_order: choose 'RK1', 'RK2', or 'RK3'.")
+        raise ValueError(
+            f"Invalid RK_order: '{par.RK_order}'. "
+            f"Expected one of ['RK1', 'RK2', 'RK3'].")
 
     return adv
-
-
 
 
 def CFLcondition_adv(g, adv, CFL):
@@ -227,7 +231,7 @@ def flux_adv(g, adv, par, dt):
 
     This function computes the fluxes and residuals for a 2D advected
     quantity using either simple upwind flux or Lax-Wendroff flux, and
-    handles periodic boundary conditions in both directions.
+    handles boundary conditions in both directions.
 
     Parameters
     ----------
@@ -250,7 +254,6 @@ def flux_adv(g, adv, par, dt):
     -----
     - Upwind flux uses linear reconstruction via VarReconstruct.
     - Lax-Wendroff flux includes a multi-dimensional antidiffusion correction.
-    - Periodic boundary conditions are applied automatically for ghost cells.
     """
     Ngc = g.Ngc
     Nx1r = g.Nx1 + Ngc
@@ -262,9 +265,18 @@ def flux_adv(g, adv, par, dt):
     adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[2], axis=1, side='outer')
     adv.dens = apply_bc_scalar(adv.dens, Ngc, par.BC[3], axis=2, side='outer')
 
+    # --- fixed (Dirichlet) ghost-fill, applied LAST so it overrides the above ---
+    if par.BC_fixed is not None:
+        N1, N2 = adv.dens.shape
+        state_fields = {'dens': adv.dens}
+        for face in (0, 1, 2, 3):
+            if par.BC_fixed.get(face):
+                apply_bc_fixed(state_fields, Ngc, N1, N2, face, par.BC_fixed[face])
+    
+
     Res = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
 
-    if par.flux_type == 'adv':
+    if par.solver_type == 'adv':
         if g.Nx1 > 1:
             #piecewise polynomial reconstruction
             L, R = VarReconstruct(adv.dens, g, par.rec_type, 1)
@@ -280,7 +292,7 @@ def flux_adv(g, adv, par, dt):
             flux = adv.vel2 * (L + R) / 2.0 - np.abs(adv.vel2) * (R - L) / 2.0
             Res += (flux[:, 1:]*g.fS2[:, 1:] - flux[:, :-1]*g.fS2[:, :-1]) / g.cVol[:, :]
 
-    elif par.flux_type == 'LW':
+    elif par.solver_type == 'LW':
         
         if (g.geom != 'cart'): raise ValueError("'LW' for advection works only for CARTESIAN grids!") 
         
@@ -304,5 +316,10 @@ def flux_adv(g, adv, par, dt):
                 adv.dens[Ngc-1:Nx1r-1, Ngc-1:Nx2r-1] - adv.dens[Ngc-1:Nx1r-1, Ngc+1:Nx2r+1]
                 - adv.dens[Ngc+1:Nx1r+1, Ngc-1:Nx2r-1] + adv.dens[Ngc+1:Nx1r+1, Ngc+1:Nx2r+1]
                 ) / 4.0 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] / g.dx2[Ngc:-Ngc, Ngc:-Ngc]
+    
+    else:
+        raise ValueError(
+            f"Invalid advection solver: '{par.solver_type}'. "
+            f"Expected one of ['adv', 'LW'].")
 
     return Res
