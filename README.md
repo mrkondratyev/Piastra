@@ -35,20 +35,21 @@ consistently so the same solver code works in every coordinate system.
 ---
 
 ## How it's built (the numerics)
-***HYPERBOLIC***  
 
+***HYPERBOLIC***  
 - **Godunov finite volumes.** States are reconstructed to cell faces, a Riemann
   solver returns the interface flux, and the conservative update is the
   divergence of those fluxes — the textbook recipe, applied uniformly.
 - **High-order reconstruction:** `PCM` (1st), `PLM` (2nd, slope-limited),
-  `PPMorig`, `PPM` (Mignone 2014), `WENO5` (Jiang & Shu 1996), `MP5`
-  (Suresh & Huynh 1997). Ghost-cell count is chosen automatically (2 for
-  PCM/PLM, 3 for the rest).
+  `PPMorig`, `PPM` (Mignone 2014), `WENO` (Jiang & Shu 1996), `MP5`
+  (Suresh & Huynh 1997). Ghost-cell count is chosen automatically.
 - **Time integration:** TVD Runge–Kutta `RK1`/`RK2`/`RK3` (Shu & Osher 1988).
 - **Divergence control for MHD:** Constrained Transport (`CT`), hyperbolic
   divergence cleaning (`GLM`), and Powell's 8-wave method (`8wave`).
 - **Relativity:** reconstruction on the 4-velocity (guaranteeing |v| < 1 at
-  faces) with a Newton–Raphson conservative-to-primitive inversion.
+  faces) with a Newton–Raphson conservative-to-primitive inversion. Relativistic MHD
+  uses Constrained Transport (`CT`) for divergence free evolution of the magnetic field
+  (Evans & Hawley (1988)).
 
 ***PARABOLIC***  
 - **Diffusion:** explicit Euler or RKL2 super-time-stepping (Meyer, Balsara &
