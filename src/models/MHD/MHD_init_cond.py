@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-MHD Initial Conditions Module
+Newtonian MHD Initial Conditions Module
 
 This module provides functions to set up 1D and 2D MHD
 test problems. It initializes the grid, fluid state, 
@@ -12,7 +12,8 @@ Date: June 17, 2024
 
 import numpy as np
 from src.common.eos_setup import EOSdata
-
+from src.grid.grid_misc import (
+    interp_face_to_cell)
 
 
 
@@ -24,7 +25,7 @@ def IC_MHD_user_defined(grid, MHD, par):
     Parameters
     ----------
     grid : object
-        Cartesian grid in [0,1] × [0,1].
+        Grid class object
     MHD : object
         MHD state container (density, pressure, velocity, magnetic fields).
     par : object
@@ -44,44 +45,111 @@ def IC_MHD_user_defined(grid, MHD, par):
     
     print("user-defined problem for MHD")
     
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    #grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-    #grid.CylindricalGrid(x1ini, x1fin, x2ini, x2fin)
     
-    MHD.vel3[:, :] = 0.0    
-    MHD.bfi3[:, :] = 0.0
-    
-    MHD.dens[:, :] = 25.0/36.0/np.pi
-    MHD.pres[:, :] = 5.0/12.0/np.pi  
-        
-    par.timefin = 0.5
-    par.timenow = 0.0
+    par.timenow = 0.0; par.timefin = 0.5
     
     eos = EOSdata(5.0/3.0)
     
-    for i in range(grid.Nx1+1):
-        MHD.fb1[i, :] = -np.sin(2.0 * np.pi * grid.cx2[i,grid.Ngc:-grid.Ngc])/np.sqrt(4.0 * np.pi)
-        
-    for j in range(grid.Nx2+1):
-        MHD.fb2[:, j] = np.sin(4.0 * np.pi * grid.cx1[grid.Ngc:-grid.Ngc,j])/np.sqrt(4.0 * np.pi)
-        
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            MHD.bfi1[i, j] = -np.sin(2.0 * np.pi * grid.cx2[i,j])/np.sqrt(4.0 * np.pi)
-            MHD.bfi2[i, j] = np.sin(4.0 * np.pi * grid.cx1[i,j])/np.sqrt(4.0 * np.pi)
-            MHD.vel1[i, j] = -np.sin(2.0 * np.pi * grid.cx2[i,j])
-            MHD.vel2[i, j] = np.sin(2.0 * np.pi * grid.cx1[i,j])
-        
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0   
+    MHD.bfi2[:, :] = MHD.bfi3[:, :] = 0.0
+    
+    MHD.fb2[:, :] = 0.0
+    
+    MHD.dens[:, :] = 1.0
+    MHD.pres[:, :] = 5.0/12.0/np.pi  
+    
+    MHD.bfi1[:, :] = 1.0
+    MHD.fb1[:, :] = 1.0
+    
     #boundary conditions
-    #all support walls, periodic and free-outflow boundaries, BC[0] supports axis for cylindrical grids
+    #all support walls, periodic, axis and free-outflow boundaries
     par.BC[:] = 'peri'
+    par.BCm[:] = par.BC[:]
     
-    raise ValueError("User-defined MHD problem, see file 'MHD_init_cond.py', adjust ICs and delete this line.")
+    raise ValueError(
+        "User-defined MHD problem – see 'MHD_init_cond.py', "
+        "set your ICs and remove this line."
+    )
     
+    return grid, MHD, par, eos
+
+
+
+def IC_MHD1D_Alfven(grid, MHD, par):
+    """
+    1D circularly polarised Alfven wave test.
+
+    A circularly polarised Alfven wave propagates along a uniform
+    background field. This is an exact nonlinear solution of the
+    ideal MHD equations and provides an excellent convergence test.
+    The wave should maintain its shape and amplitude indefinitely.
+
+    Domain: [0, 1], periodic
+    B_x = 1, B_y = 0.1*sin(2*pi*x), B_z = 0.1*cos(2*pi*x)
+    v_y = -B_y/sqrt(rho), v_z = -B_z/sqrt(rho)  (forward Alfven wave)
+    rho = 1, p = 0.1, Gamma = 5/3
+    t_fin = 1 (one full period)
+
+    Parameters
+    ----------
+    grid : object
+    MHD : object
+    par : object
+
+    Returns
+    -------
+    grid, MHD, par, eos : objects
+
+    References
+    ----------
+    Toth, G. (2000), J. Comput. Phys. 161, 605
+    """
+    
+    print("1D circularly polarised Alfven wave test")
+
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    
+    par.timenow = 0.0; par.timefin = 1.0
+
+    eos = EOSdata(5.0 / 3.0)
+    
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+
+    rho0 = 1.0; p0   = 0.1
+    B0   = 1.0; amp  = 0.1
+
+    # --- uniform background ---
+    MHD.dens[:, :] = rho0
+    MHD.pres[:, :] = p0
+    MHD.vel1[:, :] = 0.0
+    MHD.bfi1[:, :] = B0
+    MHD.fb1[:, :]  = B0
+
+    # --- staggered fb2: indexed 0..Nx1-1, coordinate from the ghost-offset
+    #     face array fx1[Ngc:Ngc+Nx1, Ngc]; sin varies along x, broadcast
+    #     across columns (original wrote MHD.fb2[i, :]).
+    x_face = grid.fx1[Ngc:Ngc + Nx1, Ngc]                 # shape (Nx1,)
+    MHD.fb2[:Nx1, :] = amp * np.sin(2.0 * np.pi * x_face)[:, None]
+
+    # --- cell-centered block: smooth sinusoids; velocity tied to B by the
+    #     Alfven relation v_perp = -B_perp / sqrt(rho0). Nx2r+1 upper bound.
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r + 1))
+    x  = grid.cx1[sl]
+
+    MHD.bfi2[sl] = amp * np.sin(2.0 * np.pi * x)
+    MHD.bfi3[sl] = amp * np.cos(2.0 * np.pi * x)
+    MHD.vel2[sl] = -MHD.bfi2[sl] / np.sqrt(rho0)
+    MHD.vel3[sl] = -MHD.bfi3[sl] / np.sqrt(rho0)
+
+    par.BC[:] = 'peri'
+    par.BCm[:] = par.BC[:]
+
     return grid, MHD, par, eos
 
 
@@ -115,49 +183,40 @@ def IC_MHD1D_BW(grid, MHD, par):
         Equation of state object with γ = 2.0.
     """
     print("Brio-Wu (1988) 1D MHD shock tube test")
-    
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
 
-    #filling the grid arrays with grid data 
+    #grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-    
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
-    MHD.bfi3[:, :] = 0.0
-    
-    MHD.bfi1[:, :] = 0.0 + 0.75    
-        
-    MHD.fb1[:,:] = 0.75
-    
-    par.timefin = 0.1
-    par.timenow = 0.0
-    
-    eos = EOSdata(10.0/5.0)
-    
-    for i in range(grid.Nx1):
-        if (grid.fx1[i+grid.Ngc,1]<0.5):
-            MHD.fb2[i, :] = 1.0
-        else: 
-            MHD.fb2[i, :] = -1.0
-    
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r+1):
-            if grid.fx1[i, j] < 0.5:
-                MHD.dens[i, j] = 1.0
-                MHD.pres[i, j] = 1.0
-                MHD.bfi2[i, j] = 1.0
-            else:
-                MHD.dens[i, j] = 0.125
-                MHD.pres[i, j] = 0.1
-                MHD.bfi2[i, j] = -1.0
-                
-    par.BC[:] = 'free'
-    
-    return grid, MHD, par, eos
 
+    par.timenow = 0.0; par.timefin = 0.1
+    
+    eos = EOSdata(10.0 / 5.0)
+
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
+    MHD.bfi3[:, :] = 0.0
+    MHD.bfi1[:, :] = 0.75
+    MHD.fb1[:, :]  = 0.75
+
+    # --- staggered fb2:
+    left_face = grid.fx1[Ngc:Ngc + Nx1, 1] < 0.5 
+    MHD.fb2[:Nx1, :] = np.where(left_face[:, None], 1.0, -1.0)
+
+    # --- cell-centered block
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r + 1))
+    left = grid.cx1[sl] < 0.5
+
+    MHD.dens[sl] = np.where(left, 1.0,  0.125)
+    MHD.pres[sl] = np.where(left, 1.0,  0.1)
+    MHD.bfi2[sl] = np.where(left, 1.0, -1.0)
+
+    par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
+
+    return grid, MHD, par, eos
 
 
 
@@ -191,43 +250,103 @@ def IC_MHD1D_Toth(grid, MHD, par):
     """    
     print("1D Toth (2000) MHD shock tube test")
     
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    #grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-    
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
+    par.timenow = 0.0; par.timefin = 0.08
+
+    eos = EOSdata(5.0 / 3.0)
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+
+    b0 = 5.0 / np.sqrt(4.0 * np.pi)        # uniform field magnitude
+
+    MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
     MHD.bfi3[:, :] = 0.0
-    
-    MHD.bfi1[:, :] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
-    MHD.fb1[:, :] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
+    MHD.bfi1[:, :] = b0
+    MHD.fb1[:, :]  = b0
+    MHD.fb2[:, :]  = b0
+    MHD.bfi2[:, :] = b0
     MHD.dens[:, :] = 1.0
-    
-    par.timefin = 0.08
-    par.timenow = 0.0
-    MHD.fb2[:,:] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
-    
-    eos = EOSdata(5.0/3.0)
-    
-    for i in range(grid.Ngc, grid.Nx1r):           
-        for j in range(grid.Ngc, grid.Nx2r+1):
-            if grid.fx1[i, j] < 0.5:
-                MHD.pres[i, j] = 20.0
-                MHD.vel1[i, j] = 10.0
-                MHD.bfi2[i, j] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
-            else:
-                MHD.pres[i, j] = 1.0
-                MHD.vel1[i, j] = -10.0
-                MHD.bfi2[i, j] = 0.0 + 5.0/np.sqrt(4.0*np.pi)
-                
+
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r + 1))
+    left = grid.cx1[sl] < 0.5
+
+    MHD.pres[sl] = np.where(left, 20.0, 1.0)
+    MHD.vel1[sl] = np.where(left, 10.0, -10.0)
+
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
 
+
+
+def IC_MHD1D_RJ(grid, MHD, par):
+    """
+    Ryu & Jones (1995) 1D MHD shock tube, test 2a.
+
+    A standard MHD Riemann problem that produces all seven MHD wave
+    families (fast/slow shocks, rotational discontinuities, contact).
+    Widely used to validate HLLD-type solvers.
+
+    Left  state: rho=1.08, v=(1.2, 0.01, 0.5), p=0.95, B=(2/sqrt(4pi), 3.6/sqrt(4pi), 2/sqrt(4pi))
+    Right state: rho=1,    v=(0, 0, 0),         p=1,    B=(2/sqrt(4pi), 4/sqrt(4pi), 2/sqrt(4pi))
+    Gamma = 5/3, t_fin = 0.2
+
+    Parameters
+    ----------
+    grid : object
+    MHD : object
+    par : object
+
+    Returns
+    -------
+    grid, MHD, par, eos : objects
+
+    References
+    ----------
+    Ryu, D. & Jones, T. W. (1995), ApJ 442, 228
+    """
+    print("Ryu & Jones (1995) 1D MHD shock tube test 2a")
+
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    
+    par.timenow = 0.0; par.timefin = 0.2
+
+    eos = EOSdata(5.0 / 3.0)
+    
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+
+    s4pi = np.sqrt(4.0 * np.pi)
+    # uniform normal field
+    Bx   = 2.0 / s4pi                      
+
+    MHD.bfi1[:, :] = Bx; MHD.fb1[:, :]  = Bx
+    MHD.bfi3[:, :] = 2.0 / s4pi
+
+    # --- staggered fb2 
+    left_face = grid.fx1[Ngc:Ngc + Nx1, 1] < 0.5          # shape (Nx1,)
+    MHD.fb2[:Nx1, :] = np.where(left_face[:, None], 3.6 / s4pi, 4.0 / s4pi)
+
+    # --- cell-centered block
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r + 1))
+    left = grid.cx1[sl] < 0.5
+
+    MHD.dens[sl] = np.where(left, 1.08, 1.0)
+    MHD.vel1[sl] = np.where(left, 1.2, 0.0)
+    MHD.vel2[sl] = np.where(left, 0.01, 0.0)
+    MHD.vel3[sl] = np.where(left, 0.5, 0.0)
+    MHD.pres[sl] = np.where(left, 0.95, 1.0)
+    MHD.bfi2[sl] = np.where(left, 3.6 / s4pi, 4.0 / s4pi)
+
+    par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
+
+    return grid, MHD, par, eos
 
 
 
@@ -262,41 +381,33 @@ def IC_MHD2D_blast_cart(grid, MHD, par):
     print("magnetized explosion test in 2D planar Cartesian geometry")
     
     #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
+    par.timenow = 0.0; par.timefin = 0.2
+    
+    eos = EOSdata(7.0 / 5.0)
+    
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+    
+    # uniform diagonal field component
+    b0 = 1.0 / np.sqrt(2.0)                 
+    
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
     MHD.bfi3[:, :] = 0.0
-    
     MHD.dens[:, :] = 1.0
-    MHD.bfi1[:, :] = 1.0/np.sqrt(2.0)
-    MHD.bfi2[:, :] = 1.0/np.sqrt(2.0)    
+    MHD.bfi1[:, :] = b0; MHD.bfi2[:, :] = b0
+    MHD.fb1[:, :]  = b0; MHD.fb2[:, :]  = b0
     
-    MHD.fb1[:, :] = 1.0/np.sqrt(2.0)
-    MHD.fb2[:, :] = 1.0/np.sqrt(2.0)    
+    sl  = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    rad = np.sqrt((grid.fx1[sl] - 0.5)**2 + (grid.fx2[sl] - 0.5)**2)
+    MHD.pres[sl] = np.where(rad < 0.1, 10.0, 0.1)
     
-    par.timefin = 0.2
-    par.timenow = 0.0
-    
-    eos = EOSdata(7.0/5.0)
-    
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            rad = np.sqrt(np.abs(grid.fx1[i, j] - 0.5)**2 + np.abs(grid.fx2[i, j] - 0.5)**2) 
-            if rad < 0.1:
-                MHD.pres[i, j] = 10.0
-            else:
-                MHD.pres[i, j] = 0.1
-            
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
-
 
 
 
@@ -337,44 +448,104 @@ def IC_MHD2D_blast_cyl(grid, MHD, par):
     print("magnetized explosion test in 2D cylindrical axisymmetry")
     
     #coordinate range in each direction, by default r and z are in range [0..0.5, -0.5..0.5]
-    x1ini, x1fin = 0.0, 0.5
-    x2ini, x2fin = -0.5, 0.5
-
-    #filling the grid arrays with grid data 
+    x1ini, x1fin = 0.0, 0.5; x2ini, x2fin = -0.5, 0.5
     grid.CylindricalGrid(x1ini, x1fin, x2ini, x2fin)
     
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0    
+    par.timenow = 0.0; par.timefin = 0.2
+
+    eos = EOSdata(7.0 / 5.0)
+    
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
     MHD.bfi3[:, :] = 0.0
-    
     MHD.dens[:, :] = 1.0
-    MHD.bfi1[:, :] = 0.0
-    MHD.bfi2[:, :] = 1.0
+    MHD.bfi1[:, :] = 0.0; MHD.bfi2[:, :] = 1.0
+    MHD.fb1[:, :]  = 0.0; MHD.fb2[:, :]  = 1.0
     
-    MHD.fb1[:, :] = 0.0
-    MHD.fb2[:, :] = 1.0 
+    sl  = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    rad = np.sqrt(grid.cx1[sl]**2 + grid.cx2[sl]**2)
+    MHD.pres[sl] = np.where(rad < 0.1, 10.0, 0.1)
+
+    par.BC[0] = 'axis'; par.BC[1] = 'free'
+    par.BC[2] = 'free'; par.BC[3] = 'free'
     
-    par.timefin = 0.2
-    par.timenow = 0.0
-    
-    eos = EOSdata(7.0/5.0)
-    
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            rad = np.sqrt(grid.cx1[i, j]**2 + grid.cx2[i, j]**2) 
-            if rad < 0.1:
-                MHD.pres[i, j] = 10.0
-            else:
-                MHD.pres[i, j] = 0.1
-            
-    par.BC[0] = 'axis'
-    par.BC[1] = 'free'
-    par.BC[2] = 'free'
-    par.BC[3] = 'free'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
 
+
+
+def IC_MHD2D_blast_sph(grid, MHD, par):
+    """
+    2D magnetized explosion test (spherical axisymmetry).
+
+    A standard blast wave problem in a magnetized medium. 
+    A high-pressure circular region is initialized in the center 
+    of a uniform low-pressure medium with a vertical background magnetic field.
+
+    Parameters
+    ----------
+    grid : object
+        spherical grid.
+    MHD : object
+        MHD state container.
+    par : object
+        Simulation parameters.
+
+    Returns
+    -------
+    grid : object
+        Updated Spherical grid.
+    MHD : object
+        Initialized density, pressure, velocity, and magnetic fields.
+    par : object
+        Parameters with timefin = 0.2 and BCs.
+    eos : EOSdata
+        Equation of state with γ = 7/5.
+    """    
+    print("magnetized explosion test in 2D planar Cartesian geometry")
+    
+    #coordinate range in each direction, by default x and y are in range [0..1]
+    x1ini, x1fin = 0.0, 0.5; x2ini, x2fin = 0.0, np.pi
+    grid.SphericalPolarGrid(x1ini, x1fin, x2ini, x2fin)
+    
+    par.timenow = 0.0; par.timefin = 0.2
+    
+    eos = EOSdata(7.0 / 5.0)
+    
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+    
+    # uniform vertical field component
+    b0 = 1.0                
+    
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
+    MHD.bfi3[:, :] = 0.0
+    MHD.dens[:, :] = 1.0
+    MHD.bfi1[:, :] = b0*np.cos(grid.cx2)
+    MHD.bfi2[:, :] = -b0*np.sin(grid.cx2)
+    
+    #corner coordinates 
+    r_c = grid.fx1[Ngc:Nx1r + 1, Ngc:Nx2r + 1]  
+    t_c = grid.fx2[Ngc:Nx1r + 1, Ngc:Nx2r + 1] 
+    Aphi = 0.5 * b0 * r_c * np.sin(t_c)
+
+    MHD.fb1 = (Aphi[:,1:]*grid.edg3[:,1:]  - Aphi[:,:-1]*grid.edg3[:,:-1])/(grid.fS1[:,:]+1e-30)
+    MHD.fb2 = -(Aphi[1:,:]*grid.edg3[1:,:] - Aphi[:-1,:]*grid.edg3[:-1,:])/(grid.fS2[:,:]+1e-30)
+    
+    MHD.bfi1[Ngc:Nx1r, Ngc:Nx2r], MHD.bfi1[Ngc:Nx1r, Ngc:Nx2r] = \
+        interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
+    
+    MHD.pres[:, :] = np.where(grid.cx1 < 0.1, 10.0, 0.1)
+    
+    par.BC[0] = 'axis'; par.BC[1] = 'axis'
+    par.BC[2] = 'free'; par.BC[3] = 'axis'
+    
+    par.BCm[:] = par.BC[:]
+    
+    return grid, MHD, par, eos
 
 
 
@@ -409,47 +580,46 @@ def IC_MHD2D_OT(grid, MHD, par):
     
     print("2D Orszag-Tang vortex problem in 2D MHD")
     
-    #coordinate range in each direction, by default x and y are in range [0..1]
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
-    #filling the grid arrays with grid data 
+    #grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-    
-    MHD.vel3[:, :] = 0.0    
+    par.timenow = 0.0; par.timefin = 0.5
+
+    eos = EOSdata(5.0 / 3.0)
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1; Nx2 = grid.Nx2
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+
+    # field amplitude
+    b0 = 1.0 / np.sqrt(4.0 * np.pi)        
+
+    MHD.vel3[:, :] = 0.0
     MHD.bfi3[:, :] = 0.0
-    
-    MHD.dens[:, :] = 25.0/36.0/np.pi
-    MHD.pres[:, :] = 5.0/12.0/np.pi  
-        
-    par.timefin = 0.5
-    par.timenow = 0.0
-    
-    eos = EOSdata(5.0/3.0)
-    
-    for i in range(grid.Nx1+1):
-        MHD.fb1[i, :] = -np.sin(2.0 * np.pi * grid.cx2[i,grid.Ngc:-grid.Ngc])/np.sqrt(4.0 * np.pi)
-        
-    for j in range(grid.Nx2+1):
-        MHD.fb2[:, j] = np.sin(4.0 * np.pi * grid.cx1[grid.Ngc:-grid.Ngc,j])/np.sqrt(4.0 * np.pi)
-        
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            MHD.bfi1[i, j] = -np.sin(2.0 * np.pi * grid.cx2[i,j])/np.sqrt(4.0 * np.pi)
-            MHD.bfi2[i, j] = np.sin(4.0 * np.pi * grid.cx1[i,j])/np.sqrt(4.0 * np.pi)
-            MHD.vel1[i, j] = -np.sin(2.0 * np.pi * grid.cx2[i,j])
-            MHD.vel2[i, j] = np.sin(2.0 * np.pi * grid.cx1[i,j])
-                 
+    MHD.dens[:, :] = 25.0 / 36.0 / np.pi
+    MHD.pres[:, :] =  5.0 / 12.0 / np.pi
+
+    # --- staggered fb1: 
+    MHD.fb1[:Nx1 + 1, :] = -np.sin(2.0 * np.pi * grid.cx2[:Nx1 + 1, Ngc:-Ngc]) * b0
+
+    # --- staggered fb2: 
+    MHD.fb2[:, :Nx2 + 1] =  np.sin(4.0 * np.pi * grid.cx1[Ngc:-Ngc, :Nx2 + 1]) * b0
+
+    # --- cell-centered block
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    x  = grid.cx1[sl]; y  = grid.cx2[sl]
+
+    MHD.bfi1[sl] = -np.sin(2.0 * np.pi * y) * b0
+    MHD.bfi2[sl] =  np.sin(4.0 * np.pi * x) * b0
+    MHD.vel1[sl] = -np.sin(2.0 * np.pi * y)
+    MHD.vel2[sl] =  np.sin(2.0 * np.pi * x)
+
     par.BC[:] = 'peri'
+    par.BCm[:] = par.BC[:]
     
     return grid, MHD, par, eos
 
 
 
-
-# ============================================================================
-# 2D MHD rotor problem
-# ============================================================================
 def IC_MHD2D_rotor(grid, MHD, par):
     """
     2D MHD rotor problem.
@@ -464,172 +634,86 @@ def IC_MHD2D_rotor(grid, MHD, par):
     
     print("2D MHD rotor problem")
     
-    # ------------------------------------------------------------------
-    # Domain
-    # ------------------------------------------------------------------
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-
+    # grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
+    par.timenow = 0.0; par.timefin = 0.15
+
+    eos = EOSdata(7.0 / 5.0)
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+    
+    # uniform Bx
+    b0 = 5.0 / np.sqrt(4.0 * np.pi)       
+
     # ------------------------------------------------------------------
     # Initial uniform medium
     # ------------------------------------------------------------------
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0
-    
-    MHD.bfi1[:, :] = 5.0 / np.sqrt(4.0 * np.pi)
-    MHD.bfi2[:, :] = 0.0
-    MHD.bfi3[:, :] = 0.0
-    
-    MHD.fb1[:, :] = 5.0 / np.sqrt(4.0 * np.pi)
-    MHD.fb2[:, :] = 0.0
-    
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
+    MHD.bfi1[:, :] = b0; MHD.bfi2[:, :] = 0.0; MHD.bfi3[:, :] = 0.0
+    MHD.fb1[:, :]  = b0; MHD.fb2[:, :]  = 0.0
     MHD.pres[:, :] = 1.0
-    
+
     # Rotor parameters
-    x0, y0 = 0.5, 0.5
-    r0 = 0.1
-    r1 = 0.115
-    
-    rho_in = 10.0
-    rho_out = 1.0
-    
-    omega = 20.0
-    
-    par.timefin = 0.15
-    par.timenow = 0.0
-    
-    eos = EOSdata(7.0/5.0)
-    
+    x0, y0  = 0.5, 0.5
+    r0, r1  = 0.1, 0.115
+    rho_in, rho_out = 10.0, 1.0
+    omega   = 20.0
+
     # ------------------------------------------------------------------
-    # Fill domain
+    # Fill domain: three regions (rotor / taper / ambient) collapse into one
+    # set of formulas via a clipped taper f, where
+    #   f = 1            (r <= r0,   solid rotor)
+    #   f = (r1-r)/(r1-r0)  (r0 < r <= r1, linear taper)
+    #   f = 0            (r > r1,    ambient)
     # ------------------------------------------------------------------
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            
-            x = grid.cx1[i, j]
-            y = grid.cx2[i, j]
-            
-            dx = x - x0
-            dy = y - y0
-            r = np.sqrt(dx*dx + dy*dy)
-            
-            if r <= r0:
-                MHD.dens[i, j] = rho_in
-                MHD.vel1[i, j] = -omega * dy
-                MHD.vel2[i, j] =  omega * dx
-                
-            elif r <= r1:
-                f = (r1 - r) / (r1 - r0)
-                MHD.dens[i, j] = rho_out + (rho_in - rho_out) * f
-                MHD.vel1[i, j] = -omega * dy * f
-                MHD.vel2[i, j] =  omega * dx * f
-                
-            else:
-                MHD.dens[i, j] = rho_out
-                MHD.vel1[i, j] = 0.0
-                MHD.vel2[i, j] = 0.0
-    
-    par.BC[:] = 'free'
-    
-    return grid, MHD, par, eos
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    dx = grid.cx1[sl] - x0; dy = grid.cx2[sl] - y0
+    r  = np.sqrt(dx*dx + dy*dy)
 
+    f = np.clip((r1 - r) / (r1 - r0), 0.0, 1.0)    # 1 inside r0, 0 outside r1
 
-
-
-
-def IC_MHD1D_RJ(grid, MHD, par):
-    """
-    Ryu & Jones (1995) 1D MHD shock tube, test 2a.
-
-    A standard MHD Riemann problem that produces all seven MHD wave
-    families (fast/slow shocks, rotational discontinuities, contact).
-    Widely used to validate HLLD-type solvers.
-
-    Left  state: rho=1.08, v=(1.2, 0.01, 0.5), p=0.95, B=(2/sqrt(4pi), 3.6/sqrt(4pi), 2/sqrt(4pi))
-    Right state: rho=1,    v=(0, 0, 0),         p=1,    B=(2/sqrt(4pi), 4/sqrt(4pi), 2/sqrt(4pi))
-    Gamma = 5/3, t_fin = 0.2
-
-    Parameters
-    ----------
-    grid : object
-    MHD : object
-    par : object
-
-    Returns
-    -------
-    grid, MHD, par, eos : objects
-
-    References
-    ----------
-    Ryu, D. & Jones, T. W. (1995), ApJ 442, 228
-    """
-    print("Ryu & Jones (1995) 1D MHD shock tube test 2a")
-
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timefin = 0.2
-    par.timenow = 0.0
-    eos = EOSdata(5.0 / 3.0)
-
-    Bx = 2.0 / np.sqrt(4.0 * np.pi)
-    MHD.bfi1[:, :] = Bx
-    MHD.fb1[:, :] = Bx
-
-    for i in range(grid.Nx1):
-        if grid.fx1[i + grid.Ngc, 1] < 0.5:
-            MHD.fb2[i, :] = 3.6 / np.sqrt(4.0 * np.pi)
-        else:
-            MHD.fb2[i, :] = 4.0 / np.sqrt(4.0 * np.pi)
-
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r + 1):
-            if grid.fx1[i, j] < 0.5:
-                MHD.dens[i, j] = 1.08
-                MHD.vel1[i, j] = 1.2
-                MHD.vel2[i, j] = 0.01
-                MHD.vel3[i, j] = 0.5
-                MHD.pres[i, j] = 0.95
-                MHD.bfi2[i, j] = 3.6 / np.sqrt(4.0 * np.pi)
-                MHD.bfi3[i, j] = 2.0 / np.sqrt(4.0 * np.pi)
-            else:
-                MHD.dens[i, j] = 1.0
-                MHD.vel1[i, j] = 0.0
-                MHD.vel2[i, j] = 0.0
-                MHD.vel3[i, j] = 0.0
-                MHD.pres[i, j] = 1.0
-                MHD.bfi2[i, j] = 4.0 / np.sqrt(4.0 * np.pi)
-                MHD.bfi3[i, j] = 2.0 / np.sqrt(4.0 * np.pi)
+    MHD.dens[sl] = rho_out + (rho_in - rho_out) * f
+    MHD.vel1[sl] = -omega * dy * f; MHD.vel2[sl] =  omega * dx * f
 
     par.BC[:] = 'free'
-
+    par.BCm[:] = par.BC[:]
+    
     return grid, MHD, par, eos
-
 
 
 
 def IC_MHD2D_current_sheet(grid, MHD, par):
     """
-    2D current sheet (magnetic reconnection) test.
+    2D current sheet / magnetic reconnection test (Gardiner & Stone 2005).
 
-    Two anti-parallel current sheets are initialized with a small
-    velocity perturbation to trigger tearing-mode instability and
-    magnetic reconnection. The problem tests the code's ability to
-    handle thin current layers and resistive-like numerical dissipation.
+    Two anti-parallel current sheets are set up by a magnetic field that points
+    along x and reverses sign twice across y. A small, domain-filling velocity
+    perturbation PARALLEL to the field (v_x = amp * sin(pi y)) excites a standing
+    shear Alfven wave; with only numerical resistivity the sheets are unstable to
+    tearing, forming plasmoids that merge into the characteristic island pattern.
 
-    Domain: [0, 2] x [0, 2], periodic in both directions.
-    B_x = +1 for 0.5 < y < 1.5, -1 otherwise (anti-parallel sheets)
-    rho = 1, p = 0.1, small v_y perturbation at sheet locations.
+    This is a stringent divergence-cleaning / numerical-resistivity test: it
+    continuously generates div(B) error at the reversals, so it should be run
+    with CT or a cleaning scheme and the divB monitor watched.
+
+    Coordinate system : Cartesian (x, y) = (x1, x2), periodic both directions.
+    Domain            : [0, 2] x [0, 2]
+    State             : rho = 1, p = 0.1, gamma = 5/3
+    Field            : B_x = +B0 for 0.5 < y < 1.5, -B0 otherwise; B_y = B_z = 0
+    Perturbation      : v_x = amp * sin(pi y)  (field-parallel, amp = 0.1);
+                        v_y = v_z = 0
+
+    NOTE on convention: the canonical statement uses B_y(x) with v_x perturbation;
+    this routine uses the equivalent x<->y relabelling (B_x(y), v_x(y) seed). The
+    physics (field-parallel shear across anti-parallel sheets) is identical.
 
     Parameters
     ----------
-    grid : object
-    MHD : object
-    par : object
+    grid : object   CartesianGrid, cx1, cx2, Ngc, Nx1, Nx2, Nx1r, Nx2r.
+    MHD  : object    MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2).
+    par  : object    Parameters (BC, timenow, timefin).
 
     Returns
     -------
@@ -638,58 +722,59 @@ def IC_MHD2D_current_sheet(grid, MHD, par):
     References
     ----------
     Gardiner, T. A. & Stone, J. M. (2005), J. Comput. Phys. 205, 509
+    Fromang, S. et al. (2006), A&A 457, 371
     """
-    print("2D MHD current sheet / reconnection test")
+    print("2D MHD current sheet / reconnection test (Gardiner & Stone 2005)")
 
+    # --- grid + time ---
     x1ini, x1fin = 0.0, 2.0
     x2ini, x2fin = 0.0, 2.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timefin = 5.0
     par.timenow = 0.0
+    par.timefin = 5.0
     eos = EOSdata(5.0 / 3.0)
 
+    # --- aliases ---
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1
+    Nx2  = grid.Nx2
+    Nx1r = grid.Nx1r
+    Nx2r = grid.Nx2r
+
+    B0  = 1.0
+    amp = 0.1
+
+    # --- uniform fields (incl. ghosts) ---
     MHD.dens[:, :] = 1.0
     MHD.pres[:, :] = 0.1
     MHD.vel1[:, :] = 0.0
+    MHD.vel2[:, :] = 0.0
     MHD.vel3[:, :] = 0.0
-    MHD.bfi2[:, :] = 0.0
-    MHD.bfi3[:, :] = 0.0
-    MHD.fb2[:, :] = 0.0
+    MHD.bfi2[:, :] = 0.0      # B_y = 0
+    MHD.bfi3[:, :] = 0.0      # B_z = 0
+    MHD.fb2[:, :]  = 0.0      # staggered B_y on x2-faces = 0
 
-    B0 = 1.0
-    amp = 0.1  # perturbation amplitude
+    # --- staggered B_x on x1-faces (fb1): B_x depends only on y, so each
+    #     face column just takes the cell-centre y of that column. ---
+    #     fb1 has shape (Nx1+1, Nx2): one extra point along x1 (the faces),
+    #     Nx2 cells along x2.  Sample interior cell-centre y for the columns.
+    yc_face = grid.cx2[Ngc, Ngc:Nx2r]                  # (Nx2,) interior y centres
+    Bx_col  = np.where((yc_face > 0.5) & (yc_face < 1.5), B0, -B0)   # (Nx2,)
+    MHD.fb1[:, :] = Bx_col[None, :]                    # broadcast over all x1-faces
 
-    for i in range(grid.Nx1 + 1):
-        y_face = grid.cx2[i, grid.Ngc:-grid.Ngc] if i < grid.Nx1 + 1 else grid.cx2[grid.Ngc, grid.Ngc:-grid.Ngc]
-        # Use cell center y for face-centered Bx
-        for jj in range(grid.Nx2):
-            yc = grid.cx2[grid.Ngc + i if i < grid.Nx1 else grid.Ngc, grid.Ngc + jj]
-            if 0.5 < yc < 1.5:
-                MHD.fb1[i, jj] = B0
-            else:
-                MHD.fb1[i, jj] = -B0
+    # --- cell-centred block ---
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    y  = grid.cx2[sl]
+    in_sheet = (y > 0.5) & (y < 1.5)
 
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            y = grid.cx2[i, j]
-            x = grid.cx1[i, j]
-            if 0.5 < y < 1.5:
-                MHD.bfi1[i, j] = B0
-            else:
-                MHD.bfi1[i, j] = -B0
+    MHD.bfi1[sl] = np.where(in_sheet, B0, -B0)         # B_x(y)
+    MHD.vel1[sl] = amp * np.sin(np.pi * y)             # field-parallel seed
 
-            # Small velocity perturbation at each current sheet
-            MHD.vel2[i, j] = amp * (
-                np.sin(2.0 * np.pi * x / 2.0)
-                * (np.exp(-((y - 0.5) / 0.05)**2) + np.exp(-((y - 1.5) / 0.05)**2))
-            )
-
+    # --- boundaries: periodic in both directions ---
     par.BC[:] = 'peri'
+    par.BCm[:] = par.BC[:]
 
     return grid, MHD, par, eos
-
-
 
 
 def IC_MHD2D_field_loop(grid, MHD, par):
@@ -724,89 +809,81 @@ def IC_MHD2D_field_loop(grid, MHD, par):
     """
     print("2D magnetic field loop advection (Gardiner & Stone 2005)")
 
-    x1ini, x1fin = -1.0, 1.0
-    x2ini, x2fin = -0.5, 0.5
+    x1ini, x1fin = -1.0, 1.0; x2ini, x2fin = -0.5, 0.5
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    
+    par.timenow = 0.0; par.timefin = 1.0
 
-    par.timefin = 1.0
-    par.timenow = 0.0
     eos = EOSdata(5.0 / 3.0)
+    
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1;  Nx2  = grid.Nx2
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
 
-    # Background state
+    R0 = 0.3; A0 = 1.0e-3
+
+    # --- background state (uniform) ---
     MHD.dens[:, :] = 1.0
     MHD.pres[:, :] = 1.0
-    MHD.vel1[:, :] = 2.0
-    MHD.vel2[:, :] = 1.0
-    MHD.vel3[:, :] = 0.0
+    MHD.vel1[:, :] = 2.0; MHD.vel2[:, :] = 1.0; MHD.vel3[:, :] = 0.0
     MHD.bfi3[:, :] = 0.0
 
-    R0 = 0.3
-    A0 = 1.0e-3
+    # --- vector potential A_z at cell corners: A_z = A0*(R0 - r), 0 outside --- 
+    xc = grid.fx1[Ngc:Ngc + Nx1 + 1, Ngc:Ngc + Nx2 + 1]   # corner x  (Nx1+1, Nx2+1)
+    yc = grid.fx2[Ngc:Ngc + Nx1 + 1, Ngc:Ngc + Nx2 + 1]   # corner y
+    rc = np.sqrt(xc**2 + yc**2)
+    Az = np.where(rc < R0, A0 * (R0 - rc), 0.0) # (Nx1+1, Nx2+1)
 
-    # Compute cell-centred B from vector potential A_z
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            x = grid.cx1[i, j]
-            y = grid.cx2[i, j]
-            r = np.sqrt(x**2 + y**2)
-            if r < R0 and r > 1e-14:
-                MHD.bfi1[i, j] = A0 * (-y / r)
-                MHD.bfi2[i, j] = A0 * (x / r)
-            else:
-                MHD.bfi1[i, j] = 0.0
-                MHD.bfi2[i, j] = 0.0
+    dx = grid.dx1[Ngc, Ngc]; dy = grid.dx2[Ngc, Ngc]      # uniform spacing
 
-    # Face-centred B from A_z at face midpoints
-    # fb1 (B_x on x1-faces): B_x = dA_z/dy ~ A0*(-y/r)
-    for i in range(grid.Nx1 + 1):
-        for jj in range(grid.Nx2):
-            xf = grid.fx1[i + grid.Ngc, jj + grid.Ngc]
-            yf = grid.cx2[i + grid.Ngc, jj + grid.Ngc]
-            r = np.sqrt(xf**2 + yf**2)
-            if r < R0 and r > 1e-14:
-                MHD.fb1[i, jj] = A0 * (-yf / r)
-            else:
-                MHD.fb1[i, jj] = 0.0
+    # --- face B from discrete curl of A_z (divergence-free by construction) 
+    MHD.fb1[:Nx1 + 1, :Nx2] =  (Az[:, 1:] - Az[:, :-1]) / dy    # (Nx1+1, Nx2)
+    MHD.fb2[:Nx1, :Nx2 + 1] = -(Az[1:, :] - Az[:-1, :]) / dx    # (Nx1,  Nx2+1)
 
-    # fb2 (B_y on x2-faces): B_y = -dA_z/dx ~ A0*(x/r)
-    for ii in range(grid.Nx1):
-        for j in range(grid.Nx2 + 1):
-            xf = grid.cx1[ii + grid.Ngc, j + grid.Ngc]
-            yf = grid.fx2[ii + grid.Ngc, j + grid.Ngc]
-            r = np.sqrt(xf**2 + yf**2)
-            if r < R0 and r > 1e-14:
-                MHD.fb2[ii, j] = A0 * (xf / r)
-            else:
-                MHD.fb2[ii, j] = 0.0
+    # --- cell-centred B by averaging faces (consistent with fb1/fb2) 
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    MHD.bfi1[sl] = 0.5 * (MHD.fb1[:Nx1, :Nx2] + MHD.fb1[1:Nx1 + 1, :Nx2])
+    MHD.bfi2[sl] = 0.5 * (MHD.fb2[:Nx1, :Nx2] + MHD.fb2[:Nx1, 1:Nx2 + 1])
 
     par.BC[:] = 'peri'
-
+    par.BCm[:] = par.BC[:]
+    
     return grid, MHD, par, eos
-
 
 
 
 def IC_MHD2D_disk(grid, MHD, par):
     """
-    Axisymmetric MHD accretion disk in cylindrical (R, Z) coordinates.
+    Magnetized accretion torus -- the 'magnetized accretion torus' test of
+    Mignone et al. (2007), Sec. 5.5 (cylindrical cases c/d), after Hawley (2000).
 
-    Equilibrium configuration from the PLUTO code paper. A disk in
-    hydrostatic and centrifugal equilibrium threaded by a weak
-    vertical magnetic field. Tests the ability of the code to
-    maintain MHD equilibrium and resolve the magneto-rotational
-    instability (MRI) if resolved.
+    A constant-angular-momentum torus in a pseudo-Newtonian (Paczynski-Wiita)
+    potential Phi = -1/(r-1), seeded with a weak poloidal field, becomes MRI-
+    unstable and turbulent after a few orbits.  Cell-centred field treatment
+    (GLM / divergence cleaning); the staggered-CT seed is a later extension.
 
-    Coordinate system: cylindrical (R, Z)
-    Domain: R in [0.5, 3], Z in [0, 1]
-    Disk: rho = rho0 * R^(-3/2), v_phi = R^(-1/2) (Keplerian),
-          p balanced by gravity, B_z = beta_0^(-1/2) * p^(1/2)
-    Gamma = 5/3, t_fin = 10 (orbits at R=1)
+    Setup (Mignone+2007 Sec. 5.5):
+      potential   Phi = -1/(r_sph - 1)           (pseudo-Newtonian, r_g = 1)
+      inner edge  r = 3   (sets the integration constant C)
+      pressure max / l_kep evaluation at r = 4.7, where T_orbit = 50
+      l_kep = r^{3/2} / (r - 1)   evaluated at r = 4.7  (constant over the torus)
+      enthalpy integral:
+          (gamma/(gamma-1)) p/rho = C - Phi - l_kep^2 / (2 R^2)
+      polytrope   p = K rho^gamma ,  gamma = 5/3
+      field       A_phi ∝ min[rho(R,z) - 5, 0] (with rho normalised so rho_max=...),
+                  normalised so min(2p/|B|^2) = beta_min = 100
+    Cylindrical box (case c/d): 0 <= R <= 20, -20 <= z <= 20 (uniform core
+    1.5 <= R <= 11.5, -5 <= z <= 5 in the paper; here a single uniform grid).
+    Region r_sph < 1.5 is excluded from the computation.
+
+    DIVERGENCE CONTROL -- CLEANING ONLY (GLM).  Run with divb_tr='GLM'.
 
     Parameters
     ----------
-    grid : object
-    MHD : object
-    par : object
+    grid : object   CylindricalGrid, cx1, cx2, Ngc, Nx1, Nx2, Nx1r, Nx2r.
+    MHD  : object    MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2, bglm,
+                     F1, F2).
+    par  : object    Parameters (BC, BCm, divb_tr, timenow, timefin).
 
     Returns
     -------
@@ -814,73 +891,119 @@ def IC_MHD2D_disk(grid, MHD, par):
 
     References
     ----------
-    Mignone, A. et al. (2007), ApJS 170, 228 (PLUTO code paper)
+    Mignone, A. et al. (2007), ApJS 170, 228, Sec. 5.5
+    Hawley, J. F. (2000), ApJ 528, 462
+    Paczynski, B. & Wiita, P. J. (1980), A&A 88, 23   (pseudo-Newtonian potential)
     """
-    print("2D axisymmetric MHD disk (Mignone et al. 2007)")
+    print("2D magnetized accretion torus (Mignone et al. 2007, Sec. 5.5)")
 
-    R_in, R_out = 0.5, 3.0
-    Z_in, Z_out = 0.0, 1.0
-    grid.CylindricalGrid(R_in, R_out, Z_in, Z_out)
+    # --- grid + time ---
+    R_in_g, R_out_g = 3.0, 20.0
+    Z_bot, Z_top    = -20.0, 20.0
+    grid.CylindricalGrid(R_in_g, R_out_g, Z_bot, Z_top)
 
+    gamma   = 5.0 / 3.0
+    R_inner = 3.0          # torus inner edge (sets C)
+    R_max   = 4.7          # pressure maximum (l_kep evaluation point)
+    r_excl  = 1.5          # excision radius (r_sph < r_excl excluded)
+    beta_min = 100.0       # min(2 p / |B|^2)
+    eos = EOSdata(gamma)
+
+    # --- pseudo-Newtonian (Paczynski-Wiita) potential and constant l_kep ---
+    def Phi(rsph):
+        return -1.0 / (rsph - 1.0)
+
+    l_kep = R_max**1.5 / (R_max - 1.0)          # specific ang. mom. at r=4.7
+    T0    = 50.0                                  # orbital period at R_max (paper)
     par.timenow = 0.0
-    par.timefin = 10.0 * 2.0 * np.pi   # 10 orbits at R=1
-    eos = EOSdata(5.0 / 3.0)
+    par.timefin = 6.0 * T0                        # several orbits  <-- adjust
 
-    # Disk parameters
-    rho0 = 1.0
-    GM = 1.0           # central mass (gravitational parameter)
-    beta0 = 100.0       # plasma beta
-    h_over_r = 0.1      # disk aspect ratio
+    # --- aliases ---
+    Ngc  = grid.Ngc
+    Nx1 = grid.Nx1; Nx2 = grid.Nx2
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
 
-    MHD.vel1[:, :] = 0.0    # v_R = 0
-    MHD.vel3[:, :] = 0.0    # v_phi handled below
-    MHD.bfi1[:, :] = 0.0    # B_R = 0
-    MHD.bfi3[:, :] = 0.0    # B_phi = 0
-    MHD.fb1[:, :] = 0.0     # face-B_R = 0
+    R = grid.cx1[sl]; Z = grid.cx2[sl]
+    rsph = np.sqrt(R**2 + Z**2)
 
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            R = grid.cx1[i, j]
+    # --- enthalpy: (gamma/(gamma-1)) p/rho = C - Phi - l_kep^2/(2 R^2) ---
+    # In cylindrical (R,z): r sin(theta) = R, so the rotation term is l^2/(2 R^2).
+    # C fixes the inner edge (midplane, R = R_inner, z = 0): enthalpy = 0 there.
+    C = Phi(R_inner) + l_kep * l_kep / (2.0 * R_inner * R_inner)
+    Rsafe = np.maximum(R, 1e-30)
+    Wenth = C - Phi(rsph) - l_kep * l_kep / (2.0 * Rsafe * Rsafe)   # = (g/(g-1)) p/rho
+    inside = (Wenth > 0.0) & (rsph > r_excl)
 
-            # Keplerian rotation
-            v_K = np.sqrt(GM / R)
-            MHD.vel2[i, j] = 0.0       # v_Z = 0
-            MHD.vel3[i, j] = v_K       # v_phi = Keplerian (stored in vel3)
+    # --- polytropic density from the enthalpy: p/rho = (g-1)/g * Wenth,
+    #     and p = K rho^g  =>  rho = [ (g-1)/(g K) * Wenth ]^{1/(g-1)}.
+    #     K is fixed by choosing rho_max = 1 at the pressure maximum (R_max, 0). ---
+    W_max = C - Phi(R_max) - l_kep * l_kep / (2.0 * R_max * R_max)
+    if W_max <= 0.0:
+        raise ValueError("torus does not close (W_max <= 0): check R_inner, R_max, l_kep.")
+    rho_max = 1.0
+    Kpoly = (gamma - 1.0) / gamma * W_max / rho_max**(gamma - 1.0)
 
-            # Density and pressure
-            rho = rho0 * R**(-1.5)
-            cs = h_over_r * v_K
-            pres = rho * cs**2
+    rho_t = np.where(inside,
+        ((gamma - 1.0) / (gamma * Kpoly) * np.maximum(Wenth, 0.0))**(1.0 / (gamma - 1.0)),
+        0.0)
 
-            MHD.dens[i, j] = rho
-            MHD.pres[i, j] = pres
+    rho_atm = 1.0e-2 * rho_max
+    p_atm   = Kpoly * rho_atm**gamma
+    in_t    = rho_t > rho_atm
+    rho     = np.where(in_t, rho_t, rho_atm)
+    pres    = np.where(in_t, Kpoly * rho_t**gamma, p_atm)
 
-            # Weak vertical magnetic field (constant beta)
-            B_z = np.sqrt(2.0 * pres / beta0)
-            MHD.bfi2[i, j] = B_z
+    # --- uniform fields (full arrays, incl. ghosts) ---
+    MHD.vel1[:, :] = 0.0
+    MHD.vel2[:, :] = 0.0
+    MHD.bfi1[:, :] = 0.0
+    MHD.bfi2[:, :] = 0.0
+    MHD.bfi3[:, :] = 0.0
+    MHD.fb1[:, :]  = 0.0
+    MHD.fb2[:, :]  = 0.0
+    if hasattr(MHD, 'bglm'):
+        MHD.bglm[:, :] = 0.0
 
-            # Source terms: stellar gravity
-            MHD.F1[i - grid.Ngc, j - grid.Ngc] = -GM / R**2 * rho
-            MHD.F2[i - grid.Ngc, j - grid.Ngc] = 0.0
+    # --- cell-centred profiles ---
+    MHD.dens[sl] = rho
+    MHD.pres[sl] = pres
+    # constant specific angular momentum: v_phi = l_kep / R (in the torus)
+    MHD.vel3[sl] = np.where(in_t, l_kep / Rsafe, 0.0)
 
-    # Face-centred B_z
-    for ii in range(grid.Nx1):
-        for j in range(grid.Nx2 + 1):
-            R = grid.cx1[ii + grid.Ngc, grid.Ngc]
-            v_K = np.sqrt(GM / R)
-            cs = h_over_r * v_K
-            rho = rho0 * R**(-1.5)
-            pres = rho * cs**2
-            MHD.fb2[ii, j] = np.sqrt(2.0 * pres / beta0)
+    # --- gravity acceleration a = -dPhi/dr * r_hat,  Phi = -1/(r-1)
+    #     a_r = -1/(r-1)^2 (inward).  a_R = a_r R/r , a_z = a_r z/r.
+    #     Solver applies Res += -dens*F, so store F = -a (positive, inward pull).
+    inv = 1.0 / (rsph - 1.0)**2
+    MHD.F1[:, :] = inv * R / rsph        # F_R = +(R/r)/(r-1)^2
+    MHD.F2[:, :] = inv * Z / rsph        # F_z = +(z/r)/(r-1)^2
 
-    par.BC[0] = 'axis'
-    par.BC[1] = 'wall'
-    par.BC[2] = 'free'
-    par.BC[3] = 'free'
+    # --- weak poloidal seed from A_phi ∝ min[rho - rho_cut, 0] (paper: rho-5),
+    #     scaled to our rho_max=1 normalisation as a fraction of rho_max. ---
+    rho_cut = 0.2 * rho_max                       # paper uses 5 (on rho_max~25); ~0.2 here
+    Az = np.maximum(rho_t - rho_cut, 0.0)         # >0 only well inside the torus
+
+    R1d = grid.cx1[Ngc:Nx1r, Ngc]                 # 1D R (axis 0)
+    Z1d = grid.cx2[Ngc, Ngc:Nx2r]                 # 1D z (axis 1)
+    dAz_dZ  = np.gradient(Az,     Z1d, axis=1)
+    dRAz_dR = np.gradient(R * Az, R1d, axis=0)
+    B_R =  -dAz_dZ
+    B_z =   dRAz_dR / Rsafe
+
+    pmag  = 0.5 * (B_R * B_R + B_z * B_z)
+    ratio = np.max(np.where(in_t & (pmag > 0.0), pmag / pres, 0.0))   # = 1/beta_cur
+    fac   = 0.0#np.sqrt((1.0 / beta_min) / ratio) if ratio > 0.0 else 0.0
+    MHD.bfi1[sl] = fac * B_R
+    MHD.bfi2[sl] = fac * B_z
+
+    # --- boundaries: axis at R=0, outflow elsewhere (paper Sec. 5.5) ---
+    par.BC[0] = 'free'    # x1 inner (R = 0)
+    par.BC[1] = 'free'    # x2 inner (z = -20)
+    par.BC[2] = 'free'    # x1 outer (R = 20)
+    par.BC[3] = 'free'    # x2 outer (z = +20)
+    par.BCm[:] = par.BC[:]
 
     return grid, MHD, par, eos
-
-
 
 
 def IC_MHD2D_shock_cloud(grid, MHD, par):
@@ -916,89 +1039,94 @@ def IC_MHD2D_shock_cloud(grid, MHD, par):
     """
     print("2D MHD shock-cloud interaction")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    
+    par.timenow = 0.0; par.timefin = 0.06
 
-    par.timefin = 0.06
-    par.timenow = 0.0
     eos = EOSdata(5.0 / 3.0)
+    
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
 
-    # Cloud parameters
-    xc, yc = 0.25, 0.5
-    rc = 0.1
+    # Cloud / shock parameters
+    xc, yc    = 0.25, 0.5
+    rc        = 0.1
     rho_cloud = 10.0
+    rho_amb   = 1.0;  p_amb = 1.0
+    B0        = 2.0 / np.sqrt(4.0 * np.pi)
+    rho_post  = 3.857143; v1_post = 11.2; p_post = 167.0
+    x_shock   = 0.05
 
-    # Pre-shock (ambient)
-    rho_amb = 1.0
-    p_amb = 1.0
-    B0 = 2.0 / np.sqrt(4.0 * np.pi)
+    MHD.vel2[:, :] = 0.0  ; MHD.vel3[:, :] = 0.0
+    # field-aligned with shock normal
+    MHD.bfi1[:, :] = B0; MHD.bfi2[:, :] = 0.0; MHD.bfi3[:, :] = 0.0
+    MHD.fb1[:, :]  = B0; MHD.fb2[:, :]  = 0.0 
 
-    # Post-shock state (Mach 10 in magnetised gas)
-    rho_post = 3.857143
-    v1_post = 11.2
-    p_post = 167.0
+    # --- cell-centered block: priority chain  post-shock > cloud > ambient ---
+    #     (the elif means cloud applies only where NOT post-shock)
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    x  = grid.cx1[sl]
+    y  = grid.cx2[sl]
+    r  = np.sqrt((x - xc)**2 + (y - yc)**2)
 
-    x_shock = 0.05
+    post  = x < x_shock          # highest priority
+    cloud = r < rc               # only where not post-shock
 
-    MHD.vel3[:, :] = 0.0
-    MHD.bfi2[:, :] = 0.0
-    MHD.bfi3[:, :] = 0.0
-    MHD.fb2[:, :] = 0.0
-
-    # Uniform B_x everywhere (unaffected by HD shock to first approx)
-    MHD.bfi1[:, :] = B0
-    MHD.fb1[:, :] = B0
-
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r):
-            x = grid.cx1[i, j]
-            y = grid.cx2[i, j]
-            r = np.sqrt((x - xc)**2 + (y - yc)**2)
-
-            if x < x_shock:
-                MHD.dens[i, j] = rho_post
-                MHD.vel1[i, j] = v1_post
-                MHD.vel2[i, j] = 0.0
-                MHD.pres[i, j] = p_post
-            elif r < rc:
-                MHD.dens[i, j] = rho_cloud
-                MHD.vel1[i, j] = 0.0
-                MHD.vel2[i, j] = 0.0
-                MHD.pres[i, j] = p_amb
-            else:
-                MHD.dens[i, j] = rho_amb
-                MHD.vel1[i, j] = 0.0
-                MHD.vel2[i, j] = 0.0
-                MHD.pres[i, j] = p_amb
+    # only dens, vel1, pres differ; nested where preserves elif precedence
+    MHD.dens[sl] = np.where(post, rho_post, np.where(cloud, rho_cloud, rho_amb))
+    MHD.vel1[sl] = np.where(post, v1_post, 0.0)
+    MHD.pres[sl] = np.where(post, p_post,  p_amb)
 
     par.BC[:] = 'free'
+    par.BCm[:] = par.BC[:]
 
     return grid, MHD, par, eos
 
 
 
-
-def IC_MHD1D_Alfven(grid, MHD, par):
+def IC_MHD2D_jet_cyl(grid, MHD, par):
     """
-    1D circularly polarised Alfven wave test.
+    Axisymmetric magnetized non-relativistic jet in cylindrical (R, Z) coords.
 
-    A circularly polarised Alfven wave propagates along a uniform
-    background field. This is an exact nonlinear solution of the
-    ideal MHD equations and provides an excellent convergence test.
-    The wave should maintain its shape and amplitude indefinitely.
+    Simplified teaching version of the PLUTO MHD jet (Mignone et al. 2007):
+    a supersonic light beam is injected through a nozzle on the BOTTOM boundary
+    (x2-inner, face 1) over R < r_jet, carrying a CONSTANT axial field B_z (and,
+    optionally, a constant toroidal B_phi).  The ambient is uniform and threaded
+    by the same axial B_z so the poloidal flux does not terminate in vacuum.
 
-    Domain: [0, 1], periodic
-    B_x = 1, B_y = 0.1*sin(2*pi*x), B_z = 0.1*cos(2*pi*x)
-    v_y = -B_y/sqrt(rho), v_z = -B_z/sqrt(rho)  (forward Alfven wave)
-    rho = 1, p = 0.1, Gamma = 5/3
-    t_fin = 1 (one full period)
+    Simplifications (vs. the full Tesileanu/PLUTO setup):
+      * fields are CONSTANT across the nozzle (no radial B_z, B_phi profiles),
+        so the inlet values are scalars and the nozzle gas pressure is uniform;
+      * a pure axial field (B_phi = 0) is in exact radial equilibrium.  A
+        constant B_phi != 0 is NOT in radial balance near the axis (its hoop
+        stress ~ B_phi^2 / R diverges as R -> 0); it is offered only as a crude
+        option and the beam will readjust near the axis if it is used.
+
+    Coordinate system : cylindrical (R, Z) = (x1, x2)
+    Domain            : R in [0, 5], Z in [0, 20]
+    Inlet (face 1)    : R < r_jet, rho=rho_jet, v_Z=Mach*cs, B_z=B0 (const),
+                        B_phi=Bphi0 (const, default 0), p=p_jet
+    Ambient           : rho=rho_amb, v=0, B_z=B0 (axial), total-pressure matched
+    Density ratio     : eta = rho_jet / rho_amb = 0.1
+    Magnetization     : beta_jet = 2 p_jet / B0^2
+
+    DIVERGENCE CONTROL -- CLEANING ONLY (GLM preferred):
+      Field imposed as a cell-centred Dirichlet ghost-fill (bfi1=0, bfi2=B0,
+      bfi3=Bphi0) via par.BC_fixed[1], plus pinning GLM psi (bglm)=0.  NOT
+      CT-compatible.  Run with divb_tr='GLM' (preferred) or '8wave'; watch
+      max|divB| near the nozzle.  The poloidal jump at R=r_jet is a physical
+      current sheet.
+
+    Requires: Parameters with BC_fixed = {0:[],1:[],2:[],3:[]}; boundCond_MHD
+    applying apply_bc_fixed with bfi1/2/3 and bglm in state_fields;
+    par.divb_tr in ('GLM','8wave').
 
     Parameters
     ----------
-    grid : object
-    MHD : object
-    par : object
+    grid : object   CylindricalGrid, cx1, Ngc, Nx1, Nx1r, Nx2.
+    MHD  : object    MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2, bglm).
+    par  : object    Parameters (BC, BC_fixed, divb_tr, timenow, timefin).
 
     Returns
     -------
@@ -1006,47 +1134,68 @@ def IC_MHD1D_Alfven(grid, MHD, par):
 
     References
     ----------
-    Toth, G. (2000), J. Comput. Phys. 161, 605
+    Mignone, A. et al. (2007), ApJS 170, 228   (PLUTO; MHD/Jet test, simplified)
     """
-    print("1D circularly polarised Alfven wave test")
+    print("2D axisymmetric magnetized jet (cylindrical, constant inlet field, GLM)")
 
-    x1ini, x1fin = 0.0, 1.0
-    x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timefin = 1.0
+    # --- grid + time ---
+    R_in, R_out = 0.0, 5.0
+    Z_in, Z_out = 0.0, 20.0
+    grid.CylindricalGrid(R_in, R_out, Z_in, Z_out)
     par.timenow = 0.0
+    par.timefin = 15.0
     eos = EOSdata(5.0 / 3.0)
 
-    rho0 = 1.0
-    p0 = 0.1
-    B0 = 1.0
-    amp = 0.1
+    # --- aliases ---
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1
+    Nx1r = grid.Nx1r
 
-    MHD.dens[:, :] = rho0
-    MHD.pres[:, :] = p0
+    # --- jet / ambient parameters ---
+    Mach     = 6.0
+    rho_jet  = 1.0
+    rho_amb  = 10.0                       # eta = 0.1
+    cs_jet   = 1.0
+    v_jet    = Mach * cs_jet              # internal Mach = 6
+    p_jet    = rho_jet * cs_jet**2 / eos.GAMMA   # gas pressure (= 0.6)
+    r_jet    = 1.0
+
+    beta_jet = 100.0                      # 2 p_jet / B0^2  -> axial field strength
+    B0       = np.sqrt(2.0 * p_jet / beta_jet)   # constant axial field B_z
+    Bphi0    = 0.0                        # constant toroidal field (0 = pure axial)
+
+    # --- ambient: uniform, threaded by axial B_z = B0; total-pressure matched ---
+    p_amb = p_jet + 0.5 * B0**2           # gas+magnetic balance with the beam
+
+    MHD.dens[:, :] = rho_amb
+    MHD.pres[:, :] = p_amb
     MHD.vel1[:, :] = 0.0
+    MHD.vel2[:, :] = 0.0
+    MHD.vel3[:, :] = 0.0
+    MHD.bfi1[:, :] = 0.0                  # B_R = 0
+    MHD.bfi2[:, :] = B0                   # B_Z = axial ambient field
+    MHD.bfi3[:, :] = 0.0                  # B_phi = 0 in ambient
+    MHD.fb1[:, :]  = 0.0                  # staggered faces unused (cleaning run)
+    MHD.fb2[:, :]  = B0
+    MHD.bglm[:, :] = 0.0
 
-    MHD.bfi1[:, :] = B0
-    MHD.fb1[:, :] = B0
+    # --- nozzle extent along R (tangential to the bottom face) ---
+    Rc = grid.cx1[Ngc:Nx1r, Ngc]          # 1D interior R cell-centres
+    in_jet = np.nonzero(Rc < r_jet)[0]    # contiguous from the axis
+    start  = int(in_jet[0])               # 0
+    end    = int(in_jet[-1]) + 1
 
-    for i in range(grid.Nx1):
-        x_face = grid.fx1[i + grid.Ngc, grid.Ngc]
-        MHD.fb2[i, :] = amp * np.sin(2.0 * np.pi * x_face)
+    # --- fixed (Dirichlet) inlet on the bottom face (face 1): all scalars ---
+    jet_state = {'dens': rho_jet, 'pres': p_jet,
+                 'vel1': 0.0, 'vel2': v_jet, 'vel3': 0.0,
+                 'bfi1': 0.0, 'bfi2': B0, 'bfi3': Bphi0, 'bglm' : 0}
+    par.BC_fixed[1] = [(start, end, jet_state)]
 
-    for i in range(grid.Ngc, grid.Nx1r):
-        for j in range(grid.Ngc, grid.Nx2r + 1):
-            x = grid.cx1[i, j]
-            MHD.bfi2[i, j] = amp * np.sin(2.0 * np.pi * x)
-            MHD.bfi3[i, j] = amp * np.cos(2.0 * np.pi * x)
-            # Forward-propagating Alfven wave
-            MHD.vel2[i, j] = -MHD.bfi2[i, j] / np.sqrt(rho0)
-            MHD.vel3[i, j] = -MHD.bfi3[i, j] / np.sqrt(rho0)
-
-    par.BC[:] = 'peri'
+    # --- boundaries ---
+    par.BC[0] = 'axis'    # x1 inner (R = 0)
+    par.BC[1] = 'wall'    # x2 inner (Z = 0, nozzle via BC_fixed[1])
+    par.BC[2] = 'free'    # x1 outer (R = 5)
+    par.BC[3] = 'free'    # x2 outer (R = 20)
 
     return grid, MHD, par, eos
-
-
-
 
