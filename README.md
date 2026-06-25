@@ -53,7 +53,7 @@ consistently so the same solver code works in every coordinate system.
 
 ***PARABOLIC***  
 - **Diffusion:** explicit Euler or RKL2 super-time-stepping (Meyer, Balsara &
-  Aslam 2014), which buys an ~s²/4 speed-up at second-order accuracy.
+  Aslam 2014), which buys an ~s²/4 speed-up at second-order accuracy for s iterations.
 
 ---
 
