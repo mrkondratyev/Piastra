@@ -57,6 +57,21 @@ consistently so the same solver code works in every coordinate system.
 
 ---
 
+## Requirements
+
+- Python 3.9+
+- NumPy
+- matplotlib
+- IPython (for the notebooks)
+
+```bash
+pip install numpy matplotlib ipython
+```
+
+No compilation, no external solver libraries, no configuration files.
+
+---
+
 ## Quickstart
 
 Piastra is a package rooted at `src/`. Run it from the repository root.
@@ -176,23 +191,8 @@ Piastra/
 
 Every physics package follows the same four-file rhythm: `*_step.py` (the
 time-stepping class and CFL condition), `*_phys.py` (conserved↔primitive maps,
-boundary fills, the flux driver), `*_riemann_*.py` (the solvers), and
-`*_init_cond.py` (the test problems). Learn one package and you can read them all.
-
----
-
-## Requirements
-
-- Python 3.9+
-- NumPy
-- matplotlib
-- IPython (for the notebooks)
-
-```bash
-pip install numpy matplotlib ipython
-```
-
-No compilation, no external solver libraries, no configuration files.
+boundary fills, the flux driver), `*_init_cond.py` (the test problems), 
+and `*_riemann_*.py` (optionally, the solvers). Learn one package and you can read them all.
 
 ---
 
