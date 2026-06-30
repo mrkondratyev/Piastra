@@ -14,8 +14,7 @@ This module provides:
 
 Conservative variables (flat Minkowski spacetime, c = 1)
 ---------------------------------------------------------
-Notation follows Del Zanna et al. (2003, A&A 400 397) and the PLUTO code
-(Mignone et al. 2012, ApJS 198 7).
+Implementation follows Mignone & Bodo (2006), MNRAS 368, 1040.
 
   W     = 1 / sqrt(1 - v^2)          Lorentz factor
   h     = 1 + Gp / (rho(G-1))        specific enthalpy
@@ -51,7 +50,7 @@ References
   Del Zanna, Bucciantini & Londrillo (2003), A&A 400, 397
   Mignone & Bodo (2006), MNRAS 368, 1040
   Noble et al. (2006), ApJ Suppl. 164, 536
-  Mignone et al. (2012), ApJS 198, 7  (PLUTO code paper)
+  Mignone et al. (2007), ApJS (PLUTO code paper)
 
 Author
 ------
@@ -166,7 +165,7 @@ def cons2prim_rMHD(mass, mom1, mom2, mom3, ener, Bcon1, Bcon2, Bcon3, x_init, eo
     """
     
     #floor variables for density, pressure, and Lorenz factor 
-    dens_floor=1.0e-11; pres_floor=1.0e-11; W_ceiling=1.0e4
+    dens_floor=1.0e-10; pres_floor=1.0e-10; W_ceiling=1.0e4
     
     msqr = mom1**2 + mom2**2 + mom3**2
     SdB  = mom1 * Bcon1 + mom2 * Bcon2 + mom3 * Bcon3
@@ -372,9 +371,10 @@ def Riemann_rMHD(rhol, rhor,
     """
     Approximate Riemann fluxes for the SRMHD equations.
 
-    Supports LLF (Local Lax-Friedrichs) and HLL solvers.
+    Supports LLF (Rusanov) and HLL solvers.
     For dim=2 the system is solved after rotating coordinates so that the
-    x-direction is always the normal direction.
+    x-direction is always the normal direction, 
+    see Mignone & Bodo (2006), MNRAS 368, 1040.
 
     Parameters
     ----------
@@ -419,7 +419,6 @@ def Riemann_rMHD(rhol, rhor,
     ptotl = pl + 0.5 * b2l
 
     # 4-vector b components for momentum flux: b^i = B^i/W + W(v.B) v^i
-    zfl   = (rhol * enthl + b2l) * Wl**2
     bbxl  = Bxn / Wl + Wl * vdBl * vxl
     bbyl  = byl / Wl + Wl * vdBl * vyl
     bbzl  = bzl / Wl + Wl * vdBl * vzl
@@ -449,7 +448,6 @@ def Riemann_rMHD(rhol, rhor,
     Er    = rhor * enthr * Wr**2 - pr + 0.5 * (Bsqr + Bsqr * vsqr - vdBr**2)
     ptotr = pr + 0.5 * b2r
 
-    zfr   = (rhor * enthr + b2r) * Wr**2
     bbxr  = Bxn / Wr + Wr * vdBr * vxr
     bbyr  = byr / Wr + Wr * vdBr * vyr
     bbzr  = bzr / Wr + Wr * vdBr * vzr

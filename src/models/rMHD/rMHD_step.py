@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-rMHD_step.py
+rMHD_one_step.py
 ================
 
 Container class and time-stepping routines for 2D Special-Relativistic
@@ -131,8 +131,8 @@ def CFLcondition_rMHD(g, MHD, eos, CFL):
 
     dt_inv = np.max(
         lam1 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] +
-        lam2 / (g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc])
-    )
+        lam2 / (g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
+        
     return CFL / dt_inv
 
 
@@ -499,7 +499,10 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
     ResB1 = (Efld3[:, 1:] * g.edg3[:, 1:] - Efld3[:, :-1] * g.edg3[:, :-1]) / (g.fS1 + 1e-30)
     ResB2 = -(Efld3[1:, :] * g.edg3[1:, :] - Efld3[:-1, :] * g.edg3[:-1, :]) / (g.fS2 + 1e-30)
 
-    #relativistic "force" (actually it is approximate, since we do not solve GRMHD)
+    # Curvature source terms evaluation
+    STv1, STv2, STv3 = curv_source_rMHD_CT(g, MHD, eos)
+    
+    #relativistic "force" (actually it is approximate, since we do not solve GRHD)
     rhoh = MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * \
         eos.enthalpy_sr(MHD.dens[Ngc:-Ngc, Ngc:-Ngc],  \
         MHD.pres[Ngc:-Ngc, Ngc:-Ngc])
@@ -516,7 +519,8 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
     # gravity works on a matter momentum only, which is incosistent with full GR 
     ResE  += -(F1 * MHD.vel1[Ngc:-Ngc, Ngc:-Ngc] +
         F2 * MHD.vel2[Ngc:-Ngc, Ngc:-Ngc]) 
-
+    
+    
     return ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3
 
 
@@ -696,4 +700,3 @@ def curv_source_rMHD_CT(g, MHD, eos):
         STv3 = -Wtp * cot / r - Wrp / r
 
     return STv1, STv2, STv3
-  
