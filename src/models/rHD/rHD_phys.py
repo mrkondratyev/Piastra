@@ -5,7 +5,7 @@ rHD_phys.py
 Core routines for special-relativistic hydrodynamics (rHD) solvers
 ===================================================================
 
-This module mirrors hydro_phys.py for the special-relativistic Euler equations.
+This module mirrors HD_phys.py for the special-relativistic Euler equations.
 It provides:
 
 - Primitive ↔ conservative variable conversions for an ideal-gas SR fluid
@@ -41,9 +41,8 @@ recovered via  vⁱ = uⁱ/√(1 + |u|²).
 
 References
 ----------
-- Mignone, A. & Bodo, G. (2005), MNRAS 364, 126
-  "An HLLC Riemann solver for relativistic flows"
-- Del Zanna, L. et al. (2003), A&A 400, 397
+- Mignone, A. & Bodo, G. (2005), MNRAS 364, 126 (implementation follows this source)
+- Del Zanna, L., & Bucciantini, N. (2002), A&A, 390, 1177
 - Toro, E.F. (2009), "Riemann Solvers and Numerical Methods for Fluid Dynamics"
 
 Author
@@ -101,18 +100,18 @@ def cons2prim_rHD(mass, mom1, mom2, mom3, etot, pres_init, eos):
     Recover (rho, v1, v2, v3, p) from (D, m1, m2, m3, E) for an SR ideal gas.
 
     Ordering matters and is deliberate:
-      1. solve for p (Newton stays in the physical domain, so W is real);
+      1. solve for p;
       2. build W and FLOOR the density BEFORE recovering velocity, so a
          floored cell does not feed a tiny pre-floor `mass` into the velocity;
       3. recover v_i = m_i / (E + p), since  E + p = rho h W^2  is exactly the
          positive quantity the Newton solve already pinned down -- this avoids
          recomputing the enthalpy and avoids a separate divide that could blow up;
       4. floor pressure;
-      5. clip any residual super-luminal velocity, but count it
+      5. clip any residual super-luminal velocity, and count it
     """
     
     #floor variables for density, pressure, and Lorenz factor 
-    dens_floor=1.0e-11; pres_floor=1.0e-11; W_ceiling=1.0e4
+    dens_floor=1.0e-10; pres_floor=1.0e-10; W_ceiling=1.0e4
     
     # --- pressure Newton solver 
     pres = _newton_pres_sr(pres_init, mass, mom1, mom2, mom3, etot, eos.GAMMA,

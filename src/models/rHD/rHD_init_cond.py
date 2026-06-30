@@ -85,10 +85,10 @@ def IC_rHD_user_defined(grid, state, par):
     return grid, state, par, eos
 
 
+# ============================================================================
+#   1D Riemann problems from Mignone & Bodo (2005)
+# ============================================================================
 
-# ============================================================================
-#   1D problems
-# ============================================================================
 def IC_rHD1D_RP1(grid, state, par):
     """
     Mignone & Bodo (2005) Riemann Problem 1: moving fluid colliding with
@@ -130,7 +130,6 @@ def IC_rHD1D_RP1(grid, state, par):
     return grid, state, par, eos
 
 
-
 def IC_rHD1D_RP3(grid, state, par):
     """
     Mignone & Bodo (2005) Riemann Problem 3: strong relativistic shock.
@@ -170,7 +169,6 @@ def IC_rHD1D_RP3(grid, state, par):
     return grid, state, par, eos
 
 
-
 def IC_rHD1D_RP4(grid, state, par):
     """
     Mignone & Bodo (2005) Riemann Problem 4: ultra-relativistic blast wave.
@@ -208,7 +206,6 @@ def IC_rHD1D_RP4(grid, state, par):
     par.BC[:] = 'free'
     
     return grid, state, par, eos
-
 
 
 def IC_rHD1D_RP5(grid, state, par):
@@ -255,10 +252,10 @@ def IC_rHD1D_RP5(grid, state, par):
     return grid, state, par, eos
 
 
-
 # ============================================================================
 #   2D problems
 # ============================================================================
+
 def IC_rHD2D_RP(grid, state, par):
     """
     Special-relativistic 2D Riemann problem from Mignone & Bodo (2005).
@@ -316,8 +313,120 @@ def IC_rHD2D_RP(grid, state, par):
     return grid, state, par, eos
 
 
-
 def IC_rHD2D_RTI(grid, state, par):
+    """
+    Relativistic Rayleigh-Taylor instability in 2D.
+
+    Reproduces the test of Duffell & MacFadyen (2011), the TESS code
+    (arXiv:1104.3562), Section 3.6, equations (68)-(70).
+
+    A heavy fluid (rho_u) rests on top of a light one (rho_d = 1) in a uniform
+    downward gravitational field. Unlike a Newtonian RTI, the pressure is set to
+    the RELATIVISTIC hydrostatic equilibrium in which gravity couples to the
+    energy density  rho + eps = rho + P/(Gamma-1)  (= rho(1+e)), NOT to the
+    rest-mass density. The interface is seeded by a small vertical-velocity
+    perturbation localized at the contact.
+
+    Coordinates (this framework):
+        x1 = vertical   (gravity direction); x1 in [-1, 1], interface at x1 = 0
+        x2 = horizontal (periodic);          x2 in [ 0, 1]
+
+    Hydrostatic pressure (D&M eq. 69, with y -> x1):
+        P(x1) = P0 * exp(-g x1/(G-1)) + (G-1) * rho * (exp(-g x1/(G-1)) - 1)
+    Because rho is the LOCAL density, the second term vanishes at x1 = 0, so the
+    pressure is continuous (= P0) across the density jump. This profile satisfies
+        dP/dx1 = -(rho + P/(G-1)) * g           (verified to round-off)
+
+    *** REQUIRED for this to be an equilibrium ***
+    The rHD momentum/energy gravitational source must couple to the energy
+    density (rho + P/(G-1)), e.g.
+        wE    = dens + pres/(G-1)
+        Res1 += -wE * F1
+        Res2 += -wE * F2
+        ResE += -wE * (F1*vel1 + F2*vel2)
+    Using the rest-mass coupling (dens*F1) leaves the background ~30-1700% out of
+    hydrostatic balance, and the column drifts before the instability develops.
+
+    Constants (paper):
+        P0 = 10,  g = 0.1,  w0 = 0.03,  sigma = 0.05/sqrt(2),  k = 2*pi.
+    rho_u is set here from a target relativistic Atwood number (their Fig. 21):
+        w_i = rho_i + P0/(G-1) = rho_i (1 + e_i)    (energy density at interface)
+        A   = (w_u - w_d)/(w_u + w_d)
+    With A = 0.6, P0 = 10, G = 5/3 this gives rho_u = 49 (the gas is internal-
+    energy dominated, so the rest-mass contrast must be large). The linear growth
+    rate is then R = sqrt(g k A) ~ 0.614.
+
+    Note: the paper does not state Gamma for this test; 5/3 is used here.
+
+    Boundary conditions:
+        x1 (vertical):   reflecting walls
+        x2 (horizontal): periodic
+
+    Parameters
+    ----------
+    grid  : Grid
+    state : SimState
+    par   : Parameters
+
+    Returns
+    -------
+    grid, state, par, eos
+    """
+    print("rHD 2D - relativistic Rayleigh-Taylor instability (Duffell & MacFadyen 2011)")
+
+    # --- grid ---
+    x1ini, x1fin = -1.0, 1.0
+    x2ini, x2fin =  0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    par.timenow = 0.0
+    par.timefin = 7.0
+
+    eos = EOSdata(5.0 / 3.0)
+    G = eos.GAMMA
+
+    # --- parameters (paper, Section 3.6) ---
+    P0    = 10.0                  # pressure at the interface
+    g     = 0.1                   # gravitational field strength (points toward -x1)
+    w0    = 0.03                  # perturbation amplitude
+    sigma = 0.05 / np.sqrt(2.0)   # perturbation width
+    k     = 2.0 * np.pi           # horizontal wavenumber
+
+    # --- densities: light below, heavy above; heavy value from target Atwood ---
+    rho_d   = 1.0                 # light fluid (lower, x1 < 0)
+    A_target = 0.6                # relativistic Atwood number (their Fig. 21)
+    w_d   = rho_d + P0 / (G - 1.0)
+    w_u   = w_d * (1.0 + A_target) / (1.0 - A_target)
+    rho_u = w_u - P0 / (G - 1.0)  # heavy fluid (upper, x1 > 0)
+
+    cx1 = grid.cx1
+    cx2 = grid.cx2
+    upper = cx1 > 0.0
+
+    # --- density: sharp, flat contact at x1 = 0 (heavy on top) ---
+    state.dens[:, :] = np.where(upper, rho_u, rho_d)
+
+    # --- relativistic hydrostatic pressure (eq. 69), continuous across contact ---
+    expf = np.exp(-g * cx1 / (G - 1.0))
+    state.pres[:, :] = P0 * expf + (G - 1.0) * state.dens * (expf - 1.0)
+
+    # --- velocity: vertical (x1) perturbation localized at the interface (eq. 70) ---
+    state.vel1[:, :] = w0 * np.cos(k * cx2) * np.exp(-cx1**2 / (2.0 * sigma**2))
+    state.vel2[:, :] = 0.0
+    state.vel3[:, :] = 0.0
+
+    # --- gravitational source (acceleration), pointing toward -x1 ---
+    state.F1[:, :] = -g
+    state.F2[:, :] = 0.0
+
+    # --- BCs: reflecting walls in x1, periodic in x2 ---
+    # order: [x1_inner, x2_inner, x1_outer, x2_outer]
+    par.BC[0] = 'wall'; par.BC[1] = 'peri'
+    par.BC[2] = 'wall'; par.BC[3] = 'peri'
+
+    return grid, state, par, eos
+
+
+def IC_rHD2D_RTI0(grid, state, par):
     """
     Relativistic Rayleigh-Taylor instability in 2D.
 
@@ -389,10 +498,10 @@ def IC_rHD2D_RTI(grid, state, par):
     return grid, state, par, eos
 
 
-
 # ============================================================================
 #   2D astrophysical problems
 # ============================================================================
+
 def IC_rHD2D_jet_cart(grid, state, par):
     """
     Relativistic 2D jet propagation problem (Cartesian).

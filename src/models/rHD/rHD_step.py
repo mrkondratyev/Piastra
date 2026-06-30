@@ -5,7 +5,7 @@ rHD_step.py
 Container class and time-stepping routines for 2D special-relativistic
 hydrodynamics (rHD).
 
-This module mirrors hydro_one_step.py (NR) for the relativistic Euler equations.
+This module mirrors HD_step.py (NR) for the relativistic Euler equations.
 It provides:
 
 - rHD2D class: lightweight container with step_RK() interface
@@ -23,7 +23,7 @@ satisfies |v_face| < 1.  After reconstruction the 3-velocity is recovered via
 References
 ----------
 - Mignone, A. & Bodo, G. (2005), MNRAS 364, 126
-- Del Zanna, L. et al. (2003), A&A 400, 397
+- Del Zanna, L., & Bucciantini, N. (2002), A&A, 390, 1177
 
 Author
 ------
@@ -435,7 +435,7 @@ def flux_calc_rHD(g, HD, par, eos):
 
     # Curvature source terms for different curvilinear coordinates
     ST1, ST2, ST3 = curv_source_rHD(g, HD, eos)
-
+    
     #relativistic "force" (actually it is approximate, since we do not solve GRHD)
     rhoh = HD.dens[Ngc:-Ngc, Ngc:-Ngc] * \
         eos.enthalpy_sr(HD.dens[Ngc:-Ngc, Ngc:-Ngc],  \
