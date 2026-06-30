@@ -55,6 +55,14 @@ consistently so the same solver code works in every coordinate system.
 - **Diffusion:** explicit Euler or RKL2 super-time-stepping (Meyer, Balsara &
   Aslam 2014), which buys an ~s²/4 speed-up at second-order accuracy for s iterations.
 
+***ELLIPTIC***  
+- **Poisson solver:** second-order finite-volume `div(grad(phi)) = rhs` on any
+  1D/2D grid and geometry, via matrix-free, diagonally-preconditioned Conjugate
+  Gradient. Periodic, zero-gradient, and Dirichlet boundaries are supported on
+  each face independently. Stateless and grid-agnostic (works on a grid built
+  for a hyperbolic solver too), so it's meant to be called from other modules
+  — self-gravity, magnetic divergence cleaning — not just used standalone.
+
 ---
 
 ## Requirements
@@ -178,7 +186,8 @@ Piastra/
 │   ├── common/
 │   │   ├── boundaries.py   # scalar / vector / fixed ghost-cell fillers
 │   │   ├── high_order_rec.py  # PCM / PLM / PPM / WENO / MP5
-│   │   └── eos_setup.py    # EOSdata (ideal-gas equation of state)
+│   │   ├── eos_setup.py    # EOSdata (ideal-gas equation of state)
+│   │   └── poisson_solver.py  # FV Poisson solve via preconditioned CG
 │   ├── misc/
 │   │   ├── helpers.py      # initial_model dispatch + run_simulation loop
 │   │   ├── io_visual.py    # live matplotlib visualization
@@ -207,6 +216,7 @@ and `*_riemann_*.py` (optionally, the solvers). Learn one package and you can re
 - Shu & Osher (1988), *JCP* **77**, 439 — TVD Runge–Kutta
 - Mignone (2014), *JCP* **270**, 784 — high-order curvilinear reconstruction
 - Meyer, Balsara & Aslam (2014), *MNRAS* **422**, 2102 — RKL2 super-time-stepping for diffusion
+- Shewchuk (1994), *An Introduction to the Conjugate Gradient Method Without the Agonizing Pain* — matrix-free, preconditioned CG
 
 ---
 
