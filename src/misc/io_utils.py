@@ -31,7 +31,7 @@ restart_simulation(filepath) -> (grid, state, par, eos)
 save_1d_ascii(filepath, grid, state, par, eos=None)
     Optional plain-text dump of a 1-D profile.
 
-Restart needs ``reconstruct_grid`` (added to grid_setup.py).
+Restart uses ``reconstruct_grid`` from grid_setup.py to rebuild the grid.
 
 Author: mrkondratyev
 """

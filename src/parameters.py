@@ -70,7 +70,11 @@ class Parameters:
     Attributes
     ----------
     BC : np.ndarray of str
-        Boundary conditions for each face, default is 'wall' on all sides.
+        Boundary conditions for each face, default is 'free' on all sides
+        (overwritten by the IC function for the chosen problem).
+    BCm : np.ndarray of str or None
+        Boundary conditions for the magnetic field (MHD, rMHD only);
+        None for all other modes.
     timenow : float
         Current simulation time.
     timefin : float

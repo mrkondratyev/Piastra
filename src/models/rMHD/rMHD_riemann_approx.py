@@ -4,15 +4,22 @@ rMHD_riemann_approx.py
 
 Approximate Riemann solvers for special-relativistic MHD.
 
+NOT CURRENTLY USED: rMHD_step.py imports Riemann_rMHD from rMHD_phys.py,
+not from this module -- the function below is a standalone duplicate of
+the one in rMHD_phys.py, kept here (unwired) for a more readable,
+solver-only file mirroring the *_riemann_approx.py layout the other
+modes use (HD, rHD, MHD all keep their flux solvers in a dedicated
+file). If you change one, change the other, or remove this one.
+
 Implemented solvers, in increasing order of accuracy/cost:
 
     LLF   - Local Lax-Friedrichs / Rusanov (1961)
     HLL   - Harten, Lax, van Leer (1983)
 
-All solvers share the same calling convention (see Riemann_rMHD in 
-                                               rMHD_phys file).
+All solvers share the same calling convention (see Riemann_rMHD in
+rMHD_phys.py, which is the version actually imported by rMHD_step.py).
 
-Each Riemann solver routine has the following i/o sturcture:
+Each Riemann solver routine has the following i/o structure:
 
    Parameters
    ----------

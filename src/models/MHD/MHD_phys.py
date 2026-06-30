@@ -209,16 +209,20 @@ def boundCond_MHD(grid, BC, BCm, MHD, BC_fixed=None):
     BCm : list of str
         magnetic boundary types for each boundary [inner_x1, inner_x2, outer_x1, outer_x2].
         Supported: 'free', 'wall', 'peri', 'axis'.
-    fluid : object
+    MHD : object
         MHD state object with attributes dens, pres, vel1, vel2, vel3, bfi1, bfi2, bfi3.
-        
+    BC_fixed : dict, optional
+        Fixed (Dirichlet) ghost-fill patches keyed by face index 0..3,
+        applied after the standard BC/BCm fill (see boundaries.apply_bc_fixed).
+
     Notes
-    ----------
-    Fixed boundaries are not supproted yet for CT MHD
+    -----
+    Fixed boundaries are not supported yet for CT MHD's staggered
+    face-centred field (fb1, fb2) -- only the cell-centred fields.
 
     Returns
     -------
-    fluid : object
+    MHD : object
         MHD object with ghost cells updated according to BCs.
     """
     Ngc = grid.Ngc

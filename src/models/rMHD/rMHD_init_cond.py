@@ -403,12 +403,11 @@ def IC_rMHD2D_blast(grid, MHD, par):
     r = np.sqrt((x - x0)**2 + (y - y0)**2)
     
     # ------------------------------------------------------------------
-    # Fill domain
+    # Fill domain -- sharp jump at r0 (same pattern as the non-relativistic
+    # blast ICs, e.g. MHD_init_cond.IC_MHD2D_blast_cart)
     # ------------------------------------------------------------------
-    MHD.dens[:,:] = np.where(r < r0, rho_in, \
-        np.where(r < r0, (rho_in*(1.0 - r) + rho_out*(r - r0))/(1.0 - r0), rho_out))
-    MHD.pres[:,:] = np.where(r < r0, p_in, \
-        np.where(r < r0, (p_in*(1.0 - r) + p_out*(r - r0))/(1.0 - r0), p_out))
+    MHD.dens[:,:] = np.where(r < r0, rho_in, rho_out)
+    MHD.pres[:,:] = np.where(r < r0, p_in, p_out)
     
     # ------------------------------------------------------------------
     # Boundary conditions

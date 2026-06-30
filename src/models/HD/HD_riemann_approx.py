@@ -11,10 +11,10 @@ Implemented solvers, in increasing order of accuracy/cost:
     HLLC  - HLL with contact restoration (Toro et al. 1994)
     Roe   - Linearized Roe solver (Roe 1981)
 
-All solvers share the same calling convention (see Riemann_HD in 
-                                               HD_phys file).
+All solvers share the same calling convention (see Riemann_HD in HD_phys.py,
+which dispatches to one of these by par.solver_type).
 
-Each Riemann solver routine has the following i/o sturcture:
+Each Riemann solver routine has the following i/o structure:
 
    Parameters
    ----------
@@ -44,11 +44,27 @@ import numpy as np
 
 
 # -------------------------
-# Small helper: conservative hydro variables + their fluxes along Ox 
+# Small helper: conservative hydro variables + their fluxes along Ox
 # -------------------------
 def cons_and_flux_HD(rho, vx, vy, vz, p, eos):
-    
-    #conservative variables 
+    """
+    Conservative variables and their Ox-normal fluxes for one state.
+
+    Parameters
+    ----------
+    rho, vx, vy, vz, p : ndarray
+        Primitive state (density, velocity components, pressure).
+    eos : object
+        Equation of state object.
+
+    Returns
+    -------
+    m, mx, my, mz, e : ndarray
+        Conservative variables (mass, momentum x/y/z, total energy density).
+    Fm, Fx, Fy, Fz, Fe : ndarray
+        Their fluxes normal to the face (along the local x/Ox direction).
+    """
+    #conservative variables
     #mass
     m = rho
     #momentum
@@ -70,11 +86,15 @@ def cons_and_flux_HD(rho, vx, vy, vz, p, eos):
 
     
 
-"""
-Local Lax-Friedrichs (Rusanov) flux
-"""
 def LLF_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
-    
+    """
+    Local Lax-Friedrichs (Rusanov) flux.
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., pl, pr, eos)
+    signature and (Fmass, Fmomx, Fmomy, Fmomz, Fetot) return.
+    """
+
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
     Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L = \
@@ -100,11 +120,15 @@ def LLF_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
 
 
 
-"""
-Harten, Lax, and Van Leer (HLL) flux
-"""
 def HLL_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
-    
+    """
+    Harten, Lax, and Van Leer (HLL) flux.
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., pl, pr, eos)
+    signature and (Fmass, Fmomx, Fmomy, Fmomz, Fetot) return.
+    """
+
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
     Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L = \
@@ -134,11 +158,15 @@ def HLL_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
 
 
 
-"""
-Harten, Lax, and Van Leer + Contact wave (HLLC) flux
-"""
 def HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
-    
+    """
+    Harten, Lax, and Van Leer + Contact wave (HLLC) flux (Toro et al. 1994).
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., pl, pr, eos)
+    signature and (Fmass, Fmomx, Fmomy, Fmomz, Fetot) return.
+    """
+
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
     Fmass_L, Fmomx_L, Fmomy_L, Fmomz_L, Fetot_L = \
@@ -192,12 +220,18 @@ def HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
 
 
 
-"""
-Linearized acoustic system (Roe) flux
-
-Note: Roe solver works only with ideal gamma-law EOS! 
-"""
 def Roe_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
+    """
+    Linearized acoustic system (Roe) flux (Roe 1981).
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., pl, pr, eos)
+    signature and (Fmass, Fmomx, Fmomy, Fmomz, Fetot) return.
+
+    Notes
+    -----
+    Works only with an ideal gamma-law EOS.
+    """
 
     #left state conservatives and fluxes 
     mass_L, momx_L, momy_L, momz_L, etot_L, \
@@ -280,7 +314,7 @@ def Roe_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     rv[4,3,:,:] = vzs
     rv[4,4,:,:] = ents + vxs*css
     
-    #array of absolute valueы of eugenvalues
+    #array of absolute values of eigenvalues
     eugen = np.zeros((5, *rhos.shape))
     eugen[0,:,:] = np.abs(np.minimum(vxs - css, vxl - csl)) # entropy fix
     eugen[1,:,:] = np.abs(vxs); eugen[2,:,:] = np.abs(vxs); eugen[3,:,:] = np.abs(vxs) 

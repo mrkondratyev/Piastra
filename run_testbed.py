@@ -61,6 +61,15 @@ def run_suite(name, module, quiet=False):
     and only shown when that test fails or errors -- the usual test-runner
     convention, and the only way the per-test report stays readable.
 
+    Parameters
+    ----------
+    name : str
+        Suite name, used only in the printed header.
+    module : module
+        A tests.test_* module to discover and run test_* functions from.
+    quiet : bool, optional
+        If True, only print lines for failing/erroring tests. Default False.
+
     Returns
     -------
     results : list of (name, status, message, elapsed)

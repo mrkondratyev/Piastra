@@ -320,7 +320,7 @@ def flux_calc_adv(g, adv, par, dt):
             Res += (flux[:, 1:] * g.fS2[:, 1:] - flux[:, :-1] * g.fS2[:, :-1]) / g.cVol[:, :]
 
         # Multi-dimensional antidiffusion correction
-        if (g.Nx1 > 1 & g.Nx2 > 1):
+        if (g.Nx1 > 1 and g.Nx2 > 1):
             Res -= dt * adv.vel1 * adv.vel2 * (
                 adv.dens[Ngc-1:Nx1r-1, Ngc-1:Nx2r-1] - adv.dens[Ngc-1:Nx1r-1, Ngc+1:Nx2r+1]
                 - adv.dens[Ngc+1:Nx1r+1, Ngc-1:Nx2r-1] + adv.dens[Ngc+1:Nx1r+1, Ngc+1:Nx2r+1]

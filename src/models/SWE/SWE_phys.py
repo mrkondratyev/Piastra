@@ -33,7 +33,7 @@ HLL (Harten-Lax-van Leer) with wave-speed estimates following Davis (1988):
 
 Boundary conditions
 -------------------
-Mirrors the structure of hydro_phys.py: apply_bc_scalar and apply_bc_vector
+Mirrors the structure of HD_phys.py: apply_bc_scalar and apply_bc_vector
 from boundaries.py are used for h and (v₁, v₂) respectively.
 
 References
@@ -68,8 +68,8 @@ def boundCond_SWE(grid, BC, SWE):
 
     Returns
     -------
-    fluid : object
-        Fluid object with ghost cells updated according to BCs.
+    SWE : object
+        SWE state object with ghost cells updated according to BCs.
     """
     Ngc = grid.Ngc
     
@@ -97,7 +97,7 @@ def boundCond_SWE(grid, BC, SWE):
 
 def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, solver_type, dim):
     """
-   Approximate Riemann solver for the Euler equations of gas dynamics.
+   Approximate Riemann solver for the shallow water equations.
 
    Parameters
    ----------
@@ -152,7 +152,7 @@ def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, solver_type, dim):
             f"Unknown SWE solver_type '{solver_type}'. " 
             f"Expected one of ['LLF', 'HLL', 'Exact'].")
 
-    #check in what direction we solve the problem    #если решаем ЗР вдоль (Y) -- повернем систему координат в исходное состояние 
+    #rotate the coordinate system back to its original orientation
     if dim == 2: #2-direction -- rotate the coordinate system
         temp = Fx
         Fx = -Fy
