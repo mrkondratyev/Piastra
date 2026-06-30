@@ -12,7 +12,8 @@ Available tests
 1D:
     - Sod shock tube in various coordinate systems
     - Strong shock tube
-    - Double blast wave (DBW) by Woodward and Colella (1984)
+    - Double blast wave (DBW)
+    - Noh problem (Noh 1987) – infinite-strength shock
     - Shu-Osher problem (Shu & Osher 1989) – shock-entropy wave interaction
     - Einfeldt rarefaction (Einfeldt et al. 1991) – 1-2-3 problem
 
@@ -23,6 +24,8 @@ Available tests
     - Planar Sedov-Taylor explosion
     - Cylindrical Sedov-Taylor explosion
     - Four-quadrant 2D Riemann problem (Lax & Liu 1998)
+    - Implosion problem (Liska & Wendroff 2003)
+    - Double Mach reflection (Woodward & Colella 1984)
     - Gresho vortex (Gresho & Chan 1990) – angular momentum preservation
     - Shock-cloud interaction (Klein et al. 1994) – astrophysical
     - Gap opening in protoplanetary disk (polar coordinates) – astrophysical
@@ -1216,7 +1219,6 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     par.BC[1] = 'wall'                   # x2 inner  (Z = 0, nozzle via BC_fixed)
     par.BC[2] = 'free'                   # x1 outer  (R = 5)
     par.BC[3] = 'free'                   # x2 outer  (Z = 20)
-    
     return grid, fluid, par, eos
 
 
