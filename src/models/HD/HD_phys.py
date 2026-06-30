@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-hydro_phys.py
+HD_phys.py
 
 Core routines for non-relativistic hydrodynamics solvers
 ========================================================
