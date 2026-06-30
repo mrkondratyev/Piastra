@@ -139,10 +139,12 @@ def selfgravity_monopole_spherical(grid, state, par):
     #grav acceleration 
     G = 1.0 
     
-    #slicing of density and volume 
+    #slicing of density and volume -- grid.cVol is interior-only (no ghost
+    #cells), so it must NOT be re-sliced with the ghost-offset index range
+    #(that range is only valid for ghost-inclusive arrays like state.dens)
     Ngc = grid.Ngc; Nx1 = grid.Nx1; Nx2 = grid.Nx2
     sl  = np.s_[Ngc:Ngc + Nx1, Ngc:Ngc + Nx2]
-    rho = state.dens[sl]; vol = grid.cVol[sl]      
+    rho = state.dens[sl]; vol = grid.cVol
 
     # --- volume-weighted angular mean density per radial shell ---
     wsum = vol.sum(axis=1) # (Nx1,)  shell volume (grid)
