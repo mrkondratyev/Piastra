@@ -31,9 +31,6 @@ Author: mrkondratyev
 import numpy as np
 
 
-# ============================================================================
-#   User-defined placeholder
-# ============================================================================
 def IC_diff_user_defined(grid, diff, par):
     """
     Template for a user-defined diffusion problem.
@@ -76,145 +73,6 @@ def IC_diff_user_defined(grid, diff, par):
 
 
 
-# ============================================================================
-#   1D problems
-# ============================================================================
-def IC_diff1D_gaussian(grid, diff, par):
-    """
-    1D Cartesian diffusion of a Gaussian pulse (Nx2 = 1).
-
-    Sets up a 1D problem by using a flat y-domain (x2ini = x2fin = 0.5)
-    with Nx2 = 1.  The initial temperature is a Gaussian in x1.
-
-    The exact solution is:
-
-        T(x, t) = sigma0 / sqrt(sigma0^2 + 4*kappa*t)
-                  * exp( -(x - x0)^2 / (sigma0^2 + 4*kappa*t) )
-
-    Parameters
-    ----------
-    grid : Grid  (must be created with Nx2 = 1)
-    diff : SimState
-    par  : Parameters
-
-    Returns
-    -------
-    grid, diff, par
-    """
-    print("Thermal diffusion – 1D Gaussian pulse")
-
-    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 0.5
-
-    #diffusion coefficient 
-    diff.kappa = 0.01
-
-    x0 = 0.5 * (x1ini + x1fin) #center of the gaussian 
-    sigma0 = 0.08 #semi-width
-
-    diff.T[:, :] = np.exp(-((grid.cx1 - x0) / sigma0)**2)
-
-    par.BC[:] = 'free'
-
-    return grid, diff, par
-
-
-
-def IC_diff1D_step(grid, diff, par):
-    """
-    1D diffusion of a step-function initial condition (Nx2 = 1).
-
-    The initial temperature is a Heaviside step at x = 0.5:
-
-        T(x, 0) = 1 for x < 0.5, 0 for x > 0.5
-
-    The exact solution involves the complementary error function:
-
-        T(x, t) = 0.5 * erfc( (x - 0.5) / (2 * sqrt(kappa * t)) )
-
-    This provides a simple but non-trivial analytical benchmark for
-    validating the diffusion operator on a sharp discontinuity.
-
-    Parameters
-    ----------
-    grid : Grid
-    diff : SimState
-    par  : Parameters
-
-    Returns
-    -------
-    grid, diff, par
-    """
-    print("Thermal diffusion - 1D step function")
-
-    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 0.5
-
-    #diffusion coefficient 
-    diff.kappa = 0.01
-    
-    x0 = 0.5 * (x1ini + x1fin) #center of the bump
-    sigma0 = 0.08 #semi-width
-
-    diff.T[:, :] = np.where(np.abs(grid.cx1 - x0) < sigma0, 2.0, 1.0)
-
-    par.BC[0] = 'wall'; par.BC[1] = 'free'
-    par.BC[2] = 'wall'; par.BC[3] = 'free'
-
-    return grid, diff, par
-
-
-
-def IC_diff1D_sine(grid, diff, par):
-    """
-    1D diffusion of a sinusoidal initial condition (Nx2 = 1).
-
-    T(x, 0) = sin(2*pi*x)
-
-    The exact solution is:
-
-        T(x, t) = sin(2*pi*x) * exp(-(2*pi)^2 * kappa * t)
-
-    This provides an excellent convergence test since the exact
-    solution is smooth and known for all times.
-
-    Parameters
-    ----------
-    grid : Grid
-    diff : SimState
-    par  : Parameters
-
-    Returns
-    -------
-    grid, diff, par
-    """
-    print("Thermal diffusion - 1D sinusoidal mode decay")
-    
-    #grid creation
-    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 0.5
-
-    #diffusion coefficient 
-    diff.kappa = 0.01
-
-    diff.T[:, :] = np.sin(2.0 * np.pi * grid.cx1)
-
-    par.BC[0] = 'peri'; par.BC[1] = 'free'
-    par.BC[2] = 'peri'; par.BC[3] = 'free'
-
-    return grid, diff, par
-
-
-
-# ============================================================================
-#   2D problems
-# ============================================================================
 def IC_diff2D_gaussian(grid, diff, par):
     """
     2D Cartesian diffusion of a single Gaussian temperature pulse.
@@ -317,7 +175,6 @@ def IC_diff2D_cross(grid, diff, par):
     return grid, diff, par
 
 
-
 def IC_diff2D_ring(grid, diff, par):
     """
     2D Cartesian diffusion of a hot annular ring.
@@ -365,6 +222,94 @@ def IC_diff2D_ring(grid, diff, par):
     return grid, diff, par
 
 
+def IC_diff1D_gaussian(grid, diff, par):
+    """
+    1D Cartesian diffusion of a Gaussian pulse (Nx2 = 1).
+
+    Sets up a 1D problem by using a flat y-domain (x2ini = x2fin = 0.5)
+    with Nx2 = 1.  The initial temperature is a Gaussian in x1.
+
+    The exact solution is:
+
+        T(x, t) = sigma0 / sqrt(sigma0^2 + 4*kappa*t)
+                  * exp( -(x - x0)^2 / (sigma0^2 + 4*kappa*t) )
+
+    Parameters
+    ----------
+    grid : Grid  (must be created with Nx2 = 1)
+    diff : SimState
+    par  : Parameters
+
+    Returns
+    -------
+    grid, diff, par
+    """
+    print("Thermal diffusion – 1D Gaussian pulse")
+
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+
+    par.timenow = 0.0; par.timefin = 0.5
+
+    #diffusion coefficient 
+    diff.kappa = 0.01
+
+    x0 = 0.5 * (x1ini + x1fin) #center of the gaussian 
+    sigma0 = 0.08 #semi-width
+
+    diff.T[:, :] = np.exp(-((grid.cx1 - x0) / sigma0)**2)
+
+    par.BC[:] = 'free'
+
+    return grid, diff, par
+
+
+
+def IC_diff1D_step(grid, diff, par):
+    """
+    1D diffusion of a step-function initial condition (Nx2 = 1).
+
+    The initial temperature is a Heaviside step at x = 0.5:
+
+        T(x, 0) = 1 for x < 0.5, 0 for x > 0.5
+
+    The exact solution involves the complementary error function:
+
+        T(x, t) = 0.5 * erfc( (x - 0.5) / (2 * sqrt(kappa * t)) )
+
+    This provides a simple but non-trivial analytical benchmark for
+    validating the diffusion operator on a sharp discontinuity.
+
+    Parameters
+    ----------
+    grid : Grid
+    diff : SimState
+    par  : Parameters
+
+    Returns
+    -------
+    grid, diff, par
+    """
+    print("Thermal diffusion - 1D step function")
+
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+
+    par.timenow = 0.0; par.timefin = 0.5
+
+    #diffusion coefficient 
+    diff.kappa = 0.01
+    
+    x0 = 0.5 * (x1ini + x1fin) #center of the bump
+    sigma0 = 0.08 #semi-width
+
+    diff.T[:, :] = np.where(np.abs(grid.cx1 - x0) < sigma0, 2.0, 1.0)
+
+    par.BC[0] = 'wall'; par.BC[1] = 'free'
+    par.BC[2] = 'wall'; par.BC[3] = 'free'
+
+    return grid, diff, par
+
 
 def IC_diff2D_cyl(grid, diff, par):
     """
@@ -411,3 +356,45 @@ def IC_diff2D_cyl(grid, diff, par):
 
     return grid, diff, par
 
+
+
+def IC_diff1D_sine(grid, diff, par):
+    """
+    1D diffusion of a sinusoidal initial condition (Nx2 = 1).
+
+    T(x, 0) = sin(2*pi*x)
+
+    The exact solution is:
+
+        T(x, t) = sin(2*pi*x) * exp(-(2*pi)^2 * kappa * t)
+
+    This provides an excellent convergence test since the exact
+    solution is smooth and known for all times.
+
+    Parameters
+    ----------
+    grid : Grid
+    diff : SimState
+    par  : Parameters
+
+    Returns
+    -------
+    grid, diff, par
+    """
+    print("Thermal diffusion - 1D sinusoidal mode decay")
+    
+    #grid creation
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+
+    par.timenow = 0.0; par.timefin = 0.5
+
+    #diffusion coefficient 
+    diff.kappa = 0.01
+
+    diff.T[:, :] = np.sin(2.0 * np.pi * grid.cx1)
+
+    par.BC[0] = 'peri'; par.BC[1] = 'free'
+    par.BC[2] = 'peri'; par.BC[3] = 'free'
+
+    return grid, diff, par
