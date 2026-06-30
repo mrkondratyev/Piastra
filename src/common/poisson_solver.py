@@ -90,7 +90,22 @@ _VALID_BC  = ('peri', 'free', 'dirichlet')
 
 
 def _check_BC(BC):
-    """Validate the 4-face BC list and periodic-pairing consistency."""
+    """
+    Validate the 4-face BC list and periodic-pairing consistency.
+
+    Parameters
+    ----------
+    BC : sequence of 4 str
+        [x1_inner, x2_inner, x1_outer, x2_outer], each expected to be
+        one of 'peri', 'free', 'dirichlet'.
+
+    Raises
+    ------
+    ValueError
+        If `BC` does not have 4 entries, contains an unrecognised
+        boundary type, or pairs a 'peri' face with a non-'peri' face on
+        the same axis.
+    """
     if len(BC) != 4:
         raise ValueError("BC must have exactly 4 entries "
                           "[x1_inner, x2_inner, x1_outer, x2_outer].")
@@ -112,7 +127,11 @@ def boundCond_poisson(grid, phi, BC, BC_value=None):
     Parameters
     ----------
     grid : Grid
+        Grid object providing geometry and the ghost-cell count `Ngc`
+        used to locate the boundary-adjacent layer.
     phi : ndarray, shape grid.grid_shape
+        Scalar field whose boundary-adjacent ghost layer is filled in
+        place (and returned).
     BC : sequence of 4 str
         [x1_inner, x2_inner, x1_outer, x2_outer], each in
         {'peri', 'free', 'dirichlet'}.
@@ -155,9 +174,12 @@ def poisson_operator(grid, phi_int, BC, BC_value=None):
     Parameters
     ----------
     grid : Grid
+        Grid object providing geometry and metric information.
     phi_int : ndarray, shape (Nx1, Nx2)
         Field on interior cells only.
     BC : sequence of 4 str
+        [x1_inner, x2_inner, x1_outer, x2_outer], each in
+        {'peri', 'free', 'dirichlet'}.
     BC_value : dict, optional
         Dirichlet boundary values (see ``boundCond_poisson``). Leave as
         None to apply the HOMOGENEOUS form of the same boundary types --
@@ -166,6 +188,7 @@ def poisson_operator(grid, phi_int, BC, BC_value=None):
     Returns
     -------
     Aphi : ndarray, shape (Nx1, Nx2)
+        Result of applying A to `phi_int`, on interior cells.
     """
     Ngc = grid.Ngc
     phi = np.zeros(grid.grid_shape, dtype=np.double)
@@ -184,10 +207,17 @@ def _face_conductance(grid):
     -- the same quantity implicitly built by grid_misc.face_gradient,
     isolated here for the diagonal (Jacobi) preconditioner below.
 
+    Parameters
+    ----------
+    grid : Grid
+        Grid object providing geometry and metric information.
+
     Returns
     -------
     C1 : ndarray, shape (Nx1+1, Nx2)
+        x1-face conductances.
     C2 : ndarray, shape (Nx1, Nx2+1)
+        x2-face conductances.
     """
     Ngc, Nx1, Nx2, Nx1r, Nx2r = grid.Ngc, grid.Nx1, grid.Nx2, grid.Nx1r, grid.Nx2r
 
@@ -225,11 +255,15 @@ def _diag_operator(grid, BC):
     Parameters
     ----------
     grid : Grid
+        Grid object providing geometry and metric information.
     BC : sequence of 4 str
+        [x1_inner, x2_inner, x1_outer, x2_outer], each in
+        {'peri', 'free', 'dirichlet'}.
 
     Returns
     -------
     diagA : ndarray, shape (Nx1, Nx2)
+        Diagonal entries of A, one per interior cell.
     """
     C1, C2 = _face_conductance(grid)
     diagA = np.zeros((grid.Nx1, grid.Nx2))
@@ -259,6 +293,18 @@ def _dot(grid, u, v):
     integral_over_grid -- the inner product under which the
     finite-volume operator `poisson_operator` is self-adjoint, since the
     FV equation at cell i is naturally weighted by cVol[i].
+
+    Parameters
+    ----------
+    grid : Grid
+        Grid object providing the cell-volume array `cVol`.
+    u, v : ndarray, shape (Nx1, Nx2)
+        Interior-cell fields.
+
+    Returns
+    -------
+    float
+        Volume-weighted inner product sum(cVol * u * v).
     """
     return np.sum(grid.cVol * u * v)
 

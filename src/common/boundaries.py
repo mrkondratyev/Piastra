@@ -35,9 +35,14 @@ The approach separates scalar and vector fields for clarity and correctness:
    - For 3-component vector quantities (e.g., velocity, cell-centered magnetic field).
    - Treats the normal component differently for reflective (wall) boundaries
      while leaving tangential components unchanged.
-     
-2. ``apply_bc_fixed(V1, V2, V3, ...)``
+
+3. ``apply_bc_fixed(V1, V2, V3, ...)``
    - Pin ghost cells to prescribed (Dirichlet) values on one face
+
+4. ``apply_bc_scalar_Ngc1(var, ...)``
+   - Single-ghost-layer scalar filler for second-order, 3-point stencils
+     (e.g. the Poisson solver in poisson_solver.py), with true Dirichlet
+     ('dirichlet') support via ghost mirroring about a fixed face value.
 
 The face-centered z-electric field (Efld3 along x1/x2) needed for CT MHD is
 implemented as a separate function ``boundCond_electric_field`` in the
