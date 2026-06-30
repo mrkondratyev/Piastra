@@ -13,7 +13,8 @@ Date: June 17, 2024
 import numpy as np
 from src.common.eos_setup import EOSdata
 from src.grid.grid_misc import (
-    interp_face_to_cell)
+    interp_face_to_cell,
+    edge_to_face_curl)
 
 
 
@@ -78,9 +79,6 @@ def IC_MHD_user_defined(grid, MHD, par):
 
 
 
-# ============================================================================
-#   1D problems
-# ============================================================================
 def IC_MHD1D_Alfven(grid, MHD, par):
     """
     1D circularly polarised Alfven wave test.
@@ -353,9 +351,6 @@ def IC_MHD1D_RJ(grid, MHD, par):
 
 
 
-# ============================================================================
-#   2D problems
-# ============================================================================
 def IC_MHD2D_blast_cart(grid, MHD, par):
     """
     2D magnetized explosion test (planar Cartesian geometry).
@@ -530,20 +525,17 @@ def IC_MHD2D_blast_sph(grid, MHD, par):
     MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
     MHD.bfi3[:, :] = 0.0
     MHD.dens[:, :] = 1.0
-    MHD.bfi1[:, :] = b0*np.cos(grid.cx2)
-    MHD.bfi2[:, :] = -b0*np.sin(grid.cx2)
     
     #corner coordinates 
     r_c = grid.fx1[Ngc:Nx1r + 1, Ngc:Nx2r + 1]  
     t_c = grid.fx2[Ngc:Nx1r + 1, Ngc:Nx2r + 1] 
     Aphi = 0.5 * b0 * r_c * np.sin(t_c)
-
-    MHD.fb1 = (Aphi[:,1:]*grid.edg3[:,1:]  - Aphi[:,:-1]*grid.edg3[:,:-1])/(grid.fS1[:,:]+1e-30)
-    MHD.fb2 = -(Aphi[1:,:]*grid.edg3[1:,:] - Aphi[:-1,:]*grid.edg3[:-1,:])/(grid.fS2[:,:]+1e-30)
+    
+    MHD.fb1, MHD.fb2 = edge_to_face_curl(grid, Aphi)
     
     MHD.bfi1[Ngc:Nx1r, Ngc:Nx2r], MHD.bfi2[Ngc:Nx1r, Ngc:Nx2r] = \
         interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
-    
+        
     MHD.pres[:, :] = np.where(grid.cx1 < 0.1, 10.0, 0.1)
     
     par.BC[0] = 'axis'; par.BC[1] = 'axis'
@@ -690,13 +682,120 @@ def IC_MHD2D_rotor(grid, MHD, par):
 
 
 
+def IC_MHD2D_Alfven(grid, MHD, par):
+    """
+    2D circularly polarized Alfven wave (Toth 2000; Gardiner & Stone 2005).
+ 
+    An exact nonlinear MHD eigenmode and a standard convergence / divergence-
+    control benchmark.  With rho = 1, P = 1 and a parallel (background) field
+    B_par = 1, the Alfven speed is 1, so the wave returns to its initial state
+    after each unit of time; |B| and P stay exactly constant in the continuum.
+ 
+    Propagation-frame setup, with  xprop = x1 cos(theta) + x2 sin(theta):
+        B_par  = 1
+        B_perp = 0.1 cos(2 pi xprop)        (in-plane transverse)
+        B_z    = 0.1 sin(2 pi xprop)        (out-of-plane)
+        v_par  = 0
+        v_perp = -B_perp ,  v_z = -B_z      (Alfven relation, sqrt(rho) = 1)
+    rotated into the grid frame exactly as in the supplied Fortran IC:
+        B1 = B_par cos t - B_perp sin t ,  B2 = B_par sin t + B_perp cos t
+        v1 = B_perp sin t , v2 = -B_perp cos t , v3 = -B_z .
+ 
+    The in-plane field (B1, B2) is built from a corner vector potential A_z and a
+    discrete curl, so div B = 0 to MACHINE PRECISION for any theta (CT-consistent;
+    also valid for GLM / 8-wave, which simply use the cell-centred field):
+        A_z = B_par * yprop - (0.1 / 2pi) sin(2 pi xprop),
+        yprop = -x1 sin t + x2 cos t,   B1 = dAz/dx2,  B2 = -dAz/dx1 .
+    Cell-centred B1, B2 are then the average of the two bracketing faces.
+ 
+    theta = 0 (default) reproduces the Fortran IC exactly: the wave runs along x1,
+    is uniform in x2, with one wavelength in x1 (period 1, Alfven speed 1).  For
+    OBLIQUE theta the domain must be chosen so xprop is periodic across the box
+    (Gardiner & Stone use Lx = 1, Ly = 1/2, tan(theta) = Lx/Ly, one wavelength
+    along the diagonal); set theta and the grid extents accordingly.
+ 
+    Domain [0,1] x [0,1], periodic in both directions; gamma = 5/3,
+    t_fin = 5 (five wave crossings).
+ 
+    Parameters
+    ----------
+    grid : object
+    MHD  : object   MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2, bglm)
+    par  : object   Parameters (BC, BCm, divb_tr, timenow, timefin)
+ 
+    Returns
+    -------
+    grid, MHD, par, eos : objects
+ 
+    References
+    ----------
+    Toth, G. (2000), J. Comput. Phys. 161, 605
+    Gardiner, T. A. & Stone, J. M. (2005), J. Comput. Phys. 205, 509
+    """
+    print("2D circularly polarized Alfven wave (Toth 2000; Gardiner & Stone 2005)")
+ 
+    # --- grid + time ---
+    x1ini, x1fin = 0.0, np.sqrt(2.0); x2ini, x2fin = 0.0, np.sqrt(2.0)
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    par.timenow = 0.0; par.timefin = 5.0
+ 
+    eos = EOSdata(5.0 / 3.0)
+ 
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+ 
+    # --- wave parameters ---
+    theta = np.pi/4.0
+    ct, st = np.cos(theta), np.sin(theta)
+    Bpar = 1.0                 # parallel / background field
+    dB   = 0.1                 # transverse amplitude
+    k    = 2.0 * np.pi         # one wavelength along the propagation direction
+ 
+    # --- uniform background ---
+    MHD.dens[:, :] = 1.0
+    MHD.pres[:, :] = 1.0
+    MHD.bglm[:, :] = 0.0
+ 
+    # --- cell-centred transverse fields and velocities (full array, incl. ghosts) ---
+    xprop_c = grid.cx1 * ct + grid.cx2 * st
+    Bperp_c = dB * np.cos(k * xprop_c)
+    Bz_c    = dB * np.sin(k * xprop_c)
+ 
+    MHD.bfi3[:, :] =  Bz_c
+    MHD.vel1[:, :] =  Bperp_c * st
+    MHD.vel2[:, :] = -Bperp_c * ct
+    MHD.vel3[:, :] = -Bz_c
+ 
+    # --- in-plane field from corner vector potential A_z (divergence-free curl) ---
+    xc = grid.fx1[Ngc:Nx1r + 1, Ngc:Nx2r + 1]      # corner x  (Nx1+1, Nx2+1)
+    yc = grid.fx2[Ngc:Nx1r + 1, Ngc:Nx2r + 1]      # corner y
+    xprop_n = xc * ct + yc * st                    # propagation coord at corners
+    yprop_n = -xc * st + yc * ct                   # perpendicular coord at corners
+    Az = Bpar * yprop_n - (dB / k) * np.sin(k * xprop_n)
+    
+    #face-centered magnetic fields
+    MHD.fb1, MHD.fb2 = edge_to_face_curl(grid, Az)
+ 
+    # --- cell-centred in-plane field by averaging the bracketing faces ---
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    MHD.bfi1[sl], MHD.bfi2[sl] = \
+        interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
+        
+    # --- periodic boundaries ---
+    par.BC[:] = 'peri'
+    par.BCm[:] = par.BC[:]
+ 
+    return grid, MHD, par, eos
+
+
+
 def IC_MHD2D_current_sheet(grid, MHD, par):
     """
-    2D current sheet / magnetic reconnection test (Gardiner & Stone 2005).
+    2D current sheet / magnetic reconnection test (Athena code, Stone et al (2008)).
 
     Two anti-parallel current sheets are set up by a magnetic field that points
-    along x and reverses sign twice across y. A small, domain-filling velocity
-    perturbation PARALLEL to the field (v_x = amp * sin(pi y)) excites a standing
+    along y and reverses sign twice across x. A small, domain-filling velocity
+    perturbation perpendicular to the field (v_x = A * sin(2pi y)) excites a standing
     shear Alfven wave; with only numerical resistivity the sheets are unstable to
     tearing, forming plasmoids that merge into the characteristic island pattern.
 
@@ -705,10 +804,10 @@ def IC_MHD2D_current_sheet(grid, MHD, par):
     with CT or a cleaning scheme and the divB monitor watched.
 
     Coordinate system : Cartesian (x, y) = (x1, x2), periodic both directions.
-    Domain            : [0, 2] x [0, 2]
-    State             : rho = 1, p = 0.1, gamma = 5/3
-    Field            : B_x = +B0 for 0.5 < y < 1.5, -B0 otherwise; B_y = B_z = 0
-    Perturbation      : v_x = amp * sin(pi y)  (field-parallel, amp = 0.1);
+    Domain            : [-0.5, 0.5] x [-0.5, 0.5]
+    State             : rho = 1, p = beta/2, gamma = 5/3
+    Field            : B_y = -B0 for -0.25 < x < 0.25, B0 otherwise; B_x = B_z = 0
+    Perturbation      : v_x = A * sin(2pi y);
                         v_y = v_z = 0
 
     NOTE on convention: the canonical statement uses B_y(x) with v_x perturbation;
@@ -733,54 +832,46 @@ def IC_MHD2D_current_sheet(grid, MHD, par):
     print("2D MHD current sheet / reconnection test (Gardiner & Stone 2005)")
 
     # --- grid + time ---
-    x1ini, x1fin = 0.0, 2.0
-    x2ini, x2fin = 0.0, 2.0
+    x1ini, x1fin = -0.5, 0.5; x2ini, x2fin = -0.5, 0.5
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-    par.timenow = 0.0
-    par.timefin = 5.0
+    par.timenow = 0.0; par.timefin = 50.0
     eos = EOSdata(5.0 / 3.0)
 
     # --- aliases ---
     Ngc  = grid.Ngc
-    Nx1  = grid.Nx1
-    Nx2  = grid.Nx2
-    Nx1r = grid.Nx1r
-    Nx2r = grid.Nx2r
+    Nx1 = grid.Nx1
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
 
-    B0  = 1.0
-    amp = 0.1
+    #current sheet parameters 
+    B0  = 1.0 # * np.sqrt(4.0*np.pi)
+    A = 0.1; beta = 0.01
 
     # --- uniform fields (incl. ghosts) ---
     MHD.dens[:, :] = 1.0
-    MHD.pres[:, :] = 0.1
-    MHD.vel1[:, :] = 0.0
+    MHD.pres[:, :] = beta/2.0
     MHD.vel2[:, :] = 0.0
     MHD.vel3[:, :] = 0.0
-    MHD.bfi2[:, :] = 0.0      # B_y = 0
-    MHD.bfi3[:, :] = 0.0      # B_z = 0
-    MHD.fb2[:, :]  = 0.0      # staggered B_y on x2-faces = 0
-
-    # --- staggered B_x on x1-faces (fb1): B_x depends only on y, so each
-    #     face column just takes the cell-centre y of that column. ---
-    #     fb1 has shape (Nx1+1, Nx2): one extra point along x1 (the faces),
-    #     Nx2 cells along x2.  Sample interior cell-centre y for the columns.
-    yc_face = grid.cx2[Ngc, Ngc:Nx2r]                  # (Nx2,) interior y centres
-    Bx_col  = np.where((yc_face > 0.5) & (yc_face < 1.5), B0, -B0)   # (Nx2,)
-    MHD.fb1[:, :] = Bx_col[None, :]                    # broadcast over all x1-faces
-
+    MHD.bfi3[:, :] = 0.0   
+    MHD.fb1[:, :] = 0.0 
+    
     # --- cell-centred block ---
     sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
-    y  = grid.cx2[sl]
-    in_sheet = (y > 0.5) & (y < 1.5)
 
-    MHD.bfi1[sl] = np.where(in_sheet, B0, -B0)         # B_x(y)
-    MHD.vel1[sl] = amp * np.sin(np.pi * y)             # field-parallel seed
+    # --- staggered fb2:
+    center = np.abs(grid.fx1[Ngc:Ngc + Nx1, 1]) < 0.25 
+    MHD.fb2[:Nx1, :] = np.where(center[:, None], -B0, B0)
+    
+    MHD.vel1[sl] = A * np.sin(2.0 * np.pi * grid.cx2[sl]) 
+
+    MHD.bfi1[sl], MHD.bfi2[sl] = \
+        interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
 
     # --- boundaries: periodic in both directions ---
     par.BC[:] = 'peri'
     par.BCm[:] = par.BC[:]
 
     return grid, MHD, par, eos
+
 
 
 def IC_MHD2D_field_loop(grid, MHD, par):
@@ -839,18 +930,14 @@ def IC_MHD2D_field_loop(grid, MHD, par):
     yc = grid.fx2[Ngc:Ngc + Nx1 + 1, Ngc:Ngc + Nx2 + 1]   # corner y
     rc = np.sqrt(xc**2 + yc**2)
     Az = np.where(rc < R0, A0 * (R0 - rc), 0.0) # (Nx1+1, Nx2+1)
-
-    dx = grid.dx1[Ngc, Ngc]; dy = grid.dx2[Ngc, Ngc]      # uniform spacing
-
+    
     # --- face B from discrete curl of A_z (divergence-free by construction) 
-    MHD.fb1[:Nx1 + 1, :Nx2] =  (Az[:, 1:] - Az[:, :-1]) / dy    # (Nx1+1, Nx2)
-    MHD.fb2[:Nx1, :Nx2 + 1] = -(Az[1:, :] - Az[:-1, :]) / dx    # (Nx1,  Nx2+1)
+    MHD.fb1, MHD.fb2 = edge_to_face_curl(grid, Az)
 
     # --- cell-centred B by averaging faces (consistent with fb1/fb2) 
     sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
-    MHD.bfi1[sl] = 0.5 * (MHD.fb1[:Nx1, :Nx2] + MHD.fb1[1:Nx1 + 1, :Nx2])
-    MHD.bfi2[sl] = 0.5 * (MHD.fb2[:Nx1, :Nx2] + MHD.fb2[:Nx1, 1:Nx2 + 1])
-
+    MHD.bfi1[sl], MHD.bfi2[sl] = \
+        interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
     par.BC[:] = 'peri'
     par.BCm[:] = par.BC[:]
     
@@ -860,29 +947,37 @@ def IC_MHD2D_field_loop(grid, MHD, par):
 
 def IC_MHD2D_disk(grid, MHD, par):
     """
-    Magnetized accretion torus -- the 'magnetized accretion torus' test of
-    Mignone et al. (2007), Sec. 5.5 (cylindrical cases c/d), after Hawley (2000).
+    Newtonian constant-angular-momentum torus (Papaloizou & Pringle 1984;
+    Hawley 1991/2000), seeded with a weak poloidal field for the MRI.
 
-    A constant-angular-momentum torus in a pseudo-Newtonian (Paczynski-Wiita)
-    potential Phi = -1/(r-1), seeded with a weak poloidal field, becomes MRI-
-    unstable and turbulent after a few orbits.  Cell-centred field treatment
-    (GLM / divergence cleaning); the staggered-CT seed is a later extension.
+    Point-mass gravity Phi = -GM/r (no pseudo-Newtonian throat, no excision).
+    A torus of CONSTANT specific angular momentum l = sqrt(GM*R_max) is in
+    hydrostatic + centrifugal equilibrium; with a weak field it goes MRI-
+    unstable after a few orbits.  Cell-centred field + divergence cleaning (GLM).
 
-    Setup (Mignone+2007 Sec. 5.5):
-      potential   Phi = -1/(r_sph - 1)           (pseudo-Newtonian, r_g = 1)
-      inner edge  r = 3   (sets the integration constant C)
-      pressure max / l_kep evaluation at r = 4.7, where T_orbit = 50
-      l_kep = r^{3/2} / (r - 1)   evaluated at r = 4.7  (constant over the torus)
-      enthalpy integral:
-          (gamma/(gamma-1)) p/rho = C - Phi - l_kep^2 / (2 R^2)
-      polytrope   p = K rho^gamma ,  gamma = 5/3
-      field       A_phi ∝ min[rho(R,z) - 5, 0] (with rho normalised so rho_max=...),
-                  normalised so min(2p/|B|^2) = beta_min = 100
-    Cylindrical box (case c/d): 0 <= R <= 20, -20 <= z <= 20 (uniform core
-    1.5 <= R <= 11.5, -5 <= z <= 5 in the paper; here a single uniform grid).
-    Region r_sph < 1.5 is excluded from the computation.
+    Construction
+    ------------
+        Keplerian l at the pressure maximum:   l = sqrt(GM * R_max)     (constant)
+        enthalpy integral (polytrope p = K rho^gamma):
+            (gamma/(gamma-1)) p/rho = W = C + GM/r - l^2 / (2 R^2)
+        inner edge sets C (W = 0 at R = R_inner, z = 0):
+            C = -GM/R_inner + l^2 / (2 R_inner^2)
+        K fixed by rho_max = 1 at the pressure maximum (R_max, 0):
+            K = (gamma-1)/gamma * W_max ,   W_max = W(R_max, 0)
+        rotation:   v_phi = l / R          (the SAME l as the enthalpy term)
+        gravity:    a = -grad Phi = -GM r_vec / r^3   (stored in F as the
+                    actual acceleration; the solver applies Res += -dens*F)
 
-    DIVERGENCE CONTROL -- CLEANING ONLY (GLM).  Run with divb_tr='GLM'.
+    Bound-torus condition
+    ---------------------
+        W -> C as r -> infinity, so the torus closes only if C < 0, i.e.
+            R_inner > R_max / 2 .
+        (With R_max = 1, R_inner = 0.65 the torus spans R in [0.65, 2.17],
+         peaks at R = 1, and has half-thickness z ~ 0.6 at the pressure max.)
+
+    Coordinate system : cylindrical (R, z) = (x1, x2).
+    Geometry          : CylindricalGrid, R in [0.4, 2.6], z in [-1, 1].
+    Divergence control: cleaning only (run with divb_tr = 'GLM').
 
     Parameters
     ----------
@@ -897,117 +992,98 @@ def IC_MHD2D_disk(grid, MHD, par):
 
     References
     ----------
-    Mignone, A. et al. (2007), ApJS 170, 228, Sec. 5.5
+    Papaloizou, J. C. B. & Pringle, J. E. (1984), MNRAS 208, 721
     Hawley, J. F. (2000), ApJ 528, 462
-    Paczynski, B. & Wiita, P. J. (1980), A&A 88, 23   (pseudo-Newtonian potential)
     """
-    print("2D magnetized accretion torus (Mignone et al. 2007, Sec. 5.5)")
+    print("2D Newtonian constant-l accretion torus (Papaloizou-Pringle / Hawley)")
 
-    # --- grid + time ---
-    R_in_g, R_out_g = 3.0, 20.0
-    Z_bot, Z_top    = -20.0, 20.0
+    # --- grid ---
+    R_in_g, R_out_g = 0.4, 2.6
+    Z_bot,  Z_top   = -1.0, 1.0
     grid.CylindricalGrid(R_in_g, R_out_g, Z_bot, Z_top)
 
-    gamma   = 5.0 / 3.0
-    R_inner = 3.0          # torus inner edge (sets C)
-    R_max   = 4.7          # pressure maximum (l_kep evaluation point)
-    r_excl  = 1.5          # excision radius (r_sph < r_excl excluded)
-    beta_min = 100.0       # min(2 p / |B|^2)
-    eos = EOSdata(gamma)
+    eos   = EOSdata(5.0 / 3.0)
+    gamma = eos.GAMMA
 
-    # --- pseudo-Newtonian (Paczynski-Wiita) potential and constant l_kep ---
-    def Phi(rsph):
-        return -1.0 / (rsph - 1.0)
+    # --- torus parameters ---
+    GM       = 1.0
+    R_max    = 1.0          # pressure maximum
+    R_inner  = 0.65         # inner edge   (must exceed R_max/2 for a bound torus)
+    beta_min = 100.0        # min plasma beta of the seed field (large -> weak)
+    rho_max  = 1.0
+    n_orbit  = 20.0         # run length in orbital periods at R_max
 
-    l_kep = R_max**1.5 / (R_max - 1.0)          # specific ang. mom. at r=4.7
-    T0    = 50.0                                  # orbital period at R_max (paper)
-    par.timenow = 0.0
-    par.timefin = 6.0 * T0                        # several orbits  <-- adjust
+    if R_inner <= 0.5 * R_max:
+        raise ValueError("unbound torus: need R_inner > R_max/2 (C must be < 0).")
 
-    # --- aliases ---
-    Ngc  = grid.Ngc
-    Nx1 = grid.Nx1; Nx2 = grid.Nx2
-    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
-    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
-
-    R = grid.cx1[sl]; Z = grid.cx2[sl]
-    rsph = np.sqrt(R**2 + Z**2)
-
-    # --- enthalpy: (gamma/(gamma-1)) p/rho = C - Phi - l_kep^2/(2 R^2) ---
-    # In cylindrical (R,z): r sin(theta) = R, so the rotation term is l^2/(2 R^2).
-    # C fixes the inner edge (midplane, R = R_inner, z = 0): enthalpy = 0 there.
-    C = Phi(R_inner) + l_kep * l_kep / (2.0 * R_inner * R_inner)
-    Rsafe = np.maximum(R, 1e-30)
-    Wenth = C - Phi(rsph) - l_kep * l_kep / (2.0 * Rsafe * Rsafe)   # = (g/(g-1)) p/rho
-    inside = (Wenth > 0.0) & (rsph > r_excl)
-
-    # --- polytropic density from the enthalpy: p/rho = (g-1)/g * Wenth,
-    #     and p = K rho^g  =>  rho = [ (g-1)/(g K) * Wenth ]^{1/(g-1)}.
-    #     K is fixed by choosing rho_max = 1 at the pressure maximum (R_max, 0). ---
-    W_max = C - Phi(R_max) - l_kep * l_kep / (2.0 * R_max * R_max)
+    l_kep = np.sqrt(GM * R_max)                       # constant specific ang. mom.
+    C     = -GM / R_inner + l_kep**2 / (2.0 * R_inner**2)
+    W_max = C + GM / R_max - l_kep**2 / (2.0 * R_max**2)
     if W_max <= 0.0:
-        raise ValueError("torus does not close (W_max <= 0): check R_inner, R_max, l_kep.")
-    rho_max = 1.0
+        raise ValueError("torus does not close (W_max <= 0): check R_inner, R_max.")
     Kpoly = (gamma - 1.0) / gamma * W_max / rho_max**(gamma - 1.0)
 
-    rho_t = np.where(inside,
-        ((gamma - 1.0) / (gamma * Kpoly) * np.maximum(Wenth, 0.0))**(1.0 / (gamma - 1.0)),
-        0.0)
+    T_orbit = 2.0 * np.pi * R_max / np.sqrt(GM / R_max)
+    par.timenow = 0.0
+    par.timefin = n_orbit * T_orbit
 
-    rho_atm = 1.0e-2 * rho_max
+    # --- aliases / coordinates ---
+    Ngc  = grid.Ngc
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    R = grid.cx1[sl]; Z = grid.cx2[sl]
+    rsph  = np.sqrt(R**2 + Z**2)
+    Rsafe = np.maximum(R, 1e-30)
+
+    # --- enthalpy, density, pressure ---
+    W      = C + GM / rsph - l_kep**2 / (2.0 * Rsafe**2)
+    inside = W > 0.0
+    rho_t  = np.where(inside,
+                      (np.maximum(W, 0.0) / W_max)**(1.0 / (gamma - 1.0)) * rho_max,
+                      0.0)
+
+    rho_atm = 1.0e-3 * rho_max          # ambient floor (see note in chat: not HSE)
     p_atm   = Kpoly * rho_atm**gamma
     in_t    = rho_t > rho_atm
     rho     = np.where(in_t, rho_t, rho_atm)
     pres    = np.where(in_t, Kpoly * rho_t**gamma, p_atm)
 
-    # --- uniform fields (full arrays, incl. ghosts) ---
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.bfi1[:, :] = 0.0
-    MHD.bfi2[:, :] = 0.0
-    MHD.bfi3[:, :] = 0.0
-    MHD.fb1[:, :]  = 0.0
-    MHD.fb2[:, :]  = 0.0
-    if hasattr(MHD, 'bglm'):
-        MHD.bglm[:, :] = 0.0
+    # --- zero fields (full arrays incl. ghosts) ---
+    MHD.vel1[:, :] = MHD.vel2[:, :] = 0.0
+    MHD.bfi1[:, :] = MHD.bfi2[:, :] = MHD.bfi3[:, :] = 0.0
+    MHD.fb1[:, :]  = MHD.fb2[:, :]  = 0.0
+    MHD.bglm[:, :] = 0.0
 
     # --- cell-centred profiles ---
     MHD.dens[sl] = rho
     MHD.pres[sl] = pres
-    # constant specific angular momentum: v_phi = l_kep / R (in the torus)
-    MHD.vel3[sl] = np.where(in_t, l_kep / Rsafe, 0.0)
+    MHD.vel3[sl] = np.where(in_t, l_kep / Rsafe, 0.0)     # v_phi = l / R
 
-    # --- gravity acceleration a = -dPhi/dr * r_hat,  Phi = -1/(r-1)
-    #     a_r = -1/(r-1)^2 (inward).  a_R = a_r R/r , a_z = a_r z/r.
-    #     Solver applies Res += -dens*F, so store F = -a (positive, inward pull).
-    inv = 1.0 / (rsph - 1.0)**2
-    MHD.F1[:, :] = inv * R / rsph        # F_R = +(R/r)/(r-1)^2
-    MHD.F2[:, :] = inv * Z / rsph        # F_z = +(z/r)/(r-1)^2
+    # --- gravity: store the ACTUAL acceleration  a = -GM r_vec / r^3 (inward).
+    #     solver applies Res += -dens*F with U -= dt*Res, so F holds a itself
+    #     (negative components), matching IC_HD2D_gap_opening and the RTI ICs. ---
+    inv = GM / rsph**3
+    MHD.F1[:, :] = -inv * R         # a_R = -GM R / r^3   (inward, NEGATIVE)
+    MHD.F2[:, :] = -inv * Z         # a_z = -GM z / r^3   (inward, NEGATIVE)
 
-    # --- weak poloidal seed from A_phi ∝ min[rho - rho_cut, 0] (paper: rho-5),
-    #     scaled to our rho_max=1 normalisation as a fraction of rho_max. ---
-    rho_cut = 0.2 * rho_max                       # paper uses 5 (on rho_max~25); ~0.2 here
-    Az = np.maximum(rho_t - rho_cut, 0.0)         # >0 only well inside the torus
+    # --- weak poloidal seed: A_phi ~ max(rho - rho_cut, 0), scaled to beta_min ---
+    #     B_R = -dA_phi/dz ,  B_z = (1/R) d(R A_phi)/dR     (curl of A_phi e_phi)
+    rho_cut = 0.2 * rho_max
+    Aphi    = np.maximum(rho_t - rho_cut, 0.0)
+    R1d = grid.cx1[Ngc:Nx1r, Ngc]
+    Z1d = grid.cx2[Ngc, Ngc:Nx2r]
+    B_R = -np.gradient(Aphi,        Z1d, axis=1)
+    B_z =  np.gradient(Rsafe * Aphi, R1d, axis=0) / Rsafe
 
-    R1d = grid.cx1[Ngc:Nx1r, Ngc]                 # 1D R (axis 0)
-    Z1d = grid.cx2[Ngc, Ngc:Nx2r]                 # 1D z (axis 1)
-    dAz_dZ  = np.gradient(Az,     Z1d, axis=1)
-    dRAz_dR = np.gradient(R * Az, R1d, axis=0)
-    B_R =  -dAz_dZ
-    B_z =   dRAz_dR / Rsafe
-
-    pmag  = 0.5 * (B_R * B_R + B_z * B_z)
-    ratio = np.max(np.where(in_t & (pmag > 0.0), pmag / pres, 0.0))   # = 1/beta_cur
-    fac   = 0.0#np.sqrt((1.0 / beta_min) / ratio) if ratio > 0.0 else 0.0
+    pmag  = 0.5 * (B_R**2 + B_z**2)
+    ratio = np.max(np.where(in_t & (pmag > 0.0), pmag / pres, 0.0))   # = 1/beta
+    fac   = np.sqrt((1.0 / beta_min) / ratio) if ratio > 0.0 else 0.0
     MHD.bfi1[sl] = fac * B_R
     MHD.bfi2[sl] = fac * B_z
 
-    # --- boundaries: axis at R=0, outflow elsewhere (paper Sec. 5.5) ---
-    par.BC[0] = 'free'    # x1 inner (R = 0)
-    par.BC[1] = 'free'    # x2 inner (z = -20)
-    par.BC[2] = 'free'    # x1 outer (R = 20)
-    par.BC[3] = 'free'    # x2 outer (z = +20)
-    par.BCm[:] = par.BC[:]
+    # --- boundaries ---
+    par.BC[0]  = 'wall'; par.BC[1:3]  = 'wall' 
+    par.BCm[:] = 'free'
 
     return grid, MHD, par, eos
 
@@ -1202,6 +1278,8 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     par.BC[1] = 'wall'    # x2 inner (Z = 0, nozzle via BC_fixed[1])
     par.BC[2] = 'free'    # x1 outer (R = 5)
     par.BC[3] = 'free'    # x2 outer (R = 20)
+    
+    par.BCm[0] = 'axis'; par.BCm[1:3] = 'free'
 
     return grid, MHD, par, eos
 

@@ -313,7 +313,7 @@ def oneStep_MHD_RK_CT(g, MHD, eos, par, dt):
         # update mass, 3 components of momentum, total energy and 3 comps of magnetic field
         _rk_stage(MHD, MHD_h, MHD, \
            ResM, ResV1, ResV2, ResV3, ResE, \
-           ResB1, ResB2, ResB3, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
+           ResB1, ResB2, ResB3, dt, 1.0/3.0, 2.0/3.0, -2.0/3.0)
             
     else:
         

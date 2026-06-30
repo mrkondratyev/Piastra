@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-MHD_one_step_GLM.py
+MHD_step_GLM.py
 ===============================================================================
 
 2D Magnetohydrodynamics (MHD) Finite-volume Solver
@@ -15,7 +15,7 @@ is controlled via the generalized Lagrange multiplier (GLM) method (Dedner et al
 
 Main Components
 ---------------
-- ``MHD2D_8wave`` : container class managing grid, state, EOS, and parameters.
+- ``MHD2D_GLM`` : container class managing grid, state, EOS, and parameters.
 - ``CFLcondition_MHD`` : compute timestep from CFL stability condition.
 - ``oneStep_MHD_RK_GLM`` : advance MHD state by one timestep (RK1/RK2/RK3).
 - ``flux_calc_MHD_GLM`` : compute residuals of conservative variables.
@@ -336,6 +336,7 @@ def oneStep_MHD_RK_GLM(g, MHD, eos, par, dt, c_h):
     return MHD
 
 
+
 def flux_calc_MHD_GLM(g, MHD, par, eos, c_h):
     """
     Compute residuals (flux divergences + sources) of conservative MHD vars.
@@ -498,6 +499,7 @@ def flux_calc_MHD_GLM(g, MHD, par, eos, c_h):
     
     #return the residuals for mass, 3 components of momentum, total energy and magnetic field
     return ResM, ResV1, ResV2, ResV3, ResE, ResB1, ResB2, ResB3, ResGLM
+
 
 
 def curv_source_MHD_GLM(g, MHD):
