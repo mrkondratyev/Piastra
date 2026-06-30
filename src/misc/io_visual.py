@@ -32,8 +32,10 @@ def plot_setup(grid, var, time):
     Notes
     -----
     - In 1D cases (Nx2 == 1 or Nx1 == 1), a line plot is produced.
-    - In 2D cases, an ``imshow`` plot is created with color limits
-      adjusted to the data range.
+    - In 2D Cartesian / cylindrical cases, an ``imshow`` plot is created.
+    - In 2D polar / spherical-polar cases, a ``pcolormesh`` plot on the mapped
+      (x, y) / (R, z) vertices is created.
+    - Colour limits are set to the current data range.
 
     Parameters
     ----------
@@ -148,13 +150,13 @@ def plotting(grid, var, time, line, ax, fig, im):
     plot (for 2D grids) with the current variable values. Titles and color
     ranges are refreshed at each call.
 
-    Notes
+     Notes
     -----
-    - In 1D mode, ``ax.relim()`` and ``ax.autoscale_view()`` are used
-      to rescale the axes automatically.
-    - In 2D mode, color limits are updated to the current data range.
-    - Russian comment preserved: 
-      *"plot the figure"* → function updates the figure in runtime.
+    - In 1D mode, ``ax.relim()`` and ``ax.autoscale_view()`` rescale the axes.
+    - In 2D Cartesian / cylindrical mode, the ``imshow`` colour limits are
+      updated to the current data range.
+    - In 2D polar / spherical-polar mode, the ``pcolormesh`` array and colour
+      limits are updated.
 
     Parameters
     ----------

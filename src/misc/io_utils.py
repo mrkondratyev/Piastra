@@ -93,12 +93,14 @@ def save_snapshot(filepath, grid, state, par, eos=None):
         data["bfi3"] = state.bfi3[Ngc:-Ngc, Ngc:-Ngc]
         data["fb1"]  = state.fb1
         data["fb2"]  = state.fb2
+        data['bglm'] = state.bglm
         data["divB"] = state.divB
 
     elif par.mode == "diff":
         data["T"]     = state.T[Ngc:-Ngc, Ngc:-Ngc]
         data["kappa"] = state.kappa
-
+        data['ST']    = state.ST[Ngc:-Ngc, Ngc:-Ngc]
+        
     # Create output directory if needed
     outdir = os.path.dirname(filepath)
     if outdir and not os.path.isdir(outdir):
