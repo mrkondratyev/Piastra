@@ -8,7 +8,7 @@ diff_step.py
 
 Solves the parabolic equation
 
-    ∂T/∂t = ∇·(κ ∇T) + f
+    ∂T/∂t = ∇·(κ ∇T)
 
 on the structured 2D grid provided by grid_setup.Grid, using a
 finite-volume discretisation that is consistent with all geometries
@@ -172,6 +172,7 @@ class Diff2D:
 # ============================================================================
 #   CFL condition
 # ============================================================================
+
 def CFLcondition_diff(g, diff, CFL):
     """
     Compute the CFL-limited explicit timestep for diffusion.
@@ -207,6 +208,7 @@ def CFLcondition_diff(g, diff, CFL):
 # ============================================================================
 #   Spatial operator  L(T) = ∇·(κ ∇T)
 # ============================================================================
+
 def _face_kappa(kappa, Ngc, Nx1r, Nx2r):
     """
     Compute the arithmetic-mean face-centred diffusivity.
@@ -268,8 +270,8 @@ def spatial_operator_diff(g, diff):
     # Diffusive fluxes (gradient × face diffusivity)
     flux1 = kf1 * g1; flux2 = kf2 * g2
 
-    # Finite-volume divergence + source term addition (ST = f for ∂T/∂t = ∇·(κ ∇T) + f)
-    LT = div_face_vector(g, flux1, flux2) + diff.ST
+    # Finite-volume divergence 
+    LT = div_face_vector(g, flux1, flux2)
 
     return LT
 
