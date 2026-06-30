@@ -13,6 +13,7 @@ including:
   - Cell-centred gradient operator with geometry-aware metric factors
   - L-n norm and volume-integral helpers for convergence testing
   - Central finite-difference helpers (private: ``_ddx1``, ``_ddx2``)
+  - Edge-to-face curl according to Stokes theorem
 
 The routines assume the grid object ``grid`` provides:
     - grid.Ngc          : number of ghost cells
@@ -23,10 +24,10 @@ The routines assume the grid object ``grid`` provides:
     - grid.dx1, dx2     : cell widths
     - grid.fS1, fS2     : face areas perpendicular to x1 / x2
     - grid.cVol         : cell volumes
-    - grid.geom         : geometry marker ('cart', 'cyl', 'pol')
+    - grid.geom         : geometry marker ('cart', 'cyl', 'pol', 'sph')
 
-All operations are consistent with a finite-volume discretization on
-Cartesian, cylindrical (R,Z), or polar (R,φ) geometries.
+All operations are consistent with a finite-volume discretization on Cartesian,
+cylindrical (R,Z), polar (R,φ), or spherical-polar (r,θ) geometries.
 
 Author: mrkondratyev
 """
@@ -210,6 +211,7 @@ def integral_over_grid(grid, var):
 # ============================================================================
 # Helper: central finite differences on cell-centered data
 # ============================================================================
+
 def _ddx1(grid, f):
     """
     Central ∂f/∂x1 on real cells using ghost-zone data.
@@ -227,6 +229,7 @@ def _ddx1(grid, f):
     Ngc, Nx1r, Nx2r = grid.Ngc, grid.Nx1r, grid.Nx2r
     return (f[Ngc+1:Nx1r+1, Ngc:Nx2r] - f[Ngc-1:Nx1r-1, Ngc:Nx2r]) / \
            (grid.cx1[Ngc+1:Nx1r+1, Ngc:Nx2r] - grid.cx1[Ngc-1:Nx1r-1, Ngc:Nx2r])
+
 
 def _ddx2(grid, f):
     """
@@ -247,10 +250,10 @@ def _ddx2(grid, f):
            (grid.cx2[Ngc:Nx1r, Ngc+1:Nx2r+1] - grid.cx2[Ngc:Nx1r, Ngc-1:Nx2r-1])
 
 
-
 # ============================================================================
 # Gradient
 # ============================================================================
+
 def cell_gradient(grid, f):
     """
     Compute the gradient of a cell-centered scalar field.
@@ -347,3 +350,44 @@ def face_gradient(grid, f):
     # because it is a function of x1 only 
 
     return g1, g2
+
+
+
+def edge_to_face_curl(grid, edg_var):
+    """
+    Face-normal components of a vector field from its third (out-of-plane) edge
+    variable, via the discrete Stokes theorem -- the curl of (0, 0, edg_var).
+
+    Given a quantity on the 3-edges (cell corners in 2D) -- the z/azimuthal
+    component of a vector potential A_3 (for ICs) or an electric field E_3 (for
+    the CT update) -- the normal component on each face is the circulation of
+    (edg_var * edge-length) around the face, divided by the face area:
+
+        fV1 =  [ (edg_var*edg3)_{j+1} - (edg_var*edg3)_{j}   ] / fS1     (x1-faces)
+        fV2 = -[ (edg_var*edg3)_{i+1} - (edg_var*edg3)_{i}   ] / fS2     (x2-faces)
+
+    where edg3 is the 3-edge length and fS1, fS2 the face areas.  The result is
+    divergence-free by construction (the discrete divergence of a curl vanishes),
+    so this is the standard way to build a solenoidal staggered field from a
+    vector potential, or to advance it from edge EMFs.  On a Cartesian grid
+    edg3 = 1, fS1 = dx2, fS2 = dx1, recovering the plain curl (dA/dx2, -dA/dx1).
+
+    Input and output live on REAL edges / faces (no ghost cells).
+
+    Parameters
+    ----------
+    grid : Grid
+        Supplies edg3 (Nx1+1, Nx2+1), fS1 (Nx1+1, Nx2), fS2 (Nx1, Nx2+1).
+    edg_var : ndarray, shape (Nx1+1, Nx2+1)
+        Third-component edge variable on the real cell corners.
+
+    Returns
+    -------
+    fV1 : ndarray, shape (Nx1+1, Nx2)   normal component on real x1-faces
+    fV2 : ndarray, shape (Nx1,   Nx2+1) normal component on real x2-faces
+    """
+    AL = edg_var * grid.edg3                          # circulation density on edges
+    fV1 =  (AL[:, 1:] - AL[:, :-1]) / (grid.fS1 + 1e-30)
+    fV2 = -(AL[1:, :] - AL[:-1, :]) / (grid.fS2 + 1e-30)
+    return fV1, fV2
+

@@ -7,7 +7,7 @@ Grid module for structured 2D meshes with ghost cells.
 
 This module provides the `Grid` class, which handles the construction of
 2D computational grids including ghost zones. It supports multiple
-geometries (Cartesian, cylindrical, and polar) and provides methods to
+geometries (Cartesian, cylindrical, polar, and spherical) and provides methods to
 compute cell-centered coordinates, face-centered coordinates, face
 areas, and cell volumes.
 
@@ -15,6 +15,8 @@ Once a grid is constructed, numerical solvers can operate on the
 finite-volume data (volumes, areas, resolutions) without needing
 explicit knowledge of the underlying geometry.
 
+Additionally, the module provides "reconstruct_grid" function, which can be used to 
+reload the grid data after the restart.
 Author: mrkondratyev
 """
 
@@ -275,18 +277,15 @@ class Grid:
         # Volumetric centroids
         self.ax1 = 2.0 * (self.fx1[1:, :]**3 - self.fx1[:-1, :]**3) / (self.fx1[1:, :]**2 - self.fx1[:-1, :]**2) / 3.0
         self.ax2 = self.cx2
-
+        
         # Face areas and volumes
-        for i in range(Nx1 + 1):
-            for j in range(Nx2):
-                self.fS1[i, j] = fx1[i + Ngc] * dx2[j + Ngc] * 2.0 * np.pi
-        for i in range(Nx1):
-            for j in range(Nx2 + 1):
-                self.fS2[i, j] = (fx1[i+1+Ngc]**2 - fx1[i+Ngc]**2) * np.pi
-        self.fS3[:, :] = self.dx1[Ngc:-Ngc, Ngc:-Ngc] * self.dx2[Ngc:-Ngc, Ngc:-Ngc]
-        for i in range(Nx1):
-            for j in range(Nx2):
-                self.cVol[i, j] = (fx1[i+1+Ngc]**2 - fx1[i+Ngc]**2) * dx2[j+Ngc] * np.pi
+        r_f   = fx1[Ngc:Ngc+Nx1+1]                      # radial faces      (Nx1+1,)
+        dz    = dx2[Ngc:Ngc+Nx2]                        # axial widths      (Nx2,)
+        r2dif = fx1[Ngc+1:Ngc+Nx1+1]**2 - fx1[Ngc:Ngc+Nx1]**2   # r²₊ − r²₋ (Nx1,)
+        self.fS1[:, :]  = r_f[:, None] * dz[None, :] * 2.0*np.pi
+        self.fS2[:, :]  = (r2dif * np.pi)[:, None]      # independent of j
+        self.fS3[:, :]  = self.dx1[Ngc:-Ngc, Ngc:-Ngc] * self.dx2[Ngc:-Ngc, Ngc:-Ngc]
+        self.cVol[:, :] = r2dif[:, None] * dz[None, :] * np.pi
         
         #grid edges
         self.edg1[:, :] = self.dx1[Ngc:-Ngc, Ngc:Nx2+Ngc+1]
@@ -313,7 +312,7 @@ class Grid:
         Notes
         -----
         - Radial integrals use analytic formulas for volumetric centroids.
-        - Face areas, edges, and volumes account for cylindrical geometry.
+        - Face areas, edges, and volumes account for polar geometry.
 
         Examples
         --------
@@ -355,16 +354,14 @@ class Grid:
         self.ax2 = self.cx2
 
         # Face areas and volumes
-        for i in range(Nx1 + 1):
-            for j in range(Nx2):
-                self.fS1[i, j] = fx1[i+Ngc] * dx2[j+Ngc]
-        for i in range(Nx1):
-            for j in range(Nx2 + 1):
-                self.fS2[i, j] = (fx1[i+1+Ngc] - fx1[i+Ngc])
-        for i in range(Nx1):
-            for j in range(Nx2):
-                self.cVol[i, j] = (fx1[i+1+Ngc]**2 - fx1[i+Ngc]**2) / 2.0 * dx2[j+Ngc]
-        self.fS3[:, :] = self.cVol[:,:]
+        r_f   = fx1[Ngc:Ngc+Nx1+1]                      # radial faces      (Nx1+1,)
+        dphi  = dx2[Ngc:Ngc+Nx2]                        # angular widths    (Nx2,)
+        dr    = fx1[Ngc+1:Ngc+Nx1+1] - fx1[Ngc:Ngc+Nx1]         # r₊ − r₋   (Nx1,)
+        r2dif = fx1[Ngc+1:Ngc+Nx1+1]**2 - fx1[Ngc:Ngc+Nx1]**2   # r²₊ − r²₋ (Nx1,)
+        self.fS1[:, :]  = r_f[:, None] * dphi[None, :] * 1.0 # dz = 1
+        self.fS2[:, :]  = dr[:, None]                   # independent of j
+        self.cVol[:, :] = (r2dif / 2.0)[:, None] * dphi[None, :] * 1.0 # dz = 1
+        self.fS3[:, :]  = (r2dif / 2.0)[:, None] * dphi[None, :]
         
         #grid edges
         self.edg1[:, :] = self.dx1[Ngc:-Ngc, Ngc:Nx2+Ngc+1]
@@ -387,9 +384,9 @@ class Grid:
         x1fin : float
             End of domain in radial direction (r).
         x2ini : float
-            Start of domain in polar-angle direction (θ, from north pole).
+            Start of domain in lateral angle direction (θ, from north pole).
         x2fin : float
-            End of domain in polar-angle direction (θ).
+            End of domain in lateral angle direction (θ).
 
         Notes
         -----
@@ -453,29 +450,20 @@ class Grid:
         self.ax2 = num_ax2 / den_ax2
 
         # Face areas and cell volumes
-        for i in range(Nx1 + 1):
-            for j in range(Nx2):
-                # radial face area: 2π r² ∫sinθ dθ = 2π r² (cosθ_j − cosθ_{j+1})
-                self.fS1[i, j] = (2.0 * np.pi * fx1[i + Ngc]**2 *
-                                  (np.cos(fx2[j + Ngc]) - np.cos(fx2[j + Ngc + 1])))
-
-        for i in range(Nx1):
-            for j in range(Nx2 + 1):
-                # polar-angle face area: 2π sinθ ∫r dr = π sinθ (r²₊ − r²₋)
-                self.fS2[i, j] = (np.pi * np.sin(fx2[j + Ngc]) *
-                                  (fx1[i + 1 + Ngc]**2 - fx1[i + Ngc]**2))
-
-        for i in range(Nx1):
-            for j in range(Nx2):
-                # cell volume: 2π/3 (r³₊−r³₋)(cosθ_j−cosθ_{j+1})
-                self.cVol[i, j] = (2.0 * np.pi / 3.0 *
-                                   (fx1[i + 1 + Ngc]**3 - fx1[i + Ngc]**3) *
-                                   (np.cos(fx2[j + Ngc]) - np.cos(fx2[j + Ngc + 1])))
-
-        # fS3: area of the azimuthal (r-θ) face, used by CT MHD as a placeholder
-        for i in range(Nx1):
-            for j in range(Nx2):
-                self.fS3[i, j] = 0.5 * (fx1[i + 1 + Ngc]**2 - fx1[i + Ngc]**2) * dx2uc
+        r_f    = fx1[Ngc:Ngc+Nx1+1]                     # radial faces      (Nx1+1,)
+        th_f   = fx2[Ngc:Ngc+Nx2+1]                     # polar-angle faces (Nx2+1,)
+        r2dif  = fx1[Ngc+1:Ngc+Nx1+1]**2 - fx1[Ngc:Ngc+Nx1]**2   # (Nx1,)
+        r3dif  = fx1[Ngc+1:Ngc+Nx1+1]**3 - fx1[Ngc:Ngc+Nx1]**3   # (Nx1,)
+        cosdif = np.cos(th_f[:-1]) - np.cos(th_f[1:])   # cosθ_j − cosθ_{j+1} (Nx2,)
+        sin_lo = np.sin(th_f)                           # sinθ at lower face  (Nx2+1,)
+        # radial face area: 2π r² (cosθ_j − cosθ_{j+1})
+        self.fS1[:, :]  = 2.0*np.pi * (r_f**2)[:, None] * cosdif[None, :]
+        # polar-angle face area: π sinθ (r²₊ − r²₋)
+        self.fS2[:, :]  = np.pi * sin_lo[None, :] * r2dif[:, None]
+        # cell volume: 2π/3 (r³₊ − r³₋)(cosθ_j − cosθ_{j+1})
+        self.cVol[:, :] = 2.0*np.pi/3.0 * r3dif[:, None] * cosdif[None, :]
+        # azimuthal (r-θ) face area placeholder for CT MHD
+        self.fS3[:, :]  = 0.5 * r2dif[:, None] * dx2uc
 
         # Grid edges (for CT MHD)
         # edg1: radial edge length (dr) at each (real cell, θ-face) point
@@ -491,3 +479,33 @@ class Grid:
         # Lamé coefficient: physical arc length per unit θ-coordinate is r
         self.hx2 = self.cx1.copy()
 
+
+
+def reconstruct_grid(Nx1, Nx2, Ngc, geom, x1ini, x1fin, x2ini, x2fin):
+    """
+    Rebuild a Grid from its construction metadata by re-running the matching
+    geometry constructor.
+
+    Parameters
+    ----------
+    Nx1, Nx2, Ngc : int
+    geom : {'cart', 'cyl', 'pol', 'sph'}
+    x1ini, x1fin, x2ini, x2fin : float
+        Domain bounds passed to the constructor.
+
+    Returns
+    -------
+    Grid
+    """
+    g = Grid(Nx1, Nx2, Ngc)
+    builders = {
+        'cart': g.CartesianGrid,
+        'cyl':  g.CylindricalGrid,
+        'pol':  g.PolarGrid,
+        'sph':  g.SphericalPolarGrid,
+    }
+    if geom not in builders:
+        raise ValueError(f"reconstruct_grid: unknown geometry '{geom}'. "
+                         f"Expected one of {sorted(builders)}.")
+    builders[geom](x1ini, x1fin, x2ini, x2fin)
+    return g
