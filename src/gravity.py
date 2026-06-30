@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-add_phys.py
+gravity.py 
 ===========
 Additional gravitational source terms for Piastra.
 
