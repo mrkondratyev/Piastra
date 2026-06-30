@@ -16,7 +16,11 @@ solution are used here:
   * exact return-to-initial-state -- linear advection of a smooth profile on
     a periodic domain, run for exactly one period (vel * t_fin == domain
     length, set by the IC itself): whatever the scheme does in between, the
-    exact solution at t_fin is identically the initial condition.
+    exact solution at t_fin is identically the initial condition. The
+    circularly polarised Alfven wave (Toth 2000) is the same trick applied
+    to a genuinely NONLINEAR exact solution of the ideal MHD equations: at
+    unit background field and density the Alfven speed is 1, so the wave
+    also returns to its initial condition after each unit of time.
   * preserved steady state -- the Gresho vortex is an exact, time-independent
     solution of the Euler equations; comparing the numerical state at t > 0
     back to its own initial condition is the standard vortex-preservation
@@ -144,3 +148,78 @@ def test_hd_gresho_vortex_preservation_convergence():
         e2 = l2_error(grid, state.vel2[Ngc:-Ngc, Ngc:-Ngc], vel2_0)
         errors.append(float(np.hypot(e1, e2)))
     _assert_converging(errors, min_order=0.8, label="HD/gresho2D")
+
+
+# ============================================================================
+#   MHD: circularly polarised Alfven wave (exact nonlinear travelling wave)
+# ============================================================================
+#
+# NOTE on the order thresholds below: unlike every other test in this file,
+# these were NOT empirically calibrated against an actual run (per request,
+# this pair was implemented and reviewed -- IC field names/shapes, BC,
+# periodicity-implies-exact-return reasoning, solver/divb_tr validity --
+# without being executed). The thresholds are therefore set conservatively
+# low relative to what PLM measures elsewhere in this file (1.2-1.7) rather
+# than tuned to an observed value; tighten them once a real run's numbers
+# are in hand.
+
+def test_mhd_alfven_1d_convergence():
+    """
+    1D circularly polarised Alfven wave (Toth 2000, JCP 161, 605): an
+    exact NONLINEAR travelling-wave solution of the ideal MHD equations
+    (B1 = B_par = 1 uniform, B2/B3 a circularly polarised perpendicular
+    component tied to v2/v3 by the Alfven relation). With rho0 = 1,
+    B_par = 1 the Alfven speed is 1, and the IC's own t_fin = 1.0 is
+    exactly one period over the domain length 1 (see
+    MHD_init_cond.IC_MHD1D_Alfven) -- so, like the linear-advection tests
+    above, the exact solution at t_fin is identically the initial
+    condition; the transverse field B2, B3 is what actually carries the
+    wave, so that is what is compared. Uses CT (the standard choice for
+    this benchmark in the literature, Toth 2000; Gardiner & Stone 2005)
+    so the comparison isn't contaminated by GLM/8wave's approximate
+    divergence handling.
+    """
+    errors = []
+    for Nx in (32, 64, 128, 256):
+        grid, state, par, eos, solver = build_case(
+            "MHD", "alfven1D", Nx, 1, rec_type="PLM", RK_order="RK2",
+            solver_type="HLLD", divb_tr="CT", CFL=0.5)
+        Ngc = grid.Ngc
+        bfi2_0 = state.bfi2[Ngc:-Ngc, Ngc:-Ngc].copy()
+        bfi3_0 = state.bfi3[Ngc:-Ngc, Ngc:-Ngc].copy()
+        state, _ = run_to_tfin(solver, par)
+        e2 = l2_error(grid, state.bfi2[Ngc:-Ngc, Ngc:-Ngc], bfi2_0)
+        e3 = l2_error(grid, state.bfi3[Ngc:-Ngc, Ngc:-Ngc], bfi3_0)
+        errors.append(float(np.hypot(e2, e3)))
+    _assert_converging(errors, min_order=1.0, label="MHD/alfven1D")
+
+
+def test_mhd_alfven_2d_convergence():
+    """
+    2D circularly polarised Alfven wave propagating along the grid
+    diagonal (Toth 2000; Gardiner & Stone 2005, JCP 205, 509): the same
+    exact nonlinear travelling wave as the 1D case, rotated by theta =
+    pi/4 with the domain/IC engineered (see MHD_init_cond.IC_MHD2D_Alfven)
+    so the propagation coordinate is exactly periodic with period 1 --
+    again an exact return to the initial condition after every unit of
+    time. The out-of-plane field B3 = Bz directly carries the wave (set
+    as a clean function of the propagation coordinate in the IC) and is
+    used for the comparison; the in-plane field is built from a
+    divergence-free corner vector potential, also exactly reproduced at
+    t=0. par.timefin is overridden to one period (1.0) rather than the
+    IC's default of five (5.0, set for a long-time divB-control
+    demonstration) purely to keep the resolution sweep affordable; one
+    period is exactly as valid a comparison as five.
+    """
+    errors = []
+    for Nx in (16, 32, 64):
+        grid, state, par, eos, solver = build_case(
+            "MHD", "alfven2D", Nx, Nx, rec_type="PLM", RK_order="RK2",
+            solver_type="HLLD", divb_tr="CT", CFL=0.4)
+        par.timefin = 1.0   # one period instead of the IC's default 5
+        Ngc = grid.Ngc
+        bfi3_0 = state.bfi3[Ngc:-Ngc, Ngc:-Ngc].copy()
+        state, _ = run_to_tfin(solver, par)
+        e3 = l2_error(grid, state.bfi3[Ngc:-Ngc, Ngc:-Ngc], bfi3_0)
+        errors.append(e3)
+    _assert_converging(errors, min_order=1.0, label="MHD/alfven2D")
