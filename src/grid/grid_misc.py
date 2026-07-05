@@ -169,9 +169,9 @@ def Ln_norm(grid, n, var_num, var_ref):
     n : int
         number of desired order for the norm
     var_num : ndarray
-        numerical variable.
+        numerical variable (with ghost cells).
     var_ref : ndarray
-        reference variable.
+        reference variable (with ghost cells).
 
     Returns
     -------
@@ -196,7 +196,7 @@ def integral_over_grid(grid, var):
     grid : object
         Grid object with geometry and metric information.
     var : ndarray
-        numerical cell-centered variable.
+        numerical cell-centered variable (with ghost cells).
     
 
     Returns
@@ -390,4 +390,3 @@ def edge_to_face_curl(grid, edg_var):
     fV1 =  (AL[:, 1:] - AL[:, :-1]) / (grid.fS1 + 1e-30)
     fV2 = -(AL[1:, :] - AL[:-1, :]) / (grid.fS2 + 1e-30)
     return fV1, fV2
-
