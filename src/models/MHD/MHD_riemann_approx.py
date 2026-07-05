@@ -51,8 +51,24 @@ import numpy as np
 # Small helper: conservative MHD variables + their fluxes along Ox
 # -------------------------
 def nr_MHD_cons_and_flux(rho, vx, vy, vz, p, bx, by, bz, eos):
+    """
+    Conservative variables and their Ox-normal fluxes for one state.
+
+    Parameters
+    ----------
+    rho, vx, vy, vz, p, bx, by, bz : ndarray
+        Primitive state (density, velocity components, pressure, and B-fields).
+    eos : object
+        Equation of state object.
+
+    Returns
+    -------
+    m, mx, my, mz, e, By, Bz, ptot, b2 : ndarray
+        Conservative variables + total pressure + squared B-field.
+    Fm, Fmx, Fmy, Fmz, Fe, Fby, Fbz : ndarray
+        Their fluxes normal to the face (along the local x/Ox direction).
+    """
     
-    '''conservative variables'''
     #mass
     m = rho
     #momentum
@@ -81,13 +97,15 @@ def nr_MHD_cons_and_flux(rho, vx, vy, vz, p, bx, by, bz, eos):
         Fm, Fmx, Fmy, Fmz, Fe, Fby, Fbz
 
 
-    
 
-"""
-Local Lax-Friedrichs (Rusanov) flux
-"""
 def LLF_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos):
-    
+    """
+    Local Lax-Friedrichs (Rusanov) flux for Newtonian MHD.
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., bzl,bzr, eos)
+    signature and (Fmass, Fmomx, ..., Fbfiz) return.
+    """
     #normal B-field and total pressures on the left and on the right side
     bxn = (bxl + bxr)/2.0  
     
@@ -127,10 +145,14 @@ def LLF_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,
 
 
 
-"""
-Harten, Lax, and Van Leer (HLL) flux
-"""
 def HLL_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos):
+    """
+    Harten, Lax, and Van Leer flux for Newtonian MHD, see Miyoshi & Kusano (2005).
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., bzl,bzr, eos)
+    signature and (Fmass, Fmomx, ..., Fbfiz) return.
+    """
     
     #normal B-field and total pressures on the left and on the right side
     bxn = (bxl + bxr)/2.0  
@@ -171,13 +193,17 @@ def HLL_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,
     return Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz
 
 
-"""
-Harten, Lax, and Van Leer + Contact wave (HLLC) flux for Newtonian MHD,
-following Li (2005). Single contact between two fast waves; the transverse
-magnetic field in the star region is the HLL average (no Alfven separation).
-"""
-def HLLC_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos):
 
+def HLLC_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos):
+    """
+    Harten, Lax, and Van Leer + Contact wave (HLLC) flux for Newtonian MHD,
+    following Li (2005) (see also Gurski (2004)). Single contact between two fast waves; 
+    the transverse magnetic field in the star region is the HLL average (no Alfven separation).
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., bzl,bzr, eos)
+    signature and (Fmass, Fmomx, ..., Fbfiz) return.
+    """
     #normal B-field (continuous across the fan)
     bxn = (bxl + bxr)/2.0
 
@@ -259,12 +285,16 @@ def HLLC_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl
     return Fmass, Fmomx, Fmomy, Fmomz, Fetot, Fbfix, Fbfiy, Fbfiz
 
 
-"""
-Harten, Lax, and Van Leer + Contact wave + Alfven discontinuity (HLLD) MHD flux,
-following Miyoshi & Kusano (2005).
-"""
+
 def HLLD_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos):
-    
+    """
+    Harten, Lax, and Van Leer + Contact wave + Alfven discontinuity (HLLD) MHD flux,
+    following Miyoshi & Kusano (2005).
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., bzl,bzr, eos)
+    signature and (Fmass, Fmomx, ..., Fbfiz) return.
+    """
     #normal B-field and total pressures on the left and on the right side
     bxn = (bxl + bxr)/2.0  
     
