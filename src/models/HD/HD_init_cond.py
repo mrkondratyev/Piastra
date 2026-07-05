@@ -24,8 +24,6 @@ Available tests
     - Planar Sedov-Taylor explosion
     - Cylindrical Sedov-Taylor explosion
     - Four-quadrant 2D Riemann problem (Lax & Liu 1998)
-    - Implosion problem (Liska & Wendroff 2003)
-    - Double Mach reflection (Woodward & Colella 1984)
     - Gresho vortex (Gresho & Chan 1990) – angular momentum preservation
     - Shock-cloud interaction (Klein et al. 1994) – astrophysical
     - Gap opening in protoplanetary disk (polar coordinates) – astrophysical
@@ -759,12 +757,25 @@ def IC_HD2D_Sedov_cart(grid, fluid, par):
 
     rad0 = 0.02; energ = 0.25
 
+    fluid.vel1[:, :] = fluid.vel2[:, :] = fluid.vel3[:, :] = 0.0
+    fluid.dens[:, :] = 1.0
+
     rad   = np.sqrt(grid.cx1**2 + grid.cx2**2)
     inside = rad < rad0
 
-    # total volume of the hot region
+    # total volume of the hot region -- grid.cVol is interior-only (no ghost
+    # cells), so only the boolean mask (built from the ghost-inclusive cx1/cx2)
+    # needs the ghost-offset slice; cVol itself must not be re-sliced.
     sl = (slice(grid.Ngc, grid.Nx1r), slice(grid.Ngc, grid.Nx2r))
-    volume = np.sum(grid.cVol[sl][inside[sl]])
+    if not np.any(inside[sl]):
+        # rad0 is smaller than half a cell at this resolution -- no cell
+        # centre falls inside the analytic disk. Deposit into the single
+        # interior cell nearest the origin instead, so the blast energy is
+        # never silently lost at coarse resolution.
+        inside[:, :] = False
+        i0, j0 = np.unravel_index(np.argmin(rad[sl]), rad[sl].shape)
+        inside[grid.Ngc + i0, grid.Ngc + j0] = True
+    volume = np.sum(grid.cVol[inside[sl]])
 
     # pass 2: deposit the blast energy as pressure over exactly that volume
     fluid.pres[:, :] = np.where(inside, (eos.GAMMA - 1.0) * energ / volume, 1e-4)
@@ -815,17 +826,30 @@ def IC_HD2D_Sedov_cyl(grid, fluid, par):
 
     rad0 = 0.02; energ = 0.5
 
+    fluid.vel1[:, :] = fluid.vel2[:, :] = fluid.vel3[:, :] = 0.0
+    fluid.dens[:, :] = 1.0
+
     rad   = np.sqrt(grid.cx1**2 + grid.cx2**2)
     inside = rad < rad0
 
-    # total volume of the hot region
+    # total volume of the hot region -- grid.cVol is interior-only (no ghost
+    # cells), so only the boolean mask (built from the ghost-inclusive cx1/cx2)
+    # needs the ghost-offset slice; cVol itself must not be re-sliced.
     sl = (slice(grid.Ngc, grid.Nx1r), slice(grid.Ngc, grid.Nx2r))
-    volume = np.sum(grid.cVol[sl][inside[sl]])
+    if not np.any(inside[sl]):
+        # rad0 is smaller than half a cell at this resolution -- no cell
+        # centre falls inside the analytic disk. Deposit into the single
+        # interior cell nearest the origin instead, so the blast energy is
+        # never silently lost at coarse resolution.
+        inside[:, :] = False
+        i0, j0 = np.unravel_index(np.argmin(rad[sl]), rad[sl].shape)
+        inside[grid.Ngc + i0, grid.Ngc + j0] = True
+    volume = np.sum(grid.cVol[inside[sl]])
 
     # pass 2: deposit the blast energy as pressure over exactly that volume
     fluid.pres[:, :] = np.where(inside, (eos.GAMMA - 1.0) * energ / volume, 1e-4)
 
-    # equatorial symmetry BC 
+    # equatorial symmetry BC
     par.BC[0] = 'axis'; par.BC[1] = 'wall'
     par.BC[2] = 'free'; par.BC[3] = 'free'
     
