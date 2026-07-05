@@ -35,8 +35,6 @@ class Grid:
         Number of real (non-ghost) cells in the second dimension.
     Ngc : int
         Number of ghost cells on each boundary.
-    i0r : int
-        Starting index for real (non-ghost) cell loops.
     Nx1r : int
         Final index (exclusive) for real cells in the first dimension.
     Nx2r : int
@@ -161,7 +159,7 @@ class Grid:
         Notes
         -----
         - Grid spacing is uniform in both directions.
-        - Computes face coordinates, cell centers, face areas, egdes, and cell volumes.
+        - Computes face coordinates, cell centers, face areas, edges, and cell volumes.
 
         Examples
         --------
@@ -509,3 +507,4 @@ def reconstruct_grid(Nx1, Nx2, Ngc, geom, x1ini, x1fin, x2ini, x2fin):
                          f"Expected one of {sorted(builders)}.")
     builders[geom](x1ini, x1fin, x2ini, x2fin)
     return g
+    
