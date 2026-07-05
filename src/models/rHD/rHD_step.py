@@ -265,18 +265,18 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
 
 
 # ============================================================================
-# Helper: call cons2prim_sr_hydro for a SimState object
+# Helper: call cons2prim_rHD for a SimState object
 # ============================================================================
 def _prim_recovery(state, Ngc, init_pres, eos):
     """
-    Call cons2prim_nr_hydro and write results back into
+    Call cons2prim_rHD and write results back into
     state.{dens,vel*,pres}.
 
     Parameters
     ----------
     state     : SimState with conservative vars populated
-    init_pres : initial guess for the unknown pressure 
     Ngc       : int number of ghost cells
+    init_pres : initial guess for the unknown pressure
     eos       : EOSdata
     """
     (state.dens[Ngc:-Ngc, Ngc:-Ngc],

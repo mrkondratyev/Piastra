@@ -512,7 +512,7 @@ def IC_rHD2D_jet_cart(grid, state, par):
     shock and internal shocks characteristic of AGN / GRB jets.
 
     Coordinate system : Cartesian (x, y) = (x1, x2)
-    Domain            : x in [0, 10], y in [-2, 2]
+    Domain            : x in [0, 10], y in [-4, 4]
     Inlet (face 0)    : |y| < 0.5, rho=0.1, v_x=0.99, p=0.01
     Ambient           : rho=10, v=0, p=0.01
 
