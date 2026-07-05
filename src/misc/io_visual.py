@@ -150,7 +150,7 @@ def plotting(grid, var, time, line, ax, fig, im):
     plot (for 2D grids) with the current variable values. Titles and color
     ranges are refreshed at each call.
 
-     Notes
+    Notes
     -----
     - In 1D mode, ``ax.relim()`` and ``ax.autoscale_view()`` rescale the axes.
     - In 2D Cartesian / cylindrical mode, the ``imshow`` colour limits are
