@@ -178,18 +178,19 @@ def IC_adv2D_smooth(grid, adv, par):
 
     Returns
     -------
-    adv, par, grid : objects
+    grid, adv, par : objects
         Updated advected state and simulation parameters.
 
     Notes
     -----
-    - The initial condition consists of a circular region of high value 
-      (`adv=1.0`) centered at (x0, y0) with radius `rad0=0.1`.
-    - Outside the circle, the advected quantity is zero.
+    - The initial condition is a smooth radial Gaussian,
+      `adv = exp(-rad^2/delta^2)` with `delta=0.1`, centered at (x0, y0)
+      (the domain centre) and decaying (never exactly reaching zero)
+      away from it.
     - Velocities are set to `vel1=1.0`, `vel2=1.0`.
     - The time integration runs from `timenow=0.0` to `timefin=1.0`.
     """
-    
+
     print("Linear 2D advection of smooth profile")
     
     #grid creation 
