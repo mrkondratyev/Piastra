@@ -302,22 +302,25 @@ def flux_calc_adv(g, adv, par, dt):
         
         if (g.geom != 'cart'): raise ValueError("'LW' for advection works only for CARTESIAN grids!") 
         
-        # Lax-Wendroff flux in x1
+        # Lax-Wendroff flux in x1 -- dx1uc (not the cell-shaped g.dx1 array,
+        # which doesn't broadcast against the Nx1+1-wide face quantity below)
+        # is the right spacing here: LW is restricted to Cartesian grids,
+        # i.e. already uniform, just above.
         if g.Nx1 > 1:
             flux = adv.vel1 * (adv.dens[Ngc-1:Nx1r, Ngc:-Ngc] + adv.dens[Ngc:Nx1r+1, Ngc:-Ngc]) / 2.0 \
-                   + adv.vel1 * (adv.vel1 * dt / g.dx1[Ngc:-Ngc, Ngc:-Ngc]) * \
+                   + adv.vel1 * (adv.vel1 * dt / g.dx1uc) * \
                    (adv.dens[Ngc-1:Nx1r, Ngc:-Ngc] - adv.dens[Ngc:Nx1r+1, Ngc:-Ngc]) / 2.0
             Res = (flux[1:, :] * g.fS1[1:, :] - flux[:-1, :] * g.fS1[:-1, :]) / g.cVol[:, :]
 
-        # Lax-Wendroff flux in x2
+        # Lax-Wendroff flux in x2 (dx2uc, same reasoning as x1 above)
         if g.Nx2 > 1:
             flux = adv.vel2 * (adv.dens[Ngc:-Ngc, Ngc-1:Nx2r] + adv.dens[Ngc:-Ngc, Ngc:Nx2r+1]) / 2.0 \
-                   + adv.vel2 * (adv.vel2 * dt / g.dx2[Ngc:-Ngc, Ngc:-Ngc]) * \
+                   + adv.vel2 * (adv.vel2 * dt / g.dx2uc) * \
                    (adv.dens[Ngc:-Ngc, Ngc - 1:Nx2r] - adv.dens[Ngc:-Ngc, Ngc:Nx2r+1]) / 2.0
             Res += (flux[:, 1:] * g.fS2[:, 1:] - flux[:, :-1] * g.fS2[:, :-1]) / g.cVol[:, :]
 
         # Multi-dimensional antidiffusion correction
-        if (g.Nx1 > 1 & g.Nx2 > 1):
+        if (g.Nx1 > 1 and g.Nx2 > 1):
             Res -= dt * adv.vel1 * adv.vel2 * (
                 adv.dens[Ngc-1:Nx1r-1, Ngc-1:Nx2r-1] - adv.dens[Ngc-1:Nx1r-1, Ngc+1:Nx2r+1]
                 - adv.dens[Ngc+1:Nx1r+1, Ngc-1:Nx2r-1] + adv.dens[Ngc+1:Nx1r+1, Ngc+1:Nx2r+1]
