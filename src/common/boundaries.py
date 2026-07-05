@@ -18,6 +18,10 @@ Functions
       Fill ghost cells for a scalar field along a given axis.
 - apply_bc_vector(V1, V2, V3, Ngc, BC_type, axis=1, side='inner'):
       Fill ghost cells for a 3-component vector field along a given axis.
+- apply_bc_scalar_Ngc1(var, Ngc, BC_type, axis=1, side='inner', bc_value=0.0):
+      Fill the single ghost layer a second-order, 3-point stencil needs
+      (e.g. the finite-volume Poisson solver in poisson_solver.py),
+      including a true Dirichlet ('dirichlet') boundary value.
 
 Ghost Cell Implementation Note
 ------------------------------
@@ -31,9 +35,14 @@ The approach separates scalar and vector fields for clarity and correctness:
    - For 3-component vector quantities (e.g., velocity, cell-centered magnetic field).
    - Treats the normal component differently for reflective (wall) boundaries
      while leaving tangential components unchanged.
-     
-2. ``apply_bc_fixed(V1, V2, V3, ...)``
+
+3. ``apply_bc_fixed(V1, V2, V3, ...)``
    - Pin ghost cells to prescribed (Dirichlet) values on one face
+
+4. ``apply_bc_scalar_Ngc1(var, ...)``
+   - Single-ghost-layer scalar filler for second-order, 3-point stencils
+     (e.g. the Poisson solver in poisson_solver.py), with true Dirichlet
+     ('dirichlet') support via ghost mirroring about a fixed face value.
 
 The face-centered z-electric field (Efld3 along x1/x2) needed for CT MHD is
 implemented as a separate function ``boundCond_electric_field`` in the
@@ -247,3 +256,103 @@ def apply_bc_fixed(state_fields, Ngc, N1, N2, face, patches):
             elif face == 3:          # x2 outer: ghost cols [N2-Ngc:N2]
                 arr[t0:t1, N2 - Ngc:N2] = value
     return state_fields
+
+
+
+def apply_bc_scalar_Ngc1(var, Ngc, BC_type, axis=1, side='inner', bc_value=0.0):
+    """
+    Fill the single ghost-cell layer bordering the domain, as needed by a
+    second-order, 3-point finite-volume stencil (e.g. the Laplacian
+    operator in poisson_solver.py).
+
+    Unlike ``apply_bc_scalar`` (which fills all ``Ngc`` ghost layers, as
+    required by high-order hyperbolic reconstruction stencils), this only
+    touches the ONE layer immediately next to the real domain -- all a
+    centered 3-point stencil ever reads. That makes it equally usable on
+    a dedicated Ngc=1 grid and on a deeper-ghosted grid borrowed from a
+    hyperbolic solver (e.g. an Ngc=2/3 HD/MHD grid reused for
+    self-gravity or magnetic divergence cleaning): pass that grid's own
+    Ngc and only the layer bordering the domain is updated, leaving any
+    deeper ghost layers untouched.
+
+    Parameters
+    ----------
+    var : np.ndarray
+        Scalar field, shape (N1, N2), with at least one ghost cell on
+        every side.
+    Ngc : int
+        Number of ghost cells `var` carries on each side. Only the layer
+        bordering the real domain (index Ngc-1 / N-Ngc) is filled.
+    BC_type : str
+        'peri'      - periodic.
+        'free'      - zero-gradient (homogeneous Neumann): ghost set
+                      equal to the nearest interior cell.
+        'dirichlet' - fixed boundary VALUE `bc_value`: the ghost cell is
+                      mirrored about it, ``ghost = 2*bc_value - interior``,
+                      so the face-averaged value is exactly `bc_value` to
+                      second order.
+    axis : int
+        Axis along which to apply the BC (1 for x1, 2 for x2).
+    side : str
+        'inner' or 'outer'.
+    bc_value : float or ndarray
+        Prescribed boundary value for BC_type='dirichlet'. Broadcastable
+        against the tangential dimension of the face. Ignored otherwise.
+
+    Returns
+    -------
+    var : np.ndarray
+        Field with the boundary-adjacent ghost layer updated.
+    """
+    N1, N2 = var.shape
+
+    if axis == 1:  # x1-direction
+        if side == 'inner':
+            if BC_type == 'free':
+                var[Ngc - 1, :] = var[Ngc, :]
+            elif BC_type == 'peri':
+                var[Ngc - 1, :] = var[N1 - Ngc - 1, :]
+            elif BC_type == 'dirichlet':
+                var[Ngc - 1, :] = 2.0 * bc_value - var[Ngc, :]
+            else:
+                raise ValueError(
+                    f"Invalid BC_type: '{BC_type}'. "
+                    f"Expected 'free', 'peri', or 'dirichlet'.")
+        elif side == 'outer':
+            if BC_type == 'free':
+                var[N1 - Ngc, :] = var[N1 - Ngc - 1, :]
+            elif BC_type == 'peri':
+                var[N1 - Ngc, :] = var[Ngc, :]
+            elif BC_type == 'dirichlet':
+                var[N1 - Ngc, :] = 2.0 * bc_value - var[N1 - Ngc - 1, :]
+            else:
+                raise ValueError(
+                    f"Invalid BC_type: '{BC_type}'. "
+                    f"Expected 'free', 'peri', or 'dirichlet'.")
+    elif axis == 2:  # x2-direction
+        if side == 'inner':
+            if BC_type == 'free':
+                var[:, Ngc - 1] = var[:, Ngc]
+            elif BC_type == 'peri':
+                var[:, Ngc - 1] = var[:, N2 - Ngc - 1]
+            elif BC_type == 'dirichlet':
+                var[:, Ngc - 1] = 2.0 * bc_value - var[:, Ngc]
+            else:
+                raise ValueError(
+                    f"Invalid BC_type: '{BC_type}'. "
+                    f"Expected 'free', 'peri', or 'dirichlet'.")
+        elif side == 'outer':
+            if BC_type == 'free':
+                var[:, N2 - Ngc] = var[:, N2 - Ngc - 1]
+            elif BC_type == 'peri':
+                var[:, N2 - Ngc] = var[:, Ngc]
+            elif BC_type == 'dirichlet':
+                var[:, N2 - Ngc] = 2.0 * bc_value - var[:, N2 - Ngc - 1]
+            else:
+                raise ValueError(
+                    f"Invalid BC_type: '{BC_type}'. "
+                    f"Expected 'free', 'peri', or 'dirichlet'.")
+    else:
+        raise ValueError(f"Invalid axis: {axis}. Expected 1 or 2.")
+
+    return var
