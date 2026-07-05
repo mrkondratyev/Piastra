@@ -104,14 +104,13 @@ class Diff2D:
         State container with arrays T and kappa (mode='diff').
     par : object
         Parameters object.  Must expose:
-        ``timenow`` (float), ``timefin`` (float),
-        ``CFL`` (float), ``BC`` (array of 4 strings).
-    solver : {'expl', 'rkl2'}, optional
-        Time-integration method.  Default ``'expl'``.
-    rkl2_stages : int, optional
-        Number of RKL2 stages s ≥ 2.  Only used when
-        ``solver='rkl2'``.  Larger values give a proportionally larger
-        super-step but increase cost per step.  Default 10.
+        ``timenow`` (float), ``timefin`` (float), ``CFL`` (float),
+        ``BC`` (array of 4 strings), ``solver_type`` ({'expl', 'rkl2'}),
+        and, if ``solver_type='rkl2'``, ``rkl2_stages`` (int >= 2).
+        Time-integration method and RKL2 stage count are read from `par`
+        (not passed as separate constructor arguments): larger
+        rkl2_stages gives a proportionally larger super-step but
+        increases cost per step.
 
     Attributes
     ----------
