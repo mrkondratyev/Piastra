@@ -55,6 +55,14 @@ consistently so the same solver code works in every coordinate system.
 - **Diffusion:** explicit Euler or RKL2 super-time-stepping (Meyer, Balsara &
   Aslam 2014), which buys an ~s²/4 speed-up at second-order accuracy for s iterations.
 
+***ELLIPTIC***  
+- **Poisson solver:** second-order finite-volume `div(grad(phi)) = rhs` on any
+  1D/2D grid and geometry, via matrix-free, diagonally-preconditioned Conjugate
+  Gradient. Periodic, zero-gradient, and Dirichlet boundaries are supported on
+  each face independently. Stateless and grid-agnostic (works on a grid built
+  for a hyperbolic solver too), so it's meant to be called from other modules
+  — self-gravity, magnetic divergence cleaning — not just used standalone.
+
 ---
 
 ## Requirements
@@ -139,6 +147,14 @@ SWE  : LLF, HLL, Exact
 diff : expl, rkl2                    rkl2_stages: int >= 2
 ```
 
+Use `RK_order="RK2"` or `"RK3"` with `rec_type="MP5"`, not `"RK1"`: forward
+Euler has the smallest stability margin of the three, and MP5 is
+deliberately the least dissipative of the high-order reconstructions, so
+the pairing can lose positivity on a strong shock (verified in
+`tests/test_robustness.py`; MP5 is fine with RK1 on smooth data, just not
+discontinuities). This is the standard reason high-order shock-capturing
+schemes are paired with SSP-RK2/RK3 rather than RK1.
+
 ---
 
 ## The test-problem catalogue
@@ -169,6 +185,9 @@ template you fill in yourself.
 Piastra/
 ├── main.py                 # script entry point — edit parameters, run
 ├── main.ipynb              # notebook entry point — mirrors main.py
+├── run_testbed.py          # testbed entry point — sanity / conservation /
+│                            #   convergence / robustness, see Testbed below
+├── tests/                  # the testbed itself (plain test_* functions)
 ├── src/
 │   ├── parameters.py       # Parameters: config, defaults, validation
 │   ├── sim_state.py        # SimState: unified per-mode variable storage
@@ -178,11 +197,12 @@ Piastra/
 │   ├── common/
 │   │   ├── boundaries.py   # scalar / vector / fixed ghost-cell fillers
 │   │   ├── high_order_rec.py  # PCM / PLM / PPM / WENO / MP5
-│   │   └── eos_setup.py    # EOSdata (ideal-gas equation of state)
+│   │   ├── eos_setup.py    # EOSdata (ideal-gas equation of state)
+│   │   └── poisson_solver.py  # FV Poisson solve via preconditioned CG
 │   ├── misc/
 │   │   ├── helpers.py      # initial_model dispatch + run_simulation loop
 │   │   ├── io_visual.py    # live matplotlib visualization
-│   │   └── io_utils.py     # snapshot save/load, 1D ASCII export
+│   │   └── io_utils.py     # unified save/load/restart (.npz archives)
 │   └── models/             # one self-contained package per physics mode
 │       ├── adv/  HD/  rHD/  MHD/  rMHD/  SWE/  diff/
 │       └── ...             # each: *_step, *_phys, *_init_cond + optionals
@@ -193,6 +213,31 @@ Every physics package follows the same four-file rhythm: `*_step.py` (the
 time-stepping class and CFL condition), `*_phys.py` (conserved↔primitive maps,
 boundary fills, the flux driver), `*_init_cond.py` (the test problems), 
 and `*_riemann_*.py` (optionally, the solvers). Learn one package and you can read them all.
+
+---
+
+## Testbed
+
+```bash
+python run_testbed.py                          # everything (~1-2 minutes)
+python run_testbed.py --suite sanity            # one suite
+python run_testbed.py --suite sanity,convergence
+python run_testbed.py -q                        # only print failures
+```
+
+Four suites under `tests/`, the standard checks for a computational
+(astrophysical) fluid-dynamics code:
+
+| Suite          | What it checks                                                                  |
+|----------------|----------------------------------------------------------------------------------|
+| `sanity`       | every `(mode, problem)` in the catalogue above builds and steps without crashing, NaNs, or unphysical (negative density/pressure/height) values — on a deliberately non-square grid, since a square one hides axis-swap bugs |
+| `conservation` | mass / momentum / total energy are constant to round-off on closed domains (periodic: Gresho vortex, Orszag-Tang; zero-flux: wall-bounded Sedov blast, free-boundary diffusion, a closed SWE basin); CT's div(B) stays at round-off |
+| `convergence`  | measured error shrinks at close to the design order under grid refinement, against an exact analytic solution (diffusion of a sine mode), an exact return-to-initial-state (periodic advection after one period), or a preserved exact steady state (the Gresho vortex) |
+| `robustness`   | every `solver_type` × `rec_type` × `RK_order` combination a mode supports stays finite and positivity-preserving, checked after *every* step, on the field's standard strong-shock benchmarks (Woodward-Colella double blast wave, Brio-Wu MHD shock tube, a shallow-water dam break, ...) |
+
+Each suite is a plain module of `test_*` functions with plain `assert`
+statements — no test-framework dependency — so `tests/` also works with
+`pytest tests/` for anyone who prefers that runner.
 
 ---
 
@@ -207,6 +252,10 @@ and `*_riemann_*.py` (optionally, the solvers). Learn one package and you can re
 - Shu & Osher (1988), *JCP* **77**, 439 — TVD Runge–Kutta
 - Mignone (2014), *JCP* **270**, 784 — high-order curvilinear reconstruction
 - Meyer, Balsara & Aslam (2014), *MNRAS* **422**, 2102 — RKL2 super-time-stepping for diffusion
+- Shewchuk (1994), *An Introduction to the Conjugate Gradient Method Without the Agonizing Pain* — matrix-free, preconditioned CG
+- Suresh & Huynh (1997), *JCP* **136**, 83 — MP5 reconstruction
+- Woodward & Colella (1984), *JCP* **54**, 115 — double blast wave (robustness benchmark)
+- Gresho & Chan (1990), *Int. J. Numer. Methods Fluids* **11**, 621 — Gresho vortex (convergence/conservation benchmark)
 
 ---
 
