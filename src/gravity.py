@@ -1,16 +1,38 @@
 # -*- coding: utf-8 -*-
 """
-gravity.py 
+gravity.py
 ===========
 Additional gravitational source terms for Piastra.
 
-This module provides two body-force sources that are meant to be called from
-the time stepper, before the momentum update, once per step (or, for higher
-accuracy, once per Runge-Kutta stage):
+This module provides three body-force sources that are meant to be called
+from the time stepper, before the momentum update, once per step (or, for
+higher accuracy, once per Runge-Kutta stage):
 
   1. planet_gravity_polar(...)       -- star + orbiting planet in POLAR (r, phi)
   2. selfgravity_monopole_spherical  -- spherically-averaged (monopole) self
                                         gravity in SPHERICAL-POLAR (r, theta)
+  3. selfgravity_poisson(...)        -- general self-gravity, any density
+                                        field, any geometry, via the finite-
+                                        volume Poisson solver (poisson_solver.py)
+
+------------------------------------------------------------------------------
+SIGN / SOURCE CONVENTION
+------------------------------------------------------------------------------
+Every solver in this project (HD, MHD -- all three divB treatments --, rHD,
+rMHD) adds the body force to the momentum/energy residual the same way (see
+e.g. HD_step.flux_calc_HD):
+
+    Res1 += -dens * F1          # momentum residual, before the dt * (-Res)
+    Res2 += -dens * F2          #   update that advances the conserved state
+    ResE += -dens * (F1*vel1 + F2*vel2)
+
+and that residual enters the update as  U_{n+1} = U_n - dt * Res  (see the
+"U_t + RES = 0" note in HD_step.oneStep_HD_RK), so the net momentum source
+is  +dt * dens * F.  For that to be the physical force per unit mass,
+``state.F1, state.F2`` MUST hold the ACCELERATION ITSELF (i.e. F = a =
+-grad(Phi) for a potential Phi), not its negative -- F1 < 0 means "pulls
+toward smaller x1", exactly like a physical inward gravitational pull.
+All three functions below follow this convention.
 
 ------------------------------------------------------------------------------
 GRID-ATTRIBUTE FLAGS
@@ -28,6 +50,9 @@ GRID-ATTRIBUTE FLAGS
 """
 
 import numpy as np
+
+from src.grid.grid_misc import cell_gradient
+from src.common.poisson_solver import solve_poisson
 
 
 # ===========================================================================
@@ -53,25 +78,25 @@ def planet_gravity_polar(grid, state, par,
 
     Notes
     -----
-    Planet parameters are included inside the function, they should be equal to 
-    the ones from IC routines 
-    
+    Planet parameters are included inside the function, they should be equal to
+    the ones from IC routines
+
     """
     G = 1.0 # gravitational constant in code units
-    
+
     phi0 = 0.0 # planet azimuth at time = 0
     r_planet = 1.0 # planet orbital radius
-    
-    soft = 0.05 #gravitational softening length 
+
+    soft = 0.05 #gravitational softening length
     # (smooths the planet potential inside ~soft; pick a fraction
     # of the local cell size or the Hill radius)
-    
-    # grid indexes for slicing 
+
+    # grid indexes for slicing
     Ngc  = grid.Ngc; Nx1  = grid.Nx1; Nx2  = grid.Nx2
     Nx1r = Ngc + Nx1; Nx2r = Ngc + Nx2
     sl = np.s_[Ngc:Nx1r, Ngc:Nx2r]
-    
-    #cell centers 
+
+    #cell centers
     r = grid.cx1[sl]; phi = grid.cx2[sl]
 
     # --- planet orbital phase and (optionally ramped) mass ---
@@ -96,9 +121,9 @@ def planet_gravity_polar(grid, state, par,
     # --- central star monopole is accounted here ---
     a_r1 += -G * M_star / (r * r)
 
-    # --- store as F = -a  (see SIGN/SOURCE CONVENTION at top) ---
-    state.F1[:, :] = -a_r1; state.F2[:, :] = -a_p1
-    
+    # --- store as F = a  (see SIGN / SOURCE CONVENTION at top) ---
+    state.F1[:, :] = a_r1; state.F2[:, :] = a_p1
+
     return state
 
 
@@ -123,7 +148,19 @@ def selfgravity_monopole_spherical(grid, state, par):
 
     Parameters
     ----------
-    
+    grid : Grid
+    state : SimState
+        Must expose `dens` (density, with ghosts) and `F1`, `F2` (interior
+        acceleration arrays) -- any HD/MHD-family mode.
+    par : Parameters
+        Unused directly; kept so this function has the same call signature
+        as the other gravity routines in this module.
+
+    Returns
+    -------
+    state : SimState
+        With F1 set to the radial self-gravity acceleration (F2 = 0) on
+        interior cells.
 
     Method
     ------
@@ -133,16 +170,18 @@ def selfgravity_monopole_spherical(grid, state, par):
     mass is then rho_bar * (4/3) pi (r_out^3 - r_in^3), summed to M(<r) at the
     radial faces, evaluated as -G M / r^2 there, and averaged to cell centres.
     """
-    
-    #central point mass 
+
+    #central point mass
     M_central = 0.0
-    #grav acceleration 
-    G = 1.0 
-    
-    #slicing of density and volume 
+    #grav acceleration
+    G = 1.0
+
+    #slicing of density and volume -- grid.cVol is interior-only (no ghost
+    #cells), so it must NOT be re-sliced with the ghost-offset index range
+    #(that range is only valid for ghost-inclusive arrays like state.dens)
     Ngc = grid.Ngc; Nx1 = grid.Nx1; Nx2 = grid.Nx2
     sl  = np.s_[Ngc:Ngc + Nx1, Ngc:Ngc + Nx2]
-    rho = state.dens[sl]; vol = grid.cVol[sl]      
+    rho = state.dens[sl]; vol = grid.cVol
 
     # --- volume-weighted angular mean density per radial shell ---
     wsum = vol.sum(axis=1) # (Nx1,)  shell volume (grid)
@@ -157,14 +196,94 @@ def selfgravity_monopole_spherical(grid, state, par):
     shell_mass = (4.0 / 3.0) * np.pi * rho_bar * (rf[1:]**3 - rf[:-1]**3)  # (Nx1,)
     Menc = np.zeros(Nx1 + 1)
     Menc[1:] = np.cumsum(shell_mass)
-    Menc += M_central 
-    
-    # --- acceleration at faces, then average to cell centres ---    
+    Menc += M_central
+
+    # --- acceleration at faces, then average to cell centres ---
     g_f = -G * Menc / (rf**2 + 1e-30)
     g_r = g_f[:-1]*(rf[1:] - rc)/dr + g_f[1:]*(rc - rf[:-1])/dr
 
-    #assign calculated values to the field potentials 
-    state.F1[:, :] = -g_r[:, None]
-    state.F2[:, :] = 0.0 
-    
+    # --- store as F = a  (see SIGN / SOURCE CONVENTION at top) ---
+    state.F1[:, :] = g_r[:, None]
+    state.F2[:, :] = 0.0
+
+    return state
+
+
+# ===========================================================================
+# 3) General self-gravity via the finite-volume Poisson solver
+# ===========================================================================
+def selfgravity_poisson(grid, state, par, G=1.0, BC=None, BC_value=None,
+                         tol=1e-10, maxiter=None):
+    """
+    General self-gravity acceleration, for any density field and any of the
+    four grid geometries, by solving the Poisson equation
+
+        div( grad(Phi) ) = 4 * pi * G * rho
+
+    with the finite-volume CG solver (poisson_solver.solve_poisson) and
+    setting state.F1, state.F2 to the resulting acceleration -grad(Phi) on
+    interior cells -- no ghost cells, matching state.F1/F2's existing
+    (Nx1, Nx2) shape used by every solver's momentum source term (see the
+    SIGN / SOURCE CONVENTION note at the top of this module).
+
+    Unlike planet_gravity_polar / selfgravity_monopole_spherical (geometry-
+    specific approximations: a fixed point-mass orbit, a spherically
+    averaged monopole), this is the general case -- an arbitrary,
+    not-necessarily-symmetric density distribution -- at the cost of an
+    actual elliptic solve every call.
+
+    Parameters
+    ----------
+    grid : Grid
+    state : SimState
+        Must expose `dens` (density, with ghosts) and `F1`, `F2` (interior
+        acceleration arrays) -- any HD/MHD-family mode.
+    par : Parameters
+        Unused directly; kept so this function has the same call signature
+        as the other gravity routines in this module.
+    G : float, optional
+        Gravitational constant in code units. Default 1.0 (matching the
+        other two routines in this module).
+    BC : sequence of 4 str, optional
+        Poisson boundary conditions for the potential, forwarded to
+        solve_poisson: 'peri', 'free', or 'dirichlet' per face (see
+        poisson_solver.py / boundaries.apply_bc_scalar_Ngc1). Defaults to
+        ['free', 'free', 'free', 'free'] -- safe even though it leaves
+        Phi's absolute normalisation undetermined (a pure-Neumann Poisson
+        problem is only fixed up to an additive constant), because only
+        Phi's GRADIENT is used here and a constant offset has zero
+        gradient. Pass 'peri' for a periodic box, or 'dirichlet' with
+        BC_value set from an analytic/multipole exterior potential, for a
+        genuinely isolated (non-periodic, non-zero-gradient) boundary.
+    BC_value : dict, optional
+        Dirichlet boundary values, forwarded to solve_poisson.
+    tol, maxiter : optional
+        Forwarded to solve_poisson's CG iteration.
+
+    Returns
+    -------
+    state : SimState
+        With F1, F2 set to the self-gravity acceleration on interior cells.
+    """
+    Ngc = grid.Ngc
+    rho = state.dens[Ngc:-Ngc, Ngc:-Ngc]
+    rhs = 4.0 * np.pi * G * rho
+
+    if BC is None:
+        BC = ['free', 'free', 'free', 'free']
+
+    phi, info = solve_poisson(grid, rhs, BC, BC_value=BC_value,
+                               tol=tol, maxiter=maxiter)
+    if not info['converged']:
+        print(f"[gravity] selfgravity_poisson: CG did not converge "
+              f"(niter={info['niter']}, residual={info['residual']:.3e})")
+
+    # grad(Phi) on interior cells, geometry-aware (Cartesian/cylindrical/
+    # polar/spherical-polar all handled by cell_gradient's metric factors)
+    g1, g2 = cell_gradient(grid, phi)
+
+    # --- store as F = a = -grad(Phi)  (see SIGN / SOURCE CONVENTION at top) ---
+    state.F1[:, :] = -g1
+    state.F2[:, :] = -g2
+
     return state
