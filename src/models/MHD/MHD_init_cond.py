@@ -505,9 +505,9 @@ def IC_MHD2D_blast_sph(grid, MHD, par):
         Parameters with timefin = 0.2 and BCs.
     eos : EOSdata
         Equation of state with γ = 7/5.
-    """    
-    print("magnetized explosion test in 2D planar Cartesian geometry")
-    
+    """
+    print("magnetized explosion test in 2D spherical-polar geometry")
+
     #coordinate range in each direction, by default x and y are in range [0..1]
     x1ini, x1fin = 0.0, 0.5; x2ini, x2fin = 0.0, np.pi
     grid.SphericalPolarGrid(x1ini, x1fin, x2ini, x2fin)

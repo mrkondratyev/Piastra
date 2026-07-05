@@ -88,12 +88,12 @@ class MHD2D_GLM:
 
         Returns
         -------
-        fluid : object
-            Updated FluidState object.
+        MHD : object
+            Updated SimState object.
         """
-        dt, с_h = CFLcondition_MHD(self.g, self.MHD, self.eos, self.par.CFL)
+        dt, c_h = CFLcondition_MHD(self.g, self.MHD, self.eos, self.par.CFL)
         dt = min(dt, self.par.timefin - self.par.timenow)
-        self.MHD = oneStep_MHD_RK_GLM(self.g, self.MHD, self.eos, self.par, dt, с_h)
+        self.MHD = oneStep_MHD_RK_GLM(self.g, self.MHD, self.eos, self.par, dt, c_h)
         self.par.timenow += dt
         return self.MHD
 
@@ -136,7 +136,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     
     Parameters
     ----------
-    grid: object
+    g : object
         Grid object.
     MHD : object
         Fluid state object.
@@ -195,7 +195,7 @@ def oneStep_MHD_RK_GLM(g, MHD, eos, par, dt, c_h):
 
     Parameters
     ----------
-    grid: object
+    g : object
         Computational grid with geometry and metric data.
     MHD : object
         Fluid state containing primitive and conservative variables.
@@ -512,13 +512,14 @@ def curv_source_MHD_GLM(g, MHD):
     appear due to the divergence operator expressed in non-Cartesian bases.
     This function evaluates those terms for momentum and induction equations.
 
-    Currently implemented for cylindrical geometry ('cyl')
+    Implemented for cylindrical ('cyl'), polar ('pol'), and spherical-polar
+    ('sph') geometry; identically zero for 'cart'.
 
     Parameters
     ----------
     g : object
         Grid object containing:
-        - ``geom`` : str, geometry type ('cyl' supported).
+        - ``geom`` : str, geometry type ('cart', 'cyl', 'pol', or 'sph').
         - ``cx1`` : ndarray, radial cell-center positions.
         - ``Ngc`` : int, number of ghost cells.
         - ``Nx1, Nx2`` : int, number of grid points.
@@ -527,29 +528,23 @@ def curv_source_MHD_GLM(g, MHD):
         - ``dens`` : ndarray, density field.
         - ``pres`` : ndarray, pressure field.
         - ``vel1, vel2, vel3`` : ndarray, velocity.
-        - ``Bfi1, Bfi2, Bfi3`` : ndarray, magnetic field.
+        - ``bfi1, bfi2, bfi3`` : ndarray, magnetic field.
+        - ``bglm`` : ndarray, GLM divergence-cleaning scalar.
 
     Returns
     -------
-    STv1 : ndarray
-        Radial momentum source term.
-    STv2 : ndarray
-        Axial momentum source term (zero in cylindrical geometry).
-    STv3 : ndarray
-        Azimuthal momentum source term.
-    STm1 : ndarray
-        Radial magnetic field source term.
-    STm3 : ndarray
-        Axial B-field source term (zero in cylindrical geometry).
-    STm3 : ndarray
-        Azimuthal B-field source term.
+    STv1, STv2, STv3 : ndarray, shape (Nx1, Nx2)
+        Momentum source terms on interior cells (no ghost cells; matches
+        ResV1/ResV2/ResV3 in flux_calc_MHD_GLM, which these are
+        subtracted from directly).
+    STm1, STm2, STm3 : ndarray, shape (Nx1, Nx2)
+        Induction-equation (magnetic field) source terms on interior
+        cells, same shape/role as STv1-3.
 
     Notes
     -----
-    - Arrays are allocated with the full grid size (including ghost cells).
-    - Source terms are nonzero only inside the physical domain
-      (ghost zones excluded).
-    - Extension to spherical coordinates would require additional terms.
+    - Identically zero for 'cart' (the ideal MHD equations are
+      source-free in Cartesian coordinates).
     """
     Ngc = g.Ngc 
     STv1 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
