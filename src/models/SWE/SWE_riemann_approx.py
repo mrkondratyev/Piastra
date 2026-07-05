@@ -9,10 +9,10 @@ Implemented solvers, in increasing order of accuracy/cost:
     LLF   - Local Lax-Friedrichs / Rusanov (1961)
     HLL   - Harten, Lax, van Leer (1983)
 
-All solvers share the same calling convention (see Riemann_SWE in 
-                                               SWE_phys file).
+All solvers share the same calling convention (see Riemann_SWE in
+SWE_phys.py, which dispatches to one of these by par.solver_type).
 
-Each Riemann solver routine has the following i/o sturcture:
+Each Riemann solver routine has the following i/o structure:
 
    Parameters
    ----------
@@ -39,11 +39,15 @@ import numpy as np
 #   Approximate SWE Riemann solvers
 # ============================================================================
 
-"""
-Local Lax-Friedrichs (Rusanov) flux
-"""
 def LLF_flux(hl, hr, vxl, vxr, vyl, vyr, g_ff):
-    
+    """
+    Local Lax-Friedrichs (Rusanov) flux.
+
+    Parameters / Returns: see the module docstring above -- both solvers
+    in this file share the same (hl, hr, vxl, vxr, vyl, vyr, g_ff)
+    signature and (Fh, Fx, Fy) return.
+    """
+
     #left fluxes
     Fh_L = hl * vxl
     Fx_L = hl * vxl * vxl + 0.5 * g_ff * hl**2 
@@ -70,11 +74,15 @@ def LLF_flux(hl, hr, vxl, vxr, vyl, vyr, g_ff):
 
 
 
-"""
-Harten, Lax, and Van Leer (HLL) flux
-"""
 def HLL_flux(hl, hr, vxl, vxr, vyl, vyr, g_ff):
-    
+    """
+    Harten, Lax, and Van Leer (HLL) flux.
+
+    Parameters / Returns: see the module docstring above -- both solvers
+    in this file share the same (hl, hr, vxl, vxr, vyl, vyr, g_ff)
+    signature and (Fh, Fx, Fy) return.
+    """
+
     #left fluxes
     Fh_L = hl * vxl
     Fx_L = hl * vxl * vxl + 0.5 * g_ff * hl**2 
