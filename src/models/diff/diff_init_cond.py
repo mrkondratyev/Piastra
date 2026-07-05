@@ -15,15 +15,18 @@ Each function sets up a complete problem:
 
 Signature convention (identical to other Piastra IC modules):
 
-    IC_diffusion_<name>(grid, diff, par)  ->  grid, diff, par
+    IC_diff<name>(grid, diff, par)  ->  grid, diff, par
 
 Available problems
 ------------------
-``'user_defined'``   IC_diffusion_user_defined
-``'gauss2D'``        IC_diffusion2D_gaussian   – single Gaussian pulse, 2D Cartesian
-``'cross2D'``        IC_diffusion2D_cross      – two crossed Gaussian pulses, 2D Cartesian
-``'ring2D'``         IC_diffusion2D_ring       – ring-shaped hot band, 2D Cartesian
-``'gauss1D'``        IC_diffusion1D_gaussian   – 1D Gaussian (Nx2 = 1), Cartesian
+``'user_defined'``   IC_diff_user_defined
+``'gauss2D'``        IC_diff2D_gaussian   – single Gaussian pulse, 2D Cartesian
+``'cross2D'``        IC_diff2D_cross      – two crossed Gaussian pulses, 2D Cartesian
+``'ring2D'``         IC_diff2D_ring       – ring-shaped hot band, 2D Cartesian
+``'gauss1D'``        IC_diff1D_gaussian   – 1D Gaussian (Nx2 = 1), Cartesian
+``'step1D'``         IC_diff1D_step       – 1D step function (Nx2 = 1), Cartesian
+``'sine1D'``         IC_diff1D_sine       – 1D sinusoidal mode decay (Nx2 = 1), Cartesian
+``'cyl2D'``          IC_diff2D_cyl        – 2D cylindrically-symmetric ring, Cartesian grid
 
 Author: mrkondratyev
 """
@@ -297,13 +300,12 @@ def IC_diff1D_step(grid, diff, par):
 
     par.timenow = 0.0; par.timefin = 0.5
 
-    #diffusion coefficient 
+    #diffusion coefficient
     diff.kappa = 0.01
-    
-    x0 = 0.5 * (x1ini + x1fin) #center of the bump
-    sigma0 = 0.08 #semi-width
 
-    diff.T[:, :] = np.where(np.abs(grid.cx1 - x0) < sigma0, 2.0, 1.0)
+    x0 = 0.5 * (x1ini + x1fin) #step location
+
+    diff.T[:, :] = np.where(grid.cx1 < x0, 1.0, 0.0)
 
     par.BC[0] = 'wall'; par.BC[1] = 'free'
     par.BC[2] = 'wall'; par.BC[3] = 'free'

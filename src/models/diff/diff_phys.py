@@ -77,22 +77,28 @@ def boundCond_diff(grid, BC, diff, BC_fixed=None):
 
 def nonlinear_coef_diff(grid, diff):
     """
-    Evaluate the diffusion coefficient (will be added in future).
+    Evaluate a (currently constant, placeholder) diffusion coefficient.
+
+    Not called by diff_step.py's solver loop -- diff.kappa stays whatever
+    the IC set it to (a scalar by default, see SimState) for the whole
+    run. This is a stub for a future T- or position-dependent kappa(x,
+    T); call it manually (and turn diff.kappa into an array first, since
+    this assigns into it elementwise) before stepping if you need that.
 
     Parameters
     ----------
     grid : object
         Grid object containing domain information (Nx1, Nx2, Ngc).
     diff : object
-        Fluid state object with the diffused variable 
+        Fluid state object with the diffused variable
 
     Returns
     -------
     diff : object
         Fluid object with updated diffusion coefficient.
     """
-    
+
     # some function of x,y,T...
     diff.kappa[:, :] = 1.0
-    
-    return diff 
+
+    return diff
