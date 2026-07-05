@@ -5,7 +5,10 @@ eos_setup.py
 Equation of state module for ideal-gas hydrodynamics and MHD solvers.
 
 Provides the EOSdata class, which stores the adiabatic index and offers
-a convenience method for computing the adiabatic sound speed.
+a convenience method for computing the adiabatic sound speed, 
+primitive <-> conservative inversions, and energy fluxes calculations.
+
+In future releases, it is planned to update this class to handle non-ideal EOS 
 
 Author: mrkondratyev
 """
@@ -33,9 +36,12 @@ class EOSdata:
 
     def __init__(self, GAMMA):
         self.GAMMA = GAMMA
-        self.ideal = 1 # flag to turn off some solvers 
+        # flag to turn off some solvers (like Roe RS for HD), 
+        # since they are implemented only for ideal gamma-law EOS  
+        self.ideal = 1 
 
 
+    # --- Non-relativistic sound speed ---
     def sound_speed_nr(self, dens, pres):
         """
         Adiabatic sound speed for a non-relativistic ideal gas.
@@ -59,14 +65,46 @@ class EOSdata:
     
     # --- Internal-energy density from pressure ---
     def eint(self, dens, pres):
-        """Internal-energy density: ε = p / (Γ - 1)."""
+        """
+        Internal-energy density: ε = p / (Γ - 1).
+
+        Parameters
+        ----------
+        dens : ndarray
+            Unused (kept for a uniform (dens, X) calling convention with
+            the other EOSdata methods); eps depends only on pressure for
+            an ideal gas.
+        pres : ndarray
+            Pressure.
+
+        Returns
+        -------
+        eint : ndarray
+            Internal-energy density.
+        """
         return pres / (self.GAMMA - 1.0)
 
 
     # --- Pressure from internal-energy density ---
     def pres(self, dens, eint):
-        """Pressure: p = (Γ - 1) ε."""
-        return (self.GAMMA - 1.0) * eint  
+        """
+        Pressure: p = (Γ - 1) ε.
+
+        Parameters
+        ----------
+        dens : ndarray
+            Unused (kept for a uniform (dens, X) calling convention with
+            the other EOSdata methods); p depends only on eint for an
+            ideal gas.
+        eint : ndarray
+            Internal-energy density.
+
+        Returns
+        -------
+        pres : ndarray
+            Pressure.
+        """
+        return (self.GAMMA - 1.0) * eint
     
     
     # --- Special-relativistic sound speed ---
@@ -104,7 +142,7 @@ class EOSdata:
 
         Returns
         -------
-        cs : ndarray   –  enthalpy
+        h : ndarray   –  specific enthalpy
         """
         enth = 1.0 + pres / dens * self.GAMMA / (self.GAMMA - 1.0)
         return enth 
