@@ -10,10 +10,10 @@ Implemented solvers, in increasing order of accuracy/cost:
     HLL   - Harten, Lax, van Leer (1983)
     HLLC  - HLL with contact restoration (Mignone & Bodo 2005)
     
-All solvers share the same calling convention (see Riemann_rHD in 
-                                               rHD_phys file).
+All solvers share the same calling convention (see Riemann_rHD in rHD_phys.py,
+which dispatches to one of these by par.solver_type).
 
-Each Riemann solver routine has the following i/o sturcture:
+Each Riemann solver routine has the following i/o structure:
 
    Parameters
    ----------
@@ -47,7 +47,27 @@ import numpy as np
 # Small helper: conservative SR hydro variables + their fluxes along Ox 
 # -------------------------
 def cons_and_flux_rHD(rho, vx, vy, vz, p, eos):
-    
+    """
+    Conservative variables and their Ox-normal fluxes for one SR state.
+
+    Parameters
+    ----------
+    rho, vx, vy, vz, p : ndarray
+        Primitive state (rest-mass density, 3-velocity components in
+        units of c, pressure).
+    eos : object
+        Equation of state object.
+
+    Returns
+    -------
+    m, mx, my, mz, e : ndarray
+        Conservative variables (D = rho*W, momentum x/y/z, total energy).
+    ent, W : ndarray
+        Specific enthalpy and Lorentz factor (returned for reuse by the
+        calling Riemann solver, e.g. for the wavespeed estimate).
+    Fm, Fx, Fy, Fz, Fe : ndarray
+        Their fluxes normal to the face (along the local x/Ox direction).
+    """
     # --- specific enthalpy ---
     ent = eos.enthalpy_sr(rho, p)
 
@@ -80,10 +100,14 @@ def cons_and_flux_rHD(rho, vx, vy, vz, p, eos):
 # ============================================================================
 
 
-"""
-Local Lax-Friedrichs (Rusanov) flux
-"""
 def LLF_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
+    """
+    Local Lax-Friedrichs (Rusanov) flux, special-relativistic.
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., pl, pr, eos)
+    signature and (Fmass, Fmomx, Fmomy, Fmomz, Fetot) return.
+    """
 
     #left state and fluxes 
     Dl, momxl, momyl, momzl, El, \
@@ -124,10 +148,14 @@ def LLF_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
 
 
 
-"""
-Harten, Lax, and Van Leer (HLL) flux
-"""
 def HLL_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
+    """
+    Harten, Lax, and Van Leer (HLL) flux, special-relativistic.
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., pl, pr, eos)
+    signature and (Fmass, Fmomx, Fmomy, Fmomz, Fetot) return.
+    """
 
     #left state and fluxes 
     Dl, momxl, momyl, momzl, El, \
@@ -167,10 +195,15 @@ def HLL_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     
 
 
-"""
-Harten, Lax, and Van Leer + Contact wave (HLLC) flux
-"""
 def HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
+    """
+    Harten, Lax, and Van Leer + Contact wave (HLLC) flux, special-
+    relativistic (Mignone & Bodo 2005).
+
+    Parameters / Returns: see the module docstring above -- every solver
+    in this file shares the same (rhol, rhor, vxl, vxr, ..., pl, pr, eos)
+    signature and (Fmass, Fmomx, Fmomy, Fmomz, Fetot) return.
+    """
 
     #left state and fluxes 
     Dl, momxl, momyl, momzl, El, \
