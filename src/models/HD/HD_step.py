@@ -142,7 +142,7 @@ def CFLcondition_HD(g, HD, eos, CFL):
     -----
     - This function accounts for both advection velocities and local sound speed.
     - Based on the local cell size in each direction.
-    - For compressible HDows, sound speed is computed using the EOS.
+    - For compressible flows, sound speed is computed using the EOS.
     
     Parameters
     ----------
@@ -152,7 +152,7 @@ def CFLcondition_HD(g, HD, eos, CFL):
         Fluid state object with attributes dens, vel1, vel2 (density and velocities).
     eos : object
         Equation of state object providing sound_speed(density, pressure).
-    CFL : HDoat
+    CFL : float
         CFL number (0 < CFL <= 1) controlling timestep size.
     
     Returns
@@ -485,7 +485,7 @@ def curv_source_HD(g, HD):
     ----------
     g : object
         Grid object containing:
-        - ``geom`` : str, geometry type ('cyl' supported).
+        - ``geom`` : str, geometry type ('cart', 'cyl', 'pol', or 'sph').
         - ``cx1`` : ndarray, radial cell-center positions.
         - ``Ngc`` : int, number of ghost cells.
         - ``Nx1, Nx2`` : int, number of grid points.
@@ -497,14 +497,15 @@ def curv_source_HD(g, HD):
 
     Returns
     -------
-    ST1, ST2, ST3 : ndarray
-        Momentum source terms.
+    ST1, ST2, ST3 : ndarray, shape (Nx1, Nx2)
+        Momentum source terms on interior cells (no ghost cells; matches
+        Res1/Res2/Res3 in flux_calc_HD, which these are subtracted from
+        directly). Identically zero for 'cart' (the Euler equations are
+        source-free in Cartesian coordinates).
 
     Notes
     -----
-    - Arrays are allocated with the full grid size (including ghost cells).
-    - Source terms are nonzero only inside the physical domain
-      (ghost zones excluded).
+    - Zero for 'cart'; geometric curvature terms for 'cyl', 'pol', 'sph'.
     """
     Ngc = g.Ngc 
     ST1 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
@@ -549,5 +550,3 @@ def curv_source_HD(g, HD):
         ST3 = - ( dens * v2 * v3 ) * cot / r - dens * v1 * v3 / r
             
     return ST1, ST2, ST3
-
-
