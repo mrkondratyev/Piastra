@@ -251,12 +251,9 @@ statements — no test-framework dependency — so `tests/` also works with
 - Miyoshi & Kusano (2005), *JCP* **208**, 315 — HLL-type solvers for MHD
 - Shu & Osher (1988), *JCP* **77**, 439 — TVD Runge–Kutta
 - Mignone (2014), *JCP* **270**, 784 — high-order curvilinear reconstruction
+- Suresh & Huynh (1997), *JCP* **136**, 83 — MP5 reconstruction
 - Meyer, Balsara & Aslam (2014), *MNRAS* **422**, 2102 — RKL2 super-time-stepping for diffusion
 - Shewchuk (1994), *An Introduction to the Conjugate Gradient Method Without the Agonizing Pain* — matrix-free, preconditioned CG
-- Suresh & Huynh (1997), *JCP* **136**, 83 — MP5 reconstruction
-- Woodward & Colella (1984), *JCP* **54**, 115 — double blast wave (robustness benchmark)
-- Gresho & Chan (1990), *Int. J. Numer. Methods Fluids* **11**, 621 — Gresho vortex (convergence/conservation benchmark)
-
 ---
 
 **Author:** mrkondratyev · [github.com/mrkondratyev/Piastra](https://github.com/mrkondratyev/Piastra)
