@@ -122,7 +122,7 @@ def CFLcondition_SWE(g, SWE, CFL):
     g : object
         Grid object with attributes dx1, dx2 (cell spacings) and Ngc (ghost cells).
     SWE : object
-        Fluid state object with attributes dens, vel1, vel2 (density and velocities).
+        Fluid state object with attributes h, vel1, vel2 (height and velocities).
     CFL : float
         CFL number (0 < CFL <= 1) controlling timestep size.
     
@@ -169,9 +169,8 @@ def _apply_strang_source(state, dt):
 
     Parameters
     ----------
-    state : SimState  -- modified in place
+    state : SimState  -- modified in place; g_ff, b_x, b_y, f_c read from it
     dt    : float     -- full timestep (half-step = dt/2 is applied here)
-    g     : float
 
     Returns
     -------
@@ -232,7 +231,7 @@ def oneStep_SWE_RK(g, SWE, par, dt):
             - CFL : CFL number
             - RK_order : 'RK1', 'RK2', or 'RK3'
             - phystime, phystimefin : current and final simulation time
-    dt : HDoat
+    dt : float
         Suggested timestep (bounded by CFL condition).
 
     Returns

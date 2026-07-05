@@ -8,34 +8,36 @@ Initial condition functions for the 2D Shallow Water Equations.
 
 Each function follows the standard Piastra IC signature:
 
-    IC_SWE_<name>(grid, state, par)  ->  grid, state, par, eos=None
+    IC_SWE<name>(grid, state, par)  ->  grid, state, par, eos=None
 
 The function is responsible for:
   - Setting the grid geometry (always CartesianGrid for SWE)
-  - Setting par.g, par.timenow, par.timefin, par.BC
+  - Setting state.g_ff, par.timenow, par.timefin, par.BC
   - Initialising state.h, state.vel1, state.vel2 in interior cells
   - Initialising state.b, state.b_x, state.b_y (bathymetry and its gradient)
   - Initialising state.f_c (Coriolis parameter)
 
 Bathymetry gradient
 -------------------
-state.b_x and state.b_y are computed using the gradient() routine from
-grid_misc.py, which applies central differences and handles geometry-aware
-metric factors. This ensures consistency with the rest of the framework.
+state.b_x and state.b_y are computed using the cell_gradient() routine
+from grid_misc.py, which applies central differences and handles
+geometry-aware metric factors. This ensures consistency with the rest of
+the framework.
 
-Available problems
-------------------
-  'dam_break'          -- 1D dam break along x₁ (SWE analogue of Sod tube)
-  'circular_dam_break' -- 2D radial dam break (SWE analogue of Sedov)
-  'bathtub'            -- gravity waves in a closed basin
-  'explosion'          -- cylindrical SWE blast wave (gamma=2 barotropic)
-  'tsunami'            -- 2D Gaussian SSH bump on deep ocean
-  'ocean'              -- geostrophic ocean eddy with beta-plane Coriolis
-  'atmosphere'         -- geostrophic atmospheric ridge with seeded noise
-  'bickley_jet'        -- barotropic instability of a Bickley jet
-  'kh_swe'             -- Kelvin-Helmholtz instability (SWE analogue)
-  'flow_bump'          -- supercritical flow over a Gaussian bump
-  'user_defined'       -- blank template for custom problems
+Available problems (the dispatch dictionary, mapping problem name to IC
+function, lives in src/misc/helpers.py's initial_model)
+------------------------------------------------------------------------
+  'dam1D'      -- IC_SWE1D_dam      : 1D dam break along x1 (SWE analogue of Sod tube)
+  'bump1D'     -- IC_SWE1D_bump     : 1D supercritical flow over a Gaussian bump
+  'dam2D'      -- IC_SWE2D_dam      : 2D radial dam break (SWE analogue of Sedov)
+  'bathtub2D'  -- IC_SWE2D_bathtub  : gravity waves in a closed basin
+  'expl2D'     -- IC_SWE2D_expl     : cylindrical SWE blast wave
+  'tsunami2D'  -- IC_SWE2D_tsunami  : 2D Gaussian SSH bump on deep ocean
+  'ocean2D'    -- IC_SWE2D_ocean    : geostrophic ocean eddy with beta-plane Coriolis
+  'atmo2D'     -- IC_SWE2D_atmo     : geostrophic atmospheric ridge with seeded noise
+  'jet2D'      -- IC_SWE2D_bickley  : barotropic instability of a Bickley jet
+  'KHI2D'      -- IC_SWE2D_KH       : Kelvin-Helmholtz instability (SWE analogue)
+  'user_defined' -- IC_SWE_user_defined : blank template for custom problems
 
 Author: mrkondratyev
 """
@@ -52,7 +54,20 @@ def IC_SWE_user_defined(grid, state, par):
     """
     Blank template for a user-defined SWE problem.
 
-    Fill in custom values and remove the NotImplementedError.
+    Fill in custom values below and remove the NotImplementedError; until
+    then this deliberately stops the run (same pattern as the
+    'user_defined' problem in every other Piastra mode).
+
+    Parameters
+    ----------
+    grid : Grid
+    state : SimState
+    par : Parameters
+
+    Returns
+    -------
+    grid, state, par, eos
+        eos is always None for SWE.
     """
     print("SWE -- user-defined problem")
 
@@ -187,7 +202,7 @@ def IC_SWE2D_bathtub(grid, state, par):
     a complex interference pattern.
 
     Domain: [0, 1] × [0, 1], wall boundaries on all sides.
-    g = 9.81, t_fin = 150.0
+    g = 9.81, t_fin = 1.5
     """
     print("SWE -- bathtub (gravity waves in closed basin)")
 
@@ -682,10 +697,10 @@ def IC_SWE1D_bump(grid, state, par):
 def _gradient_full(grid, var):
     """
     Compute the gradient of a full-grid array (including ghost cells)
-    using the framework's gradient() routine from grid_misc.py.
+    using cell_gradient() from grid_misc.py.
 
-    gradient() returns interior-only arrays of shape (Nx1, Nx2). This
-    wrapper embeds the result back into full-grid arrays so that the
+    cell_gradient() returns interior-only arrays of shape (Nx1, Nx2).
+    This wrapper embeds the result back into full-grid arrays so that the
     source terms in the time integrator can be applied with ghost-cell
     indexing consistently.
 
