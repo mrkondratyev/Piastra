@@ -29,7 +29,7 @@ Key routines
 - rec_WENO       : WENO/CWENO reconstruction for high-order accuracy
 - rec_PPMorig    : Standard PPM reconstruction (3rd order)
 - rec_PPM5       : Fifth-order PPM reconstruction
-- rec_MP5       : Fifth-order MP5 reconstruction
+- rec_MP5        : Fifth-order MP5 reconstruction
 
 Notes
 -----
@@ -91,11 +91,13 @@ def VarReconstruct(var, grid, rec_type, dim, limiter_type=None):
         - 'PPM'   : Fifth-order PPM (Mignone 2014)
         - 'MP5'   : Fifth-order MP5
     dim : int
-    
-    limiter_type : str, optional
-        PLM slope limiter ('VL', 'MM', 'MC', 'KOR'). If None, uses 'VL' (default).
         Dimension along which to perform the reconstruction (1 or 2).
-    
+    limiter_type : str, optional
+        PLM slope limiter ('VL', 'MM', 'MC', 'KOR', 'PCM', 'NO'; see
+        rec_PLM below). If None, uses 'VL' (default). Only used when
+        rec_type='PLM' (including the internal PLM fallback near
+        troubled cells for WENO/PPM/MP5, see _swap_troubled below).
+
     Returns
     -------
     var_rec_L : ndarray
@@ -114,7 +116,7 @@ def VarReconstruct(var, grid, rec_type, dim, limiter_type=None):
         return var_rec_L, var_rec_R
 
     elif rec_type == 'PLM':
-        return rec_PLM(grid, var, dim, limiter_type=None)
+        return rec_PLM(grid, var, dim, limiter_type=limiter_type)
 
     elif rec_type == 'WENO':
         Nr = grid.Nx1r if dim == 1 else grid.Nx2r
@@ -165,8 +167,10 @@ def rec_PLM(grid, var, dim, limiter_type=None):
     dim : int
         Dimension along which to perform the reconstruction (1 or 2).
     limiter_type : str, optional
-        PLM slope limiter type 
-        
+        PLM slope limiter: 'VL' (van Leer, default if None), 'MM'
+        (minmod), 'MC' (monotonized central), 'KOR' (Koren 3rd-order),
+        'PCM' (zero slope), or 'NO' (unlimited).
+
     Returns
     -------
     var_rec_L : ndarray
@@ -650,8 +654,8 @@ def rec_MP5(Ngc, Nr, var, dim):
       2. Compute VMP, the simple monotonicity-preserving bound (Eq. 2.12).
       3. If VOR already satisfies the MP constraint (Eq. 2.30), accept it as-is.
       4. Otherwise compute the accuracy-preserving bounds using the four-argument
-         minmod d^M4 (Eq. 2.24), then UL, MD, and LC estimates (Eqs. 2.8, 2.25, 2.26),
-         and finally clamp VOR into [vmin, vmax] via median (Eq. 2.28).
+         minmod d^M4, then UL, MD, and LC estimates (see their Sect. 2),
+         and finally clamp VOR into [vmin, vmax] via median.
 
     The alpha parameter (alpha = 4) and tolerance epsilon (1e-10) are taken
     directly from the paper.
