@@ -46,6 +46,7 @@ import copy
 from src.grid.grid_misc import (
     interp_face_to_cell, 
     div_face_vector)
+from src.gravity import body_force_dt
 
 
 class MHD2D_CT:
@@ -179,7 +180,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     dt_inv = np.max((np.abs(vel1) + cfast)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
         (np.abs(vel2) + cfast)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
-    return CFL/dt_inv
+    return min(CFL/dt_inv, body_force_dt(g, MHD, CFL))
 
 
  
@@ -385,7 +386,14 @@ def flux_calc_MHD_CT(g, MHD, par, eos):
     - Returns residuals in conservative form, ready for RK update.
     """
     #fill the ghost cells
-    MHD = boundCond_MHD(g, par.BC, par.BCm, MHD)
+    MHD = boundCond_MHD(g, par.BC, par.BCm, MHD, par.BC_fixed)
+
+    #re-evaluate a state- or time-dependent body force for THIS RK stage
+    #(self-gravity, Coriolis, an orbiting perturber -- see gravity.py).
+    #A static force leaves body_force = None and simply keeps the F1/F2
+    #the initial condition wrote.
+    if MHD.body_force is not None:
+        MHD.body_force(g, MHD, par)
     
     #make copies of ghost cell and real cell numbers to simplify indexing 
     Ngc  = g.Ngc 

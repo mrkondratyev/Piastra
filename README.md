@@ -62,6 +62,14 @@ consistently so the same solver code works in every coordinate system.
   each face independently. Stateless and grid-agnostic (works on a grid built
   for a hyperbolic solver too), so it's meant to be called from other modules
   — self-gravity, magnetic divergence cleaning — not just used standalone.
+- **Self-gravity:** wired up in `src/gravity.py`, which solves
+  `div(grad(Phi)) = 4πGρ` and feeds `-grad(Phi)` into the momentum and energy
+  source terms. Because the potential is a functional of the *evolving*
+  density, it is re-solved every Runge–Kutta stage through the optional
+  `state.body_force` hook; the same hook carries any other state- or
+  time-dependent force (Coriolis, an orbiting perturber). Gravity also
+  supplies its own timestep limit, `dt ≤ sqrt(2·CFL·dx/|a|)` — a cold
+  collapse released from rest has no hydrodynamic CFL limit at all.
 
 ---
 
@@ -166,7 +174,8 @@ template you fill in yourself.
 - **`HD`** — `sod1Dcart`, `sod1Dcyl`, `sod1Dsph`, `strong1D`, `DBW1D`,
   `shuosher1D`, `einfeldt1D`, `sod2Dcart`, `sod2Dsph`, `sod2Dpol`,
   `sedov2Dcart`, `sedov2Dcyl`, `RP2D`, `gresho2D`, `KHI2D`, `RTI2D`,
-  `shock-cloud`, `gap-opening`, `jet2Dcyl`
+  `shock-cloud`, `gap-opening`, `jet2Dcyl`, and the self-gravitating
+  `collapse1D`, `jeans2D`, `collapse2D`
 - **`rHD`** — `RP1`, `RP3`, `RP4`, `RP5`, `RP2D`, `RTI`, `jet2Dcart`, `jet2Dcyl`
 - **`MHD`** — `BW1D`, `toth1D`, `RJ1D`, `alfven1D`, `blast2Dcart`, `blast2Dcyl`,
   `blast2Dsph`, `rotor2D`, `OT2D`, `current-sheet`, `field-loop`, `disk2D`,
@@ -232,7 +241,7 @@ Four suites under `tests/`, the standard checks for a computational
 |----------------|----------------------------------------------------------------------------------|
 | `sanity`       | every `(mode, problem)` in the catalogue above builds and steps without crashing, NaNs, or unphysical (negative density/pressure/height) values — on a deliberately non-square grid, since a square one hides axis-swap bugs |
 | `conservation` | mass / momentum / total energy are constant to round-off on closed domains (periodic: Gresho vortex, Orszag-Tang; zero-flux: wall-bounded Sedov blast, free-boundary diffusion, a closed SWE basin); CT's div(B) stays at round-off |
-| `convergence`  | measured error shrinks at close to the design order under grid refinement, against an exact analytic solution (diffusion of a sine mode), an exact return-to-initial-state (periodic advection after one period), or a preserved exact steady state (the Gresho vortex) |
+| `convergence`  | measured error shrinks at close to the design order under grid refinement, against an exact analytic solution (diffusion of a sine mode), an exact return-to-initial-state (periodic advection after one period, circularly-polarized Alfvén waves), or a preserved exact steady state (the Gresho vortex). Self-gravity is checked against exact solutions rather than just an order: the Jeans growth rate must match `sqrt(4πGρ₀ − c_s²k²)` to under 1%, and the dust sphere must track the analytic free-fall cycloid |
 | `robustness`   | every `solver_type` × `rec_type` × `RK_order` combination a mode supports stays finite and positivity-preserving, checked after *every* step, on the field's standard strong-shock benchmarks (Woodward-Colella double blast wave, Brio-Wu MHD shock tube, a shallow-water dam break, ...) |
 
 Each suite is a plain module of `test_*` functions with plain `assert`

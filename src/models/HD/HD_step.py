@@ -52,6 +52,7 @@ from src.models.HD.HD_phys import (
     boundCond_HD,
     Riemann_HD)
 from src.common.high_order_rec import VarReconstruct
+from src.gravity import body_force_dt
 
 
 class HD2D:
@@ -187,7 +188,7 @@ def CFLcondition_HD(g, HD, eos, CFL):
     dt_inv = np.max((np.abs(vel1) + sound)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
         (np.abs(vel2) + sound)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc]* g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
-    return CFL/dt_inv
+    return min(CFL/dt_inv, body_force_dt(g, HD, CFL))
 
 
 
@@ -391,10 +392,17 @@ def flux_calc_HD(g, HD, par, eos):
     """
     #fill the ghost cells
     HD = boundCond_HD(g, par.BC, HD, par.BC_fixed)
-    
-    #make copies of ghost cell numbers to simplify indexing below 
-    Ngc = g.Ngc 
-    
+
+    #re-evaluate a state- or time-dependent body force for THIS RK stage
+    #(self-gravity, Coriolis, an orbiting perturber -- see gravity.py).
+    #A static force leaves body_force = None and simply keeps the F1/F2
+    #the initial condition wrote.
+    if HD.body_force is not None:
+        HD.body_force(g, HD, par)
+
+    #make copies of ghost cell numbers to simplify indexing below
+    Ngc = g.Ngc
+
     #residuals initialization (only for real cells)
     ResM = np.zeros((g.Nx1, g.Nx2), dtype=np.double)
     Res1 = np.zeros((g.Nx1, g.Nx2), dtype=np.double)

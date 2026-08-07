@@ -47,6 +47,12 @@ mrkondratyev
 """
 import numpy as np
 from src.common.eos_setup import EOSdata
+from src.gravity import (
+    corotating_planet_disk,
+    corotating_planet_disk_hook,
+    selfgravity_poisson,
+    selfgravity_poisson_hook,
+)
 
 
 
@@ -1060,107 +1066,175 @@ def IC_HD2D_shock_cloud(grid, fluid, par):
 
 def IC_HD2D_gap_opening(grid, fluid, par):
     """
-    Simplified 2D gap-opening problem in a protoplanetary disk (polar coords).
+    2D gap opening by a planet in a protoplanetary disk (polar coordinates),
+    in the frame CO-ROTATING with the planet.
 
-    Educational version, built to be CONSISTENT with the adiabatic gamma-law
-    EOS (no locally-isothermal fudge). The disk is initialised in exact radial
-    equilibrium for the chosen gamma, so it stays steady until the planet's
-    gravity carves a gap. A low-mass planet sits at (R=1, phi=pi) on a fixed
-    circular orbit; its softened gravity is applied as a source term.
+    This is the de Val-Borro et al. (2006) disk-planet comparison problem,
+    reduced to its essentials: a thin, radially-balanced disk orbits a star,
+    a low-mass planet on a fixed circular orbit at R = 1 is switched on
+    smoothly over the first few orbits, and its torques open an annular gap
+    around its orbit while launching the characteristic one-armed spiral
+    wakes inside and outside it.
 
-    Design choices for clarity:
-      * power-law Sigma(R) and P(R) chosen so that radial balance is EXACT,
-        so v_phi includes the (sub-Keplerian) pressure correction;
-      * F1, F2 are accelerations (force per unit mass): the solver applies the
-        density weighting. (Verify your HD solver uses -dens*F, as rMHD does.)
-      * planet on a fixed orbit (no migration, no disk back-reaction) -- the
-        standard teaching simplification.
+    Frame
+    -----
+    Everything is solved in the frame rotating at the planet's orbital
+    frequency Omega_p = sqrt(G (M_star + M_p) / R_p^3), so the planet is
+    STATIONARY at (R_p, phi_p) and only the frame forces move.  This is the
+    standard choice for this problem: in the lab frame the disk streams past
+    the grid at the local Keplerian speed, which shrinks the timestep and
+    smears the slowly-growing gap by advection diffusion.  The price is a
+    centrifugal and a Coriolis term, supplied together with the gravity by
+    ``gravity.corotating_planet_disk``.
 
-    Coordinate system : polar (R, phi)
-    Domain            : R in [0.4, 2.5], phi in [0, 2*pi]
+    Because the Coriolis force depends on the current velocity (and the
+    planet mass on the current time, while it ramps), the source term CANNOT
+    be written once into F1/F2 here -- it is installed as a per-stage
+    ``fluid.body_force`` hook, which the solvers re-evaluate at every
+    Runge-Kutta stage.
+
+    Initial state
+    -------------
+    Power-law surface density and pressure,
+
+        Sigma(R) = Sigma0 R^(-a),     P(R) = P0 R^(-(a+1)) ,
+
+    with P0 fixed by the aspect ratio h0 = (c_s / v_K) at R = 1.  The
+    azimuthal velocity is the EXACT radial-equilibrium solution for this
+    gamma-law gas,
+
+        v_phi,inertial^2 = G M_star / R - (a+1) P / Sigma ,
+
+    i.e. slightly sub-Keplerian because pressure supports part of gravity.
+    Dropping that correction is the classic way to get a disk that drifts
+    radially from the first step.  The stored velocity is then transformed
+    into the rotating frame,  v_phi = v_phi,inertial - Omega_p R.
+
+    Coordinate system : polar (R, phi) = (x1, x2)
+    Domain            : R in [0.4, 2.5], phi in [0, 2 pi]
     Star              : M_star = 1 at the origin
-    Planet            : M_p = 5e-4 at (R=1, phi=pi), fixed circular orbit
+    Planet            : M_p = 1e-3 (~1 Jupiter at 1 M_sun), fixed at (1, pi)
+    Aspect ratio      : h/R = 0.05 at R = 1
+    Run length        : 30 planet orbits (a gap is clearly visible by ~20)
+
+    Known simplifications
+    ---------------------
+    * the planet is on a FIXED orbit -- no migration, no disk back-reaction;
+    * no wave-damping zones near the radial boundaries, so the spiral wakes
+      partially reflect off the open R boundaries after a few orbits.  The
+      benchmark damps the solution towards the initial state in
+      R < 0.5 and R > 2.1 for exactly this reason;
+    * the disk is 2D and vertically integrated, as in the benchmark.
+
+    Parameters
+    ----------
+    grid : object   Grid; a PolarGrid is built here.
+    fluid : object  HD SimState (dens, pres, vel1..3, F1, F2, body_force).
+    par : object    Parameters (BC, timenow, timefin).
+
+    Returns
+    -------
+    grid, fluid, par, eos : objects
 
     References
     ----------
-    de Val-Borro, M. et al. (2006), MNRAS 370, 529  (the full benchmark)
+    de Val-Borro, M. et al. (2006), MNRAS 370, 529   (the comparison problem)
+    Lin, D. N. C. & Papaloizou, J. (1986), ApJ 309, 846   (gap-opening theory)
     """
-    print("2D gap-opening problem in a protoplanetary disk (simplified, adiabatic)")
+    print("2D gap opening by a planet in a protoplanetary disk "
+          "(polar, co-rotating frame)")
 
+    # --- grid ---
     R_in, R_out = 0.4, 2.5; phi_in, phi_out = 0.0, 2.0 * np.pi
     grid.PolarGrid(R_in, R_out, phi_in, phi_out)
 
-    par.timenow = 0.0; par.timefin = 10.0 * 2.0 * np.pi          # 10 orbits at R = 1
-
     eos = EOSdata(5.0 / 3.0)
 
-    # --- disk parameters ---
-    Sigma0   = 1.0
+    # --- star / planet / disk parameters ---
+    G        = 1.0
     M_star   = 1.0
-    h0       = 0.05        # aspect ratio (h/R) at R = 1; sets the disk "thickness"
-    a        = 0.5         # Sigma ~ R^(-a)
+    M_planet = 1.0e-3          # ~1 M_Jupiter for a 1 M_sun star
+    R_planet = 1.0
+    phi_planet = np.pi         # mid-domain: furthest from the periodic seam
+    Sigma0   = 1.0
+    h0       = 0.05            # aspect ratio (h/R) at R = 1 -> thin disk
+    a        = 0.5             # Sigma ~ R^(-a)
+    q        = a + 1.0         # pressure power law  P ~ R^(-q)
 
-    # Temperature/pressure power law chosen so that c_s ~ v_K * h0 at R=1.
-    # For a gamma-law gas, locally  c_s^2 = gamma * P / Sigma.  We want the disk
-    # geometrically thin and in radial balance, so we set
-    #     P(R) = P0 * R^(-(a + 1))          (so c_s^2 ~ 1/R, like a real disk)
-    # and choose P0 so that  (c_s / v_K)|_{R=1} = h0.
-    #   c_s^2(1) = gamma P0 / Sigma0 ,  v_K^2(1) = M_star  ->  P0 = Sigma0 h0^2 M_star / gamma
-    P0 = Sigma0 * h0**2 * M_star / eos.GAMMA
-    q  = a + 1.0           # pressure power-law index  P ~ R^(-q)
+    # gravitational softening: the standard 0.6 H at the planet's orbit.
+    # Below this scale a 2D point-mass potential is not a meaningful model of
+    # a 3D planet anyway, and an unsoftened one would be grid-dependent.
+    soft = 0.6 * h0 * R_planet
 
-    # --- planet parameters ---
-    M_planet   = 5.0e-4    # ~0.5 Jupiter-ish in these units; small enough to be gentle
-    R_planet   = 1.0
-    phi_planet = np.pi
-    eps        = 0.6 * h0 * R_planet   # gravitational softening length
+    # P0 from the aspect ratio: c_s^2 = gamma P / Sigma and v_K^2 = G M_star
+    # at R = 1, so (c_s/v_K)|_{R=1} = h0  <=>  P0 = Sigma0 h0^2 G M_star / gamma
+    P0 = Sigma0 * h0**2 * G * M_star / eos.GAMMA
 
-    # ------------------------------------------------------------------
-    # Disk state (vectorised, full array including ghosts)
-    # ------------------------------------------------------------------
-    R   = grid.cx1; phi = grid.cx2
+    # --- orbital frequency of the frame, run length, planet ramp ---
+    Omega_p = np.sqrt(G * (M_star + M_planet) / R_planet**3)
+    T_orbit = 2.0 * np.pi / Omega_p
+    par.timenow = 0.0
+    par.timefin = 30.0 * T_orbit         # 30 planet orbits
+    t_ramp      = 5.0 * T_orbit          # switch the planet on over 5 orbits
+
+    # --- disk state (vectorised, full arrays including ghosts) ---
+    R = grid.cx1
 
     Sigma = Sigma0 * R**(-a)
     P     = P0 * R**(-q)
 
-    # Exact radial equilibrium for THIS gamma:
-    #   v_phi^2 / R = M_star / R^2 + (1/Sigma) dP/dR
-    # dP/dR = -q P / R, so:
-    #   v_phi^2 = M_star / R - q P / Sigma
-    # (the pressure term makes the disk slightly sub-Keplerian -- this is what
-    #  keeps it from drifting; dropping it was the bug in the old IC)
-    vphi2 = M_star / R - q * P / Sigma
-    vphi2 = np.maximum(vphi2, 0.0)          # guard (only triggers if disk is too hot)
-    v_phi = np.sqrt(vphi2)
+    # exact radial equilibrium in the INERTIAL frame:
+    #   v_phi^2 / R = G M_star / R^2 + (1/Sigma) dP/dR ,   dP/dR = -q P / R
+    vphi2 = G * M_star / R - q * P / Sigma
+    vphi2 = np.maximum(vphi2, 0.0)       # guard (only trips if the disk is hot)
+    v_phi_inertial = np.sqrt(vphi2)
 
     fluid.dens[:, :] = Sigma
-    fluid.vel1[:, :] = 0.0                   # v_R = 0
-    fluid.vel2[:, :] = v_phi                 # balanced (sub-Keplerian) rotation
-    fluid.vel3[:, :] = 0.0
     fluid.pres[:, :] = P
+    fluid.vel1[:, :] = 0.0                                   # v_R = 0
+    fluid.vel2[:, :] = v_phi_inertial - Omega_p * R          # into the co-rotating frame
+    fluid.vel3[:, :] = 0.0
 
-    # ------------------------------------------------------------------
-    # Gravity acceleration
-    # ------------------------------------------------------------------
-    g_R_star = -M_star / R**2
+    # --- body force: star + planet gravity + centrifugal + Coriolis ---
+    # Installed as a per-stage hook because Coriolis depends on the current
+    # velocity and the planet mass on the current time while it ramps.
+    fluid.body_force = corotating_planet_disk_hook(
+        M_star=M_star, M_planet=M_planet, r_planet=R_planet,
+        phi_planet=phi_planet, soft=soft, G=G,
+        indirect=True, t_ramp=t_ramp)
+    # evaluate once now so F1/F2 are consistent with the state at t = 0
+    fluid = corotating_planet_disk(
+        grid, fluid, par, M_star=M_star, M_planet=M_planet,
+        r_planet=R_planet, phi_planet=phi_planet, soft=soft, G=G,
+        indirect=True, t_ramp=t_ramp)
 
-    # planet gravity in Cartesian, then rotate to polar
-    dx = R * np.cos(phi) - R_planet * np.cos(phi_planet)
-    dy = R * np.sin(phi) - R_planet * np.sin(phi_planet)
-    d  = np.sqrt(dx**2 + dy**2 + eps**2)
-    g_x = -M_planet * dx / d**3
-    g_y = -M_planet * dy / d**3
+    # --- boundaries: periodic in phi, equilibrium-pinned in R ---
+    # A zero-gradient radial boundary cannot represent a power-law disk: it
+    # copies Sigma and v_phi from the last interior cell, which is NOT the
+    # equilibrium value at the ghost radius, so a spurious boundary layer
+    # forms and propagates inward (measured: ~10% surface-density error at
+    # the edges after 2 orbits, versus ~0.2% mid-disk).  Instead pin both
+    # radial ghost layers to the analytic equilibrium evaluated at the ghost
+    # radii -- physically, the annulus is cut out of a much larger disk that
+    # stays unperturbed.
+    def _equilibrium_at(Rg):
+        """Analytic (Sigma, P, v_phi_rot) at the ghost radii Rg, shape (Ngc,1)."""
+        Sig = Sigma0 * Rg**(-a)
+        Prs = P0 * Rg**(-q)
+        vp2 = np.maximum(G * M_star / Rg - q * Prs / Sig, 0.0)
+        return {'dens': Sig, 'pres': Prs,
+                'vel1': np.zeros_like(Rg),
+                'vel2': np.sqrt(vp2) - Omega_p * Rg,
+                'vel3': np.zeros_like(Rg)}
 
-    g_R_planet   =  g_x * np.cos(phi) + g_y * np.sin(phi)
-    g_phi_planet = -g_x * np.sin(phi) + g_y * np.cos(phi)
+    Ngc = grid.Ngc
+    R_in_ghost  = grid.cx1[0:Ngc,      Ngc][:, None]     # (Ngc, 1) -> broadcasts
+    R_out_ghost = grid.cx1[-Ngc:,      Ngc][:, None]     #            over phi
+    par.BC[0] = 'free'; par.BC[2] = 'free'    # overwritten by BC_fixed below
+    par.BC_fixed[0] = [(0, grid.Nx2, _equilibrium_at(R_in_ghost))]
+    par.BC_fixed[2] = [(0, grid.Nx2, _equilibrium_at(R_out_ghost))]
 
-    sl = (slice(grid.Ngc, grid.Nx1r), slice(grid.Ngc, grid.Nx2r))
-    fluid.F1[:, :] = (g_R_star + g_R_planet)[sl]
-    fluid.F2[:, :] = (g_phi_planet)[sl]
-
-    # periodic in phi, open in R
-    par.BC[0] = 'free'; par.BC[1] = 'peri'
-    par.BC[2] = 'free'; par.BC[3] = 'peri'
+    par.BC[1] = 'peri'; par.BC[3] = 'peri'    # periodic in azimuth
 
     return grid, fluid, par, eos
 
@@ -1170,21 +1244,49 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     """
     Axisymmetric non-relativistic jet in cylindrical (R, Z) coordinates.
 
-    A supersonic (Mach 6) light jet is injected through a nozzle at the BOTTOM
-    boundary (Z = 0, the x2-inner face) over R < r_jet, and propagates in +Z
-    into a uniform, pressure-matched ambient medium, developing a bow shock,
-    cocoon and Mach disk.
+    A supersonic, LIGHT jet is injected through a nozzle at the bottom
+    boundary (Z = 0, the x2-inner face) over R < r_jet and propagates in +Z
+    into a uniform, pressure-matched ambient medium.  It develops the
+    textbook morphology of an astrophysical jet: a bow shock ahead of the
+    beam, a Mach disk (terminal shock) where the beam decelerates, and a
+    back-flowing cocoon of shocked jet material enveloping the beam.
 
     Coordinate system : cylindrical (R, Z) = (x1, x2)
-    Domain            : R in [0, 5], Z in [0, 20]
-    Inlet (face 1)    : R < 1, rho=1, v_z=6, p = rho cs^2 / gamma  (Mach 6)
-    Ambient           : rho=10, v=0, same p     (eta = rho_jet/rho_amb = 0.1)
+    Domain            : R in [0, 5], Z in [0, 25]
+    Beam radius       : r_jet = 1
+    Inlet (face 1)    : R < r_jet, rho = 1, v_Z = 6, p = rho cs^2/gamma
+    Ambient           : rho = 10, v = 0, same p
+    Density contrast  : eta = rho_jet / rho_amb = 0.1   (a LIGHT jet)
+    Internal Mach no. : v_jet / cs_jet = 6
 
-    The inlet is a fixed (Dirichlet) ghost-fill registered in par.BC_fixed[1];
-    it requires boundCond_HD to apply apply_bc_fixed (face 1) AFTER the standard
-    'wall' fill and to be passed par.BC_fixed.  The interior starts as pure
-    ambient -- the jet turns on from the boundary, so there is no initial
-    internal discontinuity.
+    The 1D momentum balance between beam and ambient predicts a head
+    advance speed
+
+        v_head = v_jet / (1 + sqrt(rho_amb / rho_jet)) = 6 / (1 + sqrt(10))
+               ~ 1.44 ,
+
+    so the beam crosses the Z = 25 domain in t ~ 17; the run stops at
+    t = 15, just before the head leaves the grid.  Checking the measured
+    head position against this estimate is the standard sanity test for a
+    jet setup, and is why the domain and final time are chosen together.
+
+    The inlet is a fixed (Dirichlet) ghost-fill registered in
+    ``par.BC_fixed[1]`` and applied by ``boundCond_HD`` after the standard
+    'wall' fill.  Because the prescribed state lives in the ghost cells, the
+    boundary-face Riemann solve produces the correct inlet flux with no
+    change to the flux routine.  The interior starts as pure ambient -- the
+    jet switches on from the boundary, so there is no initial internal
+    discontinuity to relax.
+
+    Parameters
+    ----------
+    grid : object   Grid; a CylindricalGrid is built here.
+    fluid : object  HD SimState (dens, pres, vel1..3).
+    par : object    Parameters (BC, BC_fixed, timenow, timefin).
+
+    Returns
+    -------
+    grid, fluid, par, eos : objects
 
     References
     ----------
@@ -1194,7 +1296,7 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     print("2D axisymmetric non-relativistic jet (cylindrical, inlet BC)")
 
     # --- grid + time ---
-    R_in, R_out = 0.0, 10.0
+    R_in, R_out = 0.0, 5.0
     Z_in, Z_out = 0.0, 25.0
     grid.CylindricalGrid(R_in, R_out, Z_in, Z_out)
     par.timenow = 0.0
@@ -1224,6 +1326,10 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     # --- nozzle extent along R (tangential to the bottom face) ---
     Rc = grid.cx1[Ngc:Nx1r, Ngc]         # 1D interior R cell-centres
     in_jet = np.nonzero(Rc < r_jet)[0]   # contiguous from the axis
+    if in_jet.size == 0:
+        raise ValueError(
+            "jet2Dcyl: the nozzle (R < %g) is not resolved by a single cell at "
+            "Nx1 = %d; use a finer radial grid." % (r_jet, Nx1))
     start  = int(in_jet[0])              # 0
     end    = int(in_jet[-1]) + 1         # one-past-last interior R index
 
@@ -1240,12 +1346,401 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     fluid.vel2[i0:i1, 0:Ngc] = v_jet     # +Z, into the domain
 
     # --- boundaries: axis at R=0, wall at Z=0 (overridden by the nozzle),
-    #     outflow at R=5 and Z=20 ---
+    #     outflow at R=R_out and Z=Z_out ---
     par.BC[0] = 'axis'                   # x1 inner  (R = 0)
     par.BC[1] = 'wall'                   # x2 inner  (Z = 0, nozzle via BC_fixed)
     par.BC[2] = 'free'                   # x1 outer  (R = 5)
-    par.BC[3] = 'free'                   # x2 outer  (Z = 20)
+    par.BC[3] = 'free'                   # x2 outer  (Z = 25)
+    return grid, fluid, par, eos
+
+
+# ============================================================================
+#   Self-gravitating problems  (see gravity.py / poisson_solver.py)
+# ============================================================================
+
+def IC_HD1D_dust_collapse(grid, fluid, par):
+    """
+    1D spherical collapse of a uniform, pressureless (dust) sphere under its
+    own gravity -- the standard quantitative test of a self-gravity solver,
+    because it has a closed-form exact solution.
+
+    A uniform sphere of density rho0 and radius R0 released from rest
+    collapses HOMOLOGOUSLY: it stays uniform, no shell ever overtakes
+    another, and every shell follows the free-fall (cycloid) solution
+
+        r(t) = r0 cos^2(xi) ,    t = t_ff * (2/pi) * (xi + sin(xi) cos(xi)) ,
+
+    reaching r = 0 at the free-fall time
+
+        t_ff = sqrt( 3 pi / (32 G rho0) ) .
+
+    Because the collapse is homologous the interior density stays uniform
+    and follows
+
+        rho(t) = rho0 * (R0 / R(t))^3 ,
+
+    so a code can be checked against an exact curve, not merely against
+    "looks plausible".  With G = rho0 = R0 = 1 (the units used here),
+    t_ff = sqrt(3 pi / 32) = 0.542700...
+
+    Why "dust"
+    ----------
+    The exact solution assumes ZERO pressure.  A Godunov code cannot run at
+    exactly p = 0 (the sound speed and the conservative-to-primitive
+    inversion both degenerate), so the gas here is given a tiny pressure --
+    a free-fall Mach number of order 10^3 -- which is dynamically negligible
+    but keeps the solver well posed.  The run stops at 0.8 t_ff, before the
+    central singularity forms and before pressure could matter.
+
+    Gravity
+    -------
+    Solved with the finite-volume Poisson solver every Runge-Kutta stage
+    (via ``selfgravity_poisson_hook``), NOT written once by this function:
+    the density is what is collapsing, so a potential computed at t = 0 is
+    stale immediately.
+
+    The boundary condition matters here.  This is an ISOLATED object, so the
+    outer boundary uses the exact exterior potential of a point mass,
+
+        Phi(r_out) = -G M_tot / r_out    ('dirichlet') ,
+
+    which is constant because no mass leaves the domain.  A pure-Neumann
+    ('free' everywhere) setup would NOT do: with no Dirichlet face the
+    solver must enforce the solvability condition by subtracting the mean of
+    the source, which silently adds a uniform negative background density
+    and changes the enclosed mass.  That is the right thing for a periodic
+    box (see 'jeans2D') and the wrong thing for an isolated sphere.
+    At r = 0, 'free' is exact: dPhi/dr = 0 there by spherical symmetry.
+
+    A spherically symmetric configuration like this one is also handled
+    exactly, and far more cheaply, by
+    ``gravity.selfgravity_monopole_spherical`` (a radial cumulative sum
+    rather than an elliptic solve).  The Poisson solver is used here on
+    purpose, so the test measures the general machinery.
+
+    Coordinate system : spherical-polar (r, theta), 1D (Nx2 = 1)
+    Domain            : r in [0, 2], theta in [0, pi]  (a full sphere)
+    Sphere            : rho = 1 for r < 1, a light ambient outside
+    Final time        : 0.8 t_ff
+
+    Parameters
+    ----------
+    grid : object   Grid; a SphericalPolarGrid is built here.  Use Nx2 = 1.
+    fluid : object  HD SimState (dens, pres, vel1..3, F1, F2, body_force).
+    par : object    Parameters (BC, timenow, timefin).
+
+    Returns
+    -------
+    grid, fluid, par, eos : objects
+
+    References
+    ----------
+    Truelove, J. K. et al. (1997), ApJ 489, L179   (self-gravity test suite)
+    Binney, J. & Tremaine, S., Galactic Dynamics, 2nd ed., section 4.1
+    """
+    print("1D spherical pressureless (dust) collapse -- exact free-fall solution")
+
+    G = 1.0; rho0 = 1.0; R0 = 1.0
+    r_out = 2.0
+
+    grid.SphericalPolarGrid(0.0, r_out, 0.0, np.pi)
+    eos = EOSdata(5.0 / 3.0)
+
+    t_ff = np.sqrt(3.0 * np.pi / (32.0 * G * rho0))
+    par.timenow = 0.0
+    par.timefin = 0.8 * t_ff          # stop before the central singularity
+
+    r = grid.cx1
+
+    # --- uniform sphere in a light ambient ---
+    rho_amb = 1.0e-3 * rho0
+    fluid.dens[:, :] = np.where(r < R0, rho0, rho_amb)
+
+    # --- negligible pressure: fix the free-fall Mach number, not p itself,
+    #     so the "dust" limit is explicit and resolution-independent.
+    #     Mach 30 already makes pressure support ~1/Mach^2 ~ 0.1% of gravity
+    #     -- indistinguishable from Mach 100 in practice (measured: the
+    #     collapsed radius differs by 0.06%) -- while keeping the Riemann
+    #     solver away from the genuinely pressureless limit, where the Euler
+    #     equations lose strict hyperbolicity and a Godunov scheme fails in
+    #     the near-vacuum states that collapse produces. ---
+    Mach_ff = 30.0
+    v_ff    = np.sqrt(2.0 * G * (4.0 / 3.0 * np.pi * R0**3 * rho0) / R0)
+    cs      = v_ff / Mach_ff
+    fluid.pres[:, :] = fluid.dens[:, :] * cs**2 / eos.GAMMA
+
+    fluid.vel1[:, :] = 0.0            # released from rest
+    fluid.vel2[:, :] = 0.0
+    fluid.vel3[:, :] = 0.0
+
+    # --- self-gravity: exact exterior (point-mass) potential on the outer
+    #     face, zero-gradient at the origin.  M_tot is constant: the domain
+    #     is closed, so this Dirichlet value never needs updating. ---
+    M_tot = (4.0 / 3.0) * np.pi * (R0**3 * rho0
+                                    + (r_out**3 - R0**3) * rho_amb)
+    BC_phi = ['free', 'free', 'dirichlet', 'free']
+    BC_val = {2: -G * M_tot / r_out}
+    # A spherical grid spans a huge range of cell volumes (cVol ~ r^2 dr), so
+    # the Poisson operator is poorly conditioned near the origin and CG needs
+    # more headroom than its default cap of Nx1*Nx2 iterations.  Leaving the
+    # default here silently returns an unconverged potential, which at these
+    # near-vacuum densities destroys the run outright.
+    cg = dict(tol=1e-8, maxiter=max(500, 10 * (grid.Nx1 + grid.Nx2)))
+    fluid.body_force = selfgravity_poisson_hook(G=G, BC=BC_phi,
+                                                 BC_value=BC_val, **cg)
+    # evaluate once so F1/F2 are consistent with the state at t = 0
+    fluid = selfgravity_poisson(grid, fluid, par, G=G, BC=BC_phi,
+                                 BC_value=BC_val, **cg)
+
+    # --- boundaries: reflecting at the origin, outflow at r_out ---
+    par.BC[0] = 'axis'; par.BC[2] = 'free'
+    par.BC[1] = 'axis'; par.BC[3] = 'axis'      # unused: Nx2 = 1
+
     return grid, fluid, par, eos
 
 
 
+def IC_HD2D_jeans(grid, fluid, par):
+    """
+    2D Jeans instability: gravitational growth of a small density
+    perturbation in a uniform, self-gravitating medium.
+
+    The textbook linear-theory problem for self-gravity, and the natural
+    partner to the dust collapse: that one tests the NONLINEAR solution of an
+    isolated body, this one tests the LINEAR growth rate against an exact
+    dispersion relation,
+
+        omega^2 = c_s^2 k^2 - 4 pi G rho0 .
+
+    Perturbations with k below the Jeans wavenumber
+    k_J = sqrt(4 pi G rho0) / c_s are unstable and grow as exp(sigma t) with
+    sigma = sqrt(4 pi G rho0 - c_s^2 k^2); shorter wavelengths are stabilised
+    by pressure and merely oscillate as sound waves.  Measuring sigma from a
+    run and comparing with the formula is a sharp, quantitative check of the
+    coupling between the Poisson solve and the momentum update.
+
+    This setup seeds the PURE GROWING MODE.  A density perturbation alone
+    would excite the decaying mode as well and give a contaminated growth
+    rate; the matching velocity follows from linearised continuity,
+
+        drho/rho0 = A cos(kx)   =>   dv_x = -(sigma A / k) sin(kx) .
+
+    The Jeans swindle
+    -----------------
+    A uniform infinite medium is not actually an equilibrium: the unperturbed
+    density sources a potential that has nowhere to point.  The standard
+    resolution ("Jeans swindle") is to let only the PERTURBATION source the
+    potential, i.e. to solve  div grad Phi = 4 pi G (rho - <rho>).  On this
+    fully periodic domain the Poisson solver does exactly that on its own:
+    with no Dirichlet face the problem is solvable only if the source has
+    zero volume integral, so ``solve_poisson`` subtracts the volume-weighted
+    mean of the right-hand side automatically.  The swindle is therefore not
+    a fudge added here -- it is the solvability condition of the periodic
+    Poisson problem.
+
+    Domain            : Cartesian [0, 1] x [0, 1], periodic on all sides
+    Background        : rho0 = 1, c_s = 0.4 (=> p0 = rho0 c_s^2 / gamma)
+    Perturbation      : one wavelength in x, amplitude 1e-3
+    With G = 1        : sigma = sqrt(4 pi - c_s^2 k^2) ~ 2.4999,
+                        so the mode e-folds about 5 times by t = 2
+
+    Parameters
+    ----------
+    grid : object   Grid; a CartesianGrid is built here.
+    fluid : object  HD SimState (dens, pres, vel1..3, F1, F2, body_force).
+    par : object    Parameters (BC, timenow, timefin).
+
+    Returns
+    -------
+    grid, fluid, par, eos : objects
+
+    References
+    ----------
+    Jeans, J. H. (1902), Phil. Trans. R. Soc. A 199, 1
+    Binney, J. & Tremaine, S., Galactic Dynamics, 2nd ed., section 5.2
+    """
+    print("2D Jeans instability -- linear growth against the exact "
+          "dispersion relation")
+
+    grid.CartesianGrid(0.0, 1.0, 0.0, 1.0)
+    eos = EOSdata(5.0 / 3.0)
+
+    G     = 1.0
+    rho0  = 1.0
+    cs    = 0.4
+    amp   = 1.0e-3
+    L     = 1.0
+    k     = 2.0 * np.pi / L            # one wavelength across the box
+
+    p0 = rho0 * cs**2 / eos.GAMMA
+
+    # growth rate of the unstable mode (positive => unstable)
+    omega2 = cs**2 * k**2 - 4.0 * np.pi * G * rho0
+    if omega2 >= 0.0:
+        raise ValueError(
+            "jeans2D: the seeded mode is STABLE (omega^2 = %g >= 0). Lower c_s "
+            "or lengthen the box so that k < k_J = sqrt(4 pi G rho0)/c_s."
+            % omega2)
+    sigma = np.sqrt(-omega2)
+
+    par.timenow = 0.0
+    par.timefin = 2.0                  # ~5 e-foldings at sigma ~ 2.5
+
+    x = grid.cx1
+
+    # --- pure growing mode: density and velocity phased by linear theory ---
+    fluid.dens[:, :] = rho0 * (1.0 + amp * np.cos(k * x))
+    fluid.vel1[:, :] = -(sigma * amp / k) * np.sin(k * x)
+    fluid.vel2[:, :] = 0.0
+    fluid.vel3[:, :] = 0.0
+    # isentropic perturbation, consistent with the adiabatic sound speed used
+    # in the dispersion relation
+    fluid.pres[:, :] = p0 * (fluid.dens[:, :] / rho0)**eos.GAMMA
+
+    # --- self-gravity on a periodic box: the mean-subtraction that makes the
+    #     pure-Neumann problem solvable IS the Jeans swindle (see docstring) ---
+    BC_phi = ['peri', 'peri', 'peri', 'peri']
+    fluid.body_force = selfgravity_poisson_hook(G=G, BC=BC_phi)
+    fluid = selfgravity_poisson(grid, fluid, par, G=G, BC=BC_phi)
+
+    par.BC[:] = 'peri'
+
+    return grid, fluid, par, eos
+
+
+
+def IC_HD2D_cloud_collapse(grid, fluid, par):
+    """
+    2D axisymmetric collapse of a rotating, self-gravitating cloud in
+    cylindrical (R, z) coordinates -- the flattening of a protostellar core.
+
+    A uniform, marginally-bound sphere in solid-body rotation is released.
+    Gravity wins over its thermal and rotational support, so it collapses --
+    but angular momentum is conserved, so infall along the rotation axis is
+    unopposed while infall in the midplane is increasingly centrifugally
+    resisted.  The cloud therefore does not collapse to a point: it FLATTENS
+    into a rotationally-supported disk, which is the reason protostars are
+    born with disks.
+
+    This is the qualitative, genuinely 2D companion to the quantitative 1D
+    'collapse1D' and the linear 2D 'jeans2D'.
+
+    Support parameters
+    ------------------
+    The initial state is fixed by the two standard dimensionless ratios of
+    cloud-collapse theory, thermal and rotational energy over the magnitude
+    of the gravitational energy of a uniform sphere:
+
+        alpha = E_therm / |W| ,   beta = E_rot / |W| ,
+        |W|   = (3/5) G M^2 / R0 ,   E_rot = (1/5) M R0^2 Omega^2 ,
+        E_therm = (3/2) p0 V .
+
+    Both well below 1/2 means the cloud is bound and must collapse.  Here
+    alpha = 0.1 and beta = 0.15: thermally weak, rotationally significant --
+    the combination that flattens rather than fragments.  Solid-body
+    rotation gives v_phi = Omega R, carried in vel3, whose centrifugal
+    support the cylindrical curvature source term supplies automatically.
+
+    Gravity
+    -------
+    Poisson solve every Runge-Kutta stage (the density is collapsing).  The
+    cloud is isolated, so the outer boundaries take the MONOPOLE potential
+
+        Phi = -G M_tot / sqrt(R^2 + z^2)
+
+    evaluated on each boundary face -- exact for a spherical mass
+    distribution and a good approximation while the boundary stays far from
+    the (initially spherical) cloud.  M_tot is constant because the domain
+    is closed.  On the axis R = 0, 'free' is exact by symmetry.
+
+    Note this is a genuine approximation: once the cloud flattens strongly,
+    its exterior potential acquires a quadrupole the monopole boundary does
+    not represent.  The boundary is placed at twice the cloud radius to keep
+    that error small; a production code would use a multipole expansion.
+
+    Coordinate system : cylindrical (R, z) = (x1, x2)
+    Domain            : R in [0, 2], z in [-2, 2]
+    Cloud             : uniform rho0 = 1 for sqrt(R^2+z^2) < 1, ambient 1e-2
+    Final time        : 1.2 t_ff, by which the disk has formed
+
+    Parameters
+    ----------
+    grid : object   Grid; a CylindricalGrid is built here.
+    fluid : object  HD SimState (dens, pres, vel1..3, F1, F2, body_force).
+    par : object    Parameters (BC, timenow, timefin).
+
+    Returns
+    -------
+    grid, fluid, par, eos : objects
+
+    References
+    ----------
+    Boss, A. P. & Bodenheimer, P. (1979), ApJ 234, 289
+    Norman, M. L., Wilson, J. R. & Barton, R. T. (1980), ApJ 239, 968
+    """
+    print("2D rotating self-gravitating cloud collapse (cylindrical) -- "
+          "disk formation")
+
+    G = 1.0; rho0 = 1.0; R0 = 1.0
+    R_out = 2.0; z_half = 2.0
+
+    grid.CylindricalGrid(0.0, R_out, -z_half, z_half)
+    eos = EOSdata(5.0 / 3.0)
+
+    alpha = 0.10        # thermal / gravitational energy
+    beta  = 0.15        # rotational / gravitational energy
+
+    M_cloud = (4.0 / 3.0) * np.pi * R0**3 * rho0
+    V_cloud = (4.0 / 3.0) * np.pi * R0**3
+    W_abs   = 0.6 * G * M_cloud**2 / R0            # |W| of a uniform sphere
+
+    p0    = alpha * W_abs / (1.5 * V_cloud)        # from E_therm = (3/2) p0 V
+    Omega = np.sqrt(3.0 * G * M_cloud * beta / R0**3)   # from E_rot = beta |W|
+
+    t_ff = np.sqrt(3.0 * np.pi / (32.0 * G * rho0))
+    par.timenow = 0.0
+    par.timefin = 1.2 * t_ff
+
+    R = grid.cx1; Z = grid.cx2
+    rsph = np.sqrt(R**2 + Z**2)
+    inside = rsph < R0
+
+    # --- cloud + ambient at the SAME temperature, so the ambient sound speed
+    #     (hence the timestep) is not inflated by a hot, tenuous medium ---
+    f_amb = 1.0e-2
+    fluid.dens[:, :] = np.where(inside, rho0, f_amb * rho0)
+    fluid.pres[:, :] = np.where(inside, p0,   f_amb * p0)
+
+    fluid.vel1[:, :] = 0.0                                   # v_R
+    fluid.vel2[:, :] = 0.0                                   # v_z
+    fluid.vel3[:, :] = np.where(inside, Omega * R, 0.0)      # solid-body v_phi
+
+    # --- self-gravity with monopole Dirichlet boundaries.
+    #     apply_bc_scalar_Ngc1 writes a whole ghost row/column, so each face
+    #     value must span the FULL tangential extent, ghost cells included. ---
+    M_tot = float(np.sum(grid.cVol * fluid.dens[grid.Ngc:-grid.Ngc,
+                                                 grid.Ngc:-grid.Ngc]))
+    Ngc = grid.Ngc
+    R_face = grid.fx1[grid.Nx1r, Ngc]        # outer R face position
+    z_lo   = grid.fx2[Ngc, Ngc]              # bottom z face position
+    z_hi   = grid.fx2[Ngc, grid.Nx2r]        # top z face position
+    R_row  = grid.cx1[:, Ngc]                # R at every x1 index (with ghosts)
+    z_col  = grid.cx2[Ngc, :]                # z at every x2 index (with ghosts)
+
+    def _monopole(Rv, Zv):
+        return -G * M_tot / np.maximum(np.sqrt(Rv**2 + Zv**2), 1e-30)
+
+    BC_phi = ['free', 'dirichlet', 'dirichlet', 'dirichlet']
+    BC_val = {1: _monopole(R_row, z_lo),     # z = z_min face, varies with R
+              3: _monopole(R_row, z_hi),     # z = z_max face, varies with R
+              2: _monopole(R_face, z_col)}   # R = R_out face, varies with z
+    fluid.body_force = selfgravity_poisson_hook(G=G, BC=BC_phi,
+                                                 BC_value=BC_val)
+    fluid = selfgravity_poisson(grid, fluid, par, G=G, BC=BC_phi,
+                                 BC_value=BC_val)
+
+    # --- boundaries: axis at R = 0, outflow elsewhere ---
+    par.BC[0] = 'axis'                       # R = 0
+    par.BC[1] = 'free'; par.BC[2] = 'free'; par.BC[3] = 'free'
+
+    return grid, fluid, par, eos

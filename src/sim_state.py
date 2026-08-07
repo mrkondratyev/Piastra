@@ -83,7 +83,19 @@ class SimState:
     etot : ndarray
         Total energy density.
     F1, F2 : ndarray
-        External force source terms (e.g., gravity).
+        External body-force source terms, as an ACCELERATION (force per
+        unit mass) on interior cells -- e.g. gravity.  See the SIGN /
+        SOURCE CONVENTION section of gravity.py: the solvers apply
+        ``Res += -dens*F`` with ``U_new = U_old - dt*Res``, so F must hold
+        the acceleration itself, not its negative.
+    body_force : callable or None
+        Optional hook ``body_force(grid, state, par)`` re-evaluated once
+        per Runge-Kutta stage, which must refill F1/F2 for that stage.
+        None (the default) means F1/F2 are static: whatever the initial
+        condition put there persists for the whole run.  Needed whenever
+        the force depends on the evolving state or on time -- self-gravity,
+        Coriolis, an orbiting perturber.  See gravity.py for ready-made
+        hooks and helpers.py/run_simulation for where stages are taken.
 
     Magnetic fields ('MHD', 'rMHD'):
 
@@ -180,6 +192,16 @@ class SimState:
             # Source terms
             self.F1 = np.zeros(shape, dtype=np.double)
             self.F2 = np.zeros(shape, dtype=np.double)
+
+            # Optional body-force hook (see gravity.py).  If not None, it is
+            # called once per Runge-Kutta stage as body_force(grid, state, par)
+            # and must refill F1, F2 for THAT stage's state.  Leave it None for
+            # a force that never changes (a fixed point mass): F1/F2 set once by
+            # the IC function then simply persist.  Set it when the force
+            # depends on the evolving solution or on time -- self-gravity
+            # (rho changes every stage), a Coriolis force (v changes every
+            # stage), an orbiting perturber (t changes every step).
+            self.body_force = None
 
         # Magnetic fields
         if par.mode in ('MHD', 'rMHD'):

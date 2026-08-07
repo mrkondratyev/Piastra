@@ -141,6 +141,16 @@ def save_data(filepath, grid, state, par, eos=None):
 
     np.savez_compressed(filepath, **archive)
     print(f"[io] state saved -> {filepath}  (mode={par.mode}, t={par.timenow:.6e})")
+
+    # A per-stage body-force hook is a callable, not data: it cannot go into a
+    # .npz and is silently skipped by the loop above.  Say so loudly, because a
+    # run resumed without re-installing its hook loses self-gravity / Coriolis /
+    # the orbiting perturber and quietly evolves the wrong problem.
+    if getattr(state, "body_force", None) is not None:
+        print("[io] WARNING: this state carries a body_force hook, which is a "
+              "callable and is NOT stored in the archive. After "
+              "restart_simulation(), re-install it (see gravity.py) or the "
+              "resumed run will have no self-gravity / frame forces.")
     return filepath
 
 

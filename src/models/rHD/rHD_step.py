@@ -42,6 +42,7 @@ from src.common.high_order_rec import (
     VarReconstruct,
     _swap_troubled,
 )
+from src.gravity import body_force_dt
 
 
 class rHD2D:
@@ -162,7 +163,7 @@ def CFLcondition_rHD(g, HD, eos, CFL):
     dt_inv = np.max(lam1 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] +
                     lam2 / (g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
     
-    return CFL / dt_inv
+    return min(CFL / dt_inv, body_force_dt(g, HD, CFL))
 
 
 def oneStep_rHD_RK(g, HD, eos, par, dt):
@@ -313,6 +314,13 @@ def flux_calc_rHD(g, HD, par, eos):
     """
     # Apply boundary conditions
     HD = boundCond_rHD(g, par.BC, HD, par.BC_fixed)
+
+    #re-evaluate a state- or time-dependent body force for THIS RK stage
+    #(self-gravity, Coriolis, an orbiting perturber -- see gravity.py).
+    #A static force leaves body_force = None and simply keeps the F1/F2
+    #the initial condition wrote.
+    if HD.body_force is not None:
+        HD.body_force(g, HD, par)
 
     Ngc = g.Ngc
 

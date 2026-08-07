@@ -49,6 +49,7 @@ from src.models.rMHD.rMHD_phys import (
     boundCond_rMHD,
     _lorentz,
 )
+from src.gravity import body_force_dt
 
 
 # ============================================================================
@@ -133,7 +134,7 @@ def CFLcondition_rMHD(g, MHD, eos, CFL):
         lam1 / g.dx1[Ngc:-Ngc, Ngc:-Ngc] +
         lam2 / (g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
-    return CFL / dt_inv
+    return min(CFL / dt_inv, body_force_dt(g, MHD, CFL))
 
 
 # ============================================================================
@@ -331,6 +332,13 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
     ResB3 : ndarray  shape (Nx1, Nx2)     residual for cell-centred Bz
     """
     MHD = boundCond_rMHD(g, par.BC, par.BCm, MHD)
+
+    #re-evaluate a state- or time-dependent body force for THIS RK stage
+    #(self-gravity, Coriolis, an orbiting perturber -- see gravity.py).
+    #A static force leaves body_force = None and simply keeps the F1/F2
+    #the initial condition wrote.
+    if MHD.body_force is not None:
+        MHD.body_force(g, MHD, par)
 
     Ngc  = g.Ngc
     Nx1  = g.Nx1

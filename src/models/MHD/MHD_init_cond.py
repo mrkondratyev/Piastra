@@ -947,17 +947,20 @@ def IC_MHD2D_field_loop(grid, MHD, par):
 
 def IC_MHD2D_disk(grid, MHD, par):
     """
-    Newtonian constant-angular-momentum torus (Papaloizou & Pringle 1984;
-    Hawley 1991/2000), seeded with a weak poloidal field for the MRI.
+    Newtonian constant-angular-momentum accretion torus (Papaloizou & Pringle
+    1984; Hawley 1991, 2000), seeded with a weak poloidal field so that the
+    magnetorotational instability (MRI) can grow.
 
-    Point-mass gravity Phi = -GM/r (no pseudo-Newtonian throat, no excision).
-    A torus of CONSTANT specific angular momentum l = sqrt(GM*R_max) is in
-    hydrostatic + centrifugal equilibrium; with a weak field it goes MRI-
-    unstable after a few orbits.  Cell-centred field + divergence cleaning (GLM).
+    A torus of CONSTANT specific angular momentum l = sqrt(GM R_max) around a
+    point mass is an exact equilibrium of pressure, gravity and centrifugal
+    force.  It is the standard starting point for accretion-disk simulations:
+    add a weak field and the MRI turns the equilibrium into sustained
+    turbulence that transports angular momentum outward and accretes matter
+    inward, within a few orbits at the pressure maximum.
 
     Construction
     ------------
-        Keplerian l at the pressure maximum:   l = sqrt(GM * R_max)     (constant)
+        constant specific angular momentum:    l = sqrt(GM * R_max)
         enthalpy integral (polytrope p = K rho^gamma):
             (gamma/(gamma-1)) p/rho = W = C + GM/r - l^2 / (2 R^2)
         inner edge sets C (W = 0 at R = R_inner, z = 0):
@@ -966,7 +969,9 @@ def IC_MHD2D_disk(grid, MHD, par):
             K = (gamma-1)/gamma * W_max ,   W_max = W(R_max, 0)
         rotation:   v_phi = l / R          (the SAME l as the enthalpy term)
         gravity:    a = -grad Phi = -GM r_vec / r^3   (stored in F as the
-                    actual acceleration; the solver applies Res += -dens*F)
+                    actual acceleration; the solver applies Res += -dens*F).
+                    Static, so it is written once here and needs no
+                    per-stage body_force hook.
 
     Bound-torus condition
     ---------------------
@@ -975,16 +980,62 @@ def IC_MHD2D_disk(grid, MHD, par):
         (With R_max = 1, R_inner = 0.65 the torus spans R in [0.65, 2.17],
          peaks at R = 1, and has half-thickness z ~ 0.6 at the pressure max.)
 
-    Coordinate system : cylindrical (R, z) = (x1, x2).
-    Geometry          : CylindricalGrid, R in [0.4, 2.6], z in [-1, 1].
-    Divergence control: cleaning only (run with divb_tr = 'GLM').
+    The ambient atmosphere
+    ----------------------
+    The torus does not fill the box, so the rest of the domain needs a
+    tenuous ambient medium.  A CONSTANT-density floor is not a solution of
+    anything: it sits in a point-mass potential with no pressure gradient to
+    hold it up, so it free-falls onto the axis from the first step and
+    immediately pins the density and pressure floors, contaminating the
+    torus with an inflowing atmosphere it never had.  (Measured with the old
+    constant floor: rho_min fell four decades and p hit its floor within a
+    quarter of an orbit.)
+
+    Instead the atmosphere here is EXACTLY hydrostatic in the same potential:
+
+        rho_atm(r) = rho_a0 (r/r0)^(-n) ,
+        p_atm(r)   = GM rho_a0 r0^n r^(-n-1) / (n+1) ,
+
+    for which dp/dr = -GM rho_atm(r) / r^2 identically, for any n.  With
+    v = 0 this is a genuine static solution, so the bulk of the atmosphere
+    stays put and only the torus evolves.
+
+    One mismatch is unavoidable and worth understanding rather than hiding.
+    A STATIC atmosphere in a point-mass potential is necessarily near-virial
+    (c_s ~ v_K), whereas the torus surface is arbitrarily cold: p_torus -> 0
+    at the last closed surface.  No choice of rho_a0 can match both the
+    density and the pressure across that contact -- requiring it here would
+    need rho_a0 ~ 18 rho_max, i.e. an "atmosphere" heavier than the torus.
+    So a genuine contact discontinuity survives at the torus edge, and a thin
+    layer there mixes over the first orbit.  This is dynamically irrelevant:
+    the density involved is ~1e-4 of the torus peak, and the torus retains
+    >99% of its mass over an orbit.  Every torus setup carries this contact;
+    production codes simply re-apply a density/pressure floor every step.
+    What matters is that the atmosphere no longer FREE-FALLS: with the old
+    constant-density floor the whole ambient collapsed and pinned the
+    pressure floor across the grid, which is a qualitatively different (and
+    fatal) failure.
+
+    Divergence control
+    ------------------
+    The seed field is built from an azimuthal vector potential A_phi on the
+    cell corners and differentiated with ``grid_misc.edge_to_face_curl``,
+    which returns the STAGGERED face field as a discrete curl -- so
+    div(B) = 0 to round-off by construction.  The cell-centred field is then
+    the face average of that same field.  This works with either divergence
+    treatment, but 'CT' is the appropriate choice for an MRI run: it keeps
+    div(B) at round-off for the whole calculation, whereas cleaning only
+    damps it.
+
+    Coordinate system : cylindrical (R, z) = (x1, x2)
+    Geometry          : CylindricalGrid, R in [0.4, 2.6], z in [-1, 1]
 
     Parameters
     ----------
-    grid : object   CylindricalGrid, cx1, cx2, Ngc, Nx1, Nx2, Nx1r, Nx2r.
-    MHD  : object    MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2, bglm,
-                     F1, F2).
-    par  : object    Parameters (BC, BCm, divb_tr, timenow, timefin).
+    grid : object   Grid; a CylindricalGrid is built here.
+    MHD  : object   MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2,
+                    bglm, F1, F2).
+    par  : object   Parameters (BC, BCm, divb_tr, timenow, timefin).
 
     Returns
     -------
@@ -994,6 +1045,7 @@ def IC_MHD2D_disk(grid, MHD, par):
     ----------
     Papaloizou, J. C. B. & Pringle, J. E. (1984), MNRAS 208, 721
     Hawley, J. F. (2000), ApJ 528, 462
+    Balbus, S. A. & Hawley, J. F. (1998), Rev. Mod. Phys. 70, 1  (MRI review)
     """
     print("2D Newtonian constant-l accretion torus (Papaloizou-Pringle / Hawley)")
 
@@ -1013,6 +1065,11 @@ def IC_MHD2D_disk(grid, MHD, par):
     rho_max  = 1.0
     n_orbit  = 20.0         # run length in orbital periods at R_max
 
+    # --- ambient atmosphere (exactly hydrostatic, see docstring) ---
+    rho_a0   = 1.0e-4 * rho_max     # atmosphere density at r = r_atm0
+    r_atm0   = R_max
+    n_atm    = 1.5                  # rho_atm ~ r^(-3/2)
+
     if R_inner <= 0.5 * R_max:
         raise ValueError("unbound torus: need R_inner > R_max/2 (C must be < 0).")
 
@@ -1029,27 +1086,33 @@ def IC_MHD2D_disk(grid, MHD, par):
 
     # --- aliases / coordinates ---
     Ngc  = grid.Ngc
+    Nx1  = grid.Nx1;  Nx2  = grid.Nx2
     Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
     sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
     R = grid.cx1[sl]; Z = grid.cx2[sl]
     rsph  = np.sqrt(R**2 + Z**2)
     Rsafe = np.maximum(R, 1e-30)
 
-    # --- enthalpy, density, pressure ---
-    W      = C + GM / rsph - l_kep**2 / (2.0 * Rsafe**2)
-    inside = W > 0.0
-    rho_t  = np.where(inside,
-                      (np.maximum(W, 0.0) / W_max)**(1.0 / (gamma - 1.0)) * rho_max,
-                      0.0)
+    def _torus_density(Rc, Zc):
+        """Torus density where the enthalpy W is positive, else 0."""
+        rs = np.sqrt(Rc**2 + Zc**2)
+        Rs = np.maximum(Rc, 1e-30)
+        W  = C + GM / rs - l_kep**2 / (2.0 * Rs**2)
+        return np.where(W > 0.0,
+                        (np.maximum(W, 0.0) / W_max)**(1.0 / (gamma - 1.0)) * rho_max,
+                        0.0)
 
-    rho_atm = 1.0e-3 * rho_max          # ambient floor (see note in chat: not HSE)
-    p_atm   = Kpoly * rho_atm**gamma
-    in_t    = rho_t > rho_atm
-    rho     = np.where(in_t, rho_t, rho_atm)
-    pres    = np.where(in_t, Kpoly * rho_t**gamma, p_atm)
+    # --- torus + exactly-hydrostatic atmosphere ---
+    rho_t = _torus_density(R, Z)
+    rho_a = rho_a0 * (rsph / r_atm0)**(-n_atm)
+    p_a   = GM * rho_a0 * r_atm0**n_atm * rsph**(-n_atm - 1.0) / (n_atm + 1.0)
+
+    in_t = rho_t > rho_a                       # where the torus wins
+    rho  = np.where(in_t, rho_t, rho_a)
+    pres = np.where(in_t, Kpoly * np.maximum(rho_t, 0.0)**gamma, p_a)
 
     # --- zero fields (full arrays incl. ghosts) ---
-    MHD.vel1[:, :] = MHD.vel2[:, :] = 0.0
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
     MHD.bfi1[:, :] = MHD.bfi2[:, :] = MHD.bfi3[:, :] = 0.0
     MHD.fb1[:, :]  = MHD.fb2[:, :]  = 0.0
     MHD.bglm[:, :] = 0.0
@@ -1058,36 +1121,51 @@ def IC_MHD2D_disk(grid, MHD, par):
     MHD.dens[sl] = rho
     MHD.pres[sl] = pres
     MHD.vel3[sl] = np.where(in_t, l_kep / Rsafe, 0.0)     # v_phi = l / R
+    # the atmosphere is static; only the torus rotates
 
     # --- gravity: store the ACTUAL acceleration  a = -GM r_vec / r^3 (inward).
     #     solver applies Res += -dens*F with U -= dt*Res, so F holds a itself
-    #     (negative components), matching IC_HD2D_gap_opening and the RTI ICs. ---
+    #     (negative components).  Static -> no body_force hook needed. ---
     inv = GM / rsph**3
     MHD.F1[:, :] = -inv * R         # a_R = -GM R / r^3   (inward, NEGATIVE)
     MHD.F2[:, :] = -inv * Z         # a_z = -GM z / r^3   (inward, NEGATIVE)
 
-    # --- weak poloidal seed: A_phi ~ max(rho - rho_cut, 0), scaled to beta_min ---
-    #     B_R = -dA_phi/dz ,  B_z = (1/R) d(R A_phi)/dR     (curl of A_phi e_phi)
+    # --- weak poloidal seed field from an azimuthal vector potential on the
+    #     cell CORNERS, differentiated by the discrete curl.  Building B this
+    #     way makes it divergence-free to round-off and gives the staggered
+    #     fb1/fb2 that Constrained Transport needs; a cell-centred field
+    #     assembled by finite-differencing would satisfy neither.
+    #     A_phi ~ max(rho_torus - rho_cut, 0) puts the field loops strictly
+    #     inside the torus body, so no field threads the atmosphere. ---
+    Rc = grid.fx1[Ngc:Ngc + Nx1 + 1, Ngc:Ngc + Nx2 + 1]   # corner R (Nx1+1, Nx2+1)
+    Zc = grid.fx2[Ngc:Ngc + Nx1 + 1, Ngc:Ngc + Nx2 + 1]   # corner z
     rho_cut = 0.2 * rho_max
-    Aphi    = np.maximum(rho_t - rho_cut, 0.0)
-    R1d = grid.cx1[Ngc:Nx1r, Ngc]
-    Z1d = grid.cx2[Ngc, Ngc:Nx2r]
-    B_R = -np.gradient(Aphi,        Z1d, axis=1)
-    B_z =  np.gradient(Rsafe * Aphi, R1d, axis=0) / Rsafe
+    Aphi    = np.maximum(_torus_density(Rc, Zc) - rho_cut, 0.0)
 
-    pmag  = 0.5 * (B_R**2 + B_z**2)
+    MHD.fb1, MHD.fb2 = edge_to_face_curl(grid, Aphi)
+
+    # normalise to the requested minimum plasma beta, using the cell-centred
+    # field so that beta is measured where pressure is defined
+    b1c, b2c = interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
+    pmag  = 0.5 * (b1c**2 + b2c**2)
     ratio = np.max(np.where(in_t & (pmag > 0.0), pmag / pres, 0.0))   # = 1/beta
     fac   = np.sqrt((1.0 / beta_min) / ratio) if ratio > 0.0 else 0.0
-    MHD.bfi1[sl] = fac * B_R
-    MHD.bfi2[sl] = fac * B_z
 
-    # --- boundaries ---
-    par.BC[0]  = 'wall'; par.BC[1:3]  = 'wall' 
+    MHD.fb1 *= fac
+    MHD.fb2 *= fac
+    MHD.bfi1[sl], MHD.bfi2[sl] = interp_face_to_cell(grid, MHD.fb1, MHD.fb2)
+
+    # --- boundaries: symmetric outflow on all four faces.  The torus is a
+    #     bound object sitting strictly inside the box, so nothing should
+    #     reflect off the walls: accreting material must be free to leave
+    #     through the inner radial boundary.  (The previous asymmetric
+    #     wall/wall/wall/free choice both reflected accreting gas back into
+    #     the torus and treated +z and -z differently, breaking the problem's
+    #     exact midplane symmetry.) ---
+    par.BC[:]  = 'free'
     par.BCm[:] = 'free'
 
     return grid, MHD, par, eos
-
-
 def IC_MHD2D_shock_cloud(grid, MHD, par):
     """
     2D MHD shock-cloud interaction.
@@ -1171,44 +1249,59 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     """
     Axisymmetric magnetized non-relativistic jet in cylindrical (R, Z) coords.
 
-    Simplified teaching version of the PLUTO MHD jet (Mignone et al. 2007):
-    a supersonic light beam is injected through a nozzle on the BOTTOM boundary
-    (x2-inner, face 1) over R < r_jet, carrying a CONSTANT axial field B_z (and,
-    optionally, a constant toroidal B_phi).  The ambient is uniform and threaded
-    by the same axial B_z so the poloidal flux does not terminate in vacuum.
+    A supersonic light beam is injected through a nozzle on the bottom
+    boundary (x2-inner, face 1) over R < r_jet, carrying a constant axial
+    field B_z (and, optionally, a constant toroidal B_phi).  The ambient is
+    uniform and threaded by the SAME axial B_z, so the poloidal flux does not
+    terminate in vacuum and the initial field is exactly uniform.
 
-    Simplifications (vs. the full Tesileanu/PLUTO setup):
+    This is the magnetized counterpart of the HD problem 'jet2Dcyl': same
+    beam radius, density contrast and Mach number, so running the two side by
+    side isolates what the field does -- chiefly collimating the beam and
+    suppressing the Kelvin-Helmholtz modes that shred the unmagnetized
+    cocoon.
+
+    RUN THIS WITH divb_tr='CT'
+    --------------------------
+    A uniform axial B_z is exactly divergence-free on the staggered mesh
+    (fb1 = 0 and fb2 = B0 with fS2 independent of Z, so the discrete flux
+    balance is identically zero), and Constrained Transport keeps it that way
+    to machine precision for the whole run.  Measured over 200 steps at
+    48 x 120: max|divB| / (B0/dR) = 4e-15 with CT, versus 4 (field pinned) to
+    12 (field free) with GLM cleaning -- and under GLM the divergence error
+    drives the gas pressure into its floor near the nozzle, so the beam is no
+    longer a solution of the MHD equations.  The IC therefore warns if it is
+    handed a non-CT divergence treatment.
+
+    Coordinate system : cylindrical (R, Z) = (x1, x2)
+    Domain            : R in [0, 5], Z in [0, 20]
+    Inlet (face 1)    : R < r_jet, rho = rho_jet, v_Z = Mach*cs, B_z = B0,
+                        B_phi = Bphi0 (const, default 0), p = p_jet
+    Ambient           : rho = rho_amb, v = 0, B_z = B0, TOTAL-pressure matched
+    Density contrast  : eta = rho_jet / rho_amb = 0.1
+    Magnetization     : beta_jet = 2 p_jet / B0^2 = 100  (weak field)
+
+    Total-pressure matching across the nozzle means
+
+        p_jet + (B0^2 + Bphi0^2)/2  =  p_amb + B0^2/2   =>   p_amb = p_jet + Bphi0^2/2 ,
+
+    so for the default purely-axial field (Bphi0 = 0) the two gas pressures
+    are simply equal.
+
+    Simplifications (vs. the full Tesileanu/PLUTO setup)
+    ---------------------------------------------------
       * fields are CONSTANT across the nozzle (no radial B_z, B_phi profiles),
         so the inlet values are scalars and the nozzle gas pressure is uniform;
       * a pure axial field (B_phi = 0) is in exact radial equilibrium.  A
         constant B_phi != 0 is NOT in radial balance near the axis (its hoop
-        stress ~ B_phi^2 / R diverges as R -> 0); it is offered only as a crude
-        option and the beam will readjust near the axis if it is used.
-
-    Coordinate system : cylindrical (R, Z) = (x1, x2)
-    Domain            : R in [0, 5], Z in [0, 20]
-    Inlet (face 1)    : R < r_jet, rho=rho_jet, v_Z=Mach*cs, B_z=B0 (const),
-                        B_phi=Bphi0 (const, default 0), p=p_jet
-    Ambient           : rho=rho_amb, v=0, B_z=B0 (axial), total-pressure matched
-    Density ratio     : eta = rho_jet / rho_amb = 0.1
-    Magnetization     : beta_jet = 2 p_jet / B0^2
-
-    DIVERGENCE CONTROL -- CLEANING ONLY (GLM preferred):
-      Field imposed as a cell-centred Dirichlet ghost-fill (bfi1=0, bfi2=B0,
-      bfi3=Bphi0) via par.BC_fixed[1], plus pinning GLM psi (bglm)=0.  NOT
-      CT-compatible.  Run with divb_tr='GLM' (preferred) or '8wave'; watch
-      max|divB| near the nozzle.  The poloidal jump at R=r_jet is a physical
-      current sheet.
-
-    Requires: Parameters with BC_fixed = {0:[],1:[],2:[],3:[]}; boundCond_MHD
-    applying apply_bc_fixed with bfi1/2/3 and bglm in state_fields;
-    par.divb_tr in ('GLM','8wave').
+        stress ~ B_phi^2 / R diverges as R -> 0); it is offered only as a
+        crude option and the beam will readjust near the axis if it is used.
 
     Parameters
     ----------
-    grid : object   CylindricalGrid, cx1, Ngc, Nx1, Nx1r, Nx2.
-    MHD  : object    MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2, bglm).
-    par  : object    Parameters (BC, BC_fixed, divb_tr, timenow, timefin).
+    grid : object   Grid; a CylindricalGrid is built here.
+    MHD  : object   MHD SimState (dens, pres, vel1..3, bfi1..3, fb1, fb2, bglm).
+    par  : object   Parameters (BC, BCm, BC_fixed, divb_tr, timenow, timefin).
 
     Returns
     -------
@@ -1218,7 +1311,12 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     ----------
     Mignone, A. et al. (2007), ApJS 170, 228   (PLUTO; MHD/Jet test, simplified)
     """
-    print("2D axisymmetric magnetized jet (cylindrical, constant inlet field, GLM)")
+    print("2D axisymmetric magnetized jet (cylindrical, constant inlet field)")
+
+    if getattr(par, "divb_tr", None) != "CT":
+        print(f"  [jet2Dcyl] WARNING: divb_tr='{par.divb_tr}'. This problem is "
+              f"designed for divb_tr='CT', which holds divB at round-off; with "
+              f"cleaning the nozzle divergence error drives p to its floor.")
 
     # --- grid + time ---
     R_in, R_out = 0.0, 5.0
@@ -1246,8 +1344,10 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     B0       = np.sqrt(2.0 * p_jet / beta_jet)   # constant axial field B_z
     Bphi0    = 0.0                        # constant toroidal field (0 = pure axial)
 
-    # --- ambient: uniform, threaded by axial B_z = B0; total-pressure matched ---
-    p_amb = p_jet + 0.5 * B0**2           # gas+magnetic balance with the beam
+    # --- ambient: uniform, threaded by axial B_z = B0; TOTAL-pressure matched.
+    #     Both sides carry the same B_z, so its magnetic pressure cancels and
+    #     only the beam's toroidal field (zero by default) needs compensating. ---
+    p_amb = p_jet + 0.5 * Bphi0**2
 
     MHD.dens[:, :] = rho_amb
     MHD.pres[:, :] = p_amb
@@ -1257,29 +1357,47 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     MHD.bfi1[:, :] = 0.0                  # B_R = 0
     MHD.bfi2[:, :] = B0                   # B_Z = axial ambient field
     MHD.bfi3[:, :] = 0.0                  # B_phi = 0 in ambient
-    MHD.fb1[:, :]  = 0.0                  # staggered faces unused (cleaning run)
-    MHD.fb2[:, :]  = B0
     MHD.bglm[:, :] = 0.0
+
+    # --- staggered field, consistent with the cell-centred one and exactly
+    #     divergence-free: B_R = 0 on every R-face, B_z = B0 on every Z-face.
+    #     fS2 (the area of a Z-face) does not depend on Z in cylindrical
+    #     geometry, so the discrete flux balance of a uniform B_z vanishes
+    #     identically and CT preserves it to round-off. ---
+    MHD.fb1[:, :]  = 0.0
+    MHD.fb2[:, :]  = B0
 
     # --- nozzle extent along R (tangential to the bottom face) ---
     Rc = grid.cx1[Ngc:Nx1r, Ngc]          # 1D interior R cell-centres
     in_jet = np.nonzero(Rc < r_jet)[0]    # contiguous from the axis
+    if in_jet.size == 0:
+        raise ValueError(
+            "jet2Dcyl: the nozzle (R < %g) is not resolved by a single cell at "
+            "Nx1 = %d; use a finer radial grid." % (r_jet, Nx1))
     start  = int(in_jet[0])               # 0
     end    = int(in_jet[-1]) + 1
 
     # --- fixed (Dirichlet) inlet on the bottom face (face 1): all scalars ---
     jet_state = {'dens': rho_jet, 'pres': p_jet,
                  'vel1': 0.0, 'vel2': v_jet, 'vel3': 0.0,
-                 'bfi1': 0.0, 'bfi2': B0, 'bfi3': Bphi0, 'bglm' : 0}
+                 'bfi1': 0.0, 'bfi2': B0, 'bfi3': Bphi0, 'bglm': 0.0}
     par.BC_fixed[1] = [(start, end, jet_state)]
+
+    # --- seed the bottom ghost cells at t=0 so the state is self-consistent
+    #     before the first BC fill (mirrors what apply_bc_fixed maintains) ---
+    i0, i1 = Ngc + start, Ngc + end
+    MHD.dens[i0:i1, 0:Ngc] = rho_jet
+    MHD.pres[i0:i1, 0:Ngc] = p_jet
+    MHD.vel2[i0:i1, 0:Ngc] = v_jet        # +Z, into the domain
+    MHD.bfi3[i0:i1, 0:Ngc] = Bphi0
 
     # --- boundaries ---
     par.BC[0] = 'axis'    # x1 inner (R = 0)
     par.BC[1] = 'wall'    # x2 inner (Z = 0, nozzle via BC_fixed[1])
     par.BC[2] = 'free'    # x1 outer (R = 5)
-    par.BC[3] = 'free'    # x2 outer (R = 20)
-    
-    par.BCm[0] = 'axis'; par.BCm[1:3] = 'free'
+    par.BC[3] = 'free'    # x2 outer (Z = 20)
+
+    par.BCm[0] = 'axis'   # B flips its normal/azimuthal components on the axis
+    par.BCm[1] = 'free'; par.BCm[2] = 'free'; par.BCm[3] = 'free'
 
     return grid, MHD, par, eos
-

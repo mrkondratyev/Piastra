@@ -129,6 +129,9 @@ from src.models.HD.HD_init_cond import (
     IC_HD2D_shock_cloud,
     IC_HD2D_gap_opening,
     IC_HD2D_jet_cyl,
+    IC_HD1D_dust_collapse,
+    IC_HD2D_jeans,
+    IC_HD2D_cloud_collapse,
     IC_HD_user_defined,
 )
 from src.models.MHD.MHD_init_cond import (
@@ -254,6 +257,9 @@ def initial_model(grid, state, par):
         "shock-cloud":  IC_HD2D_shock_cloud,
         "gap-opening":  IC_HD2D_gap_opening,
         "jet2Dcyl":     IC_HD2D_jet_cyl,
+        "collapse1D":   IC_HD1D_dust_collapse,
+        "jeans2D":      IC_HD2D_jeans,
+        "collapse2D":   IC_HD2D_cloud_collapse,
         "user_defined": IC_HD_user_defined,
     }
 

@@ -268,7 +268,7 @@ def boundCond_MHD(grid, BC, BCm, MHD, BC_fixed=None):
         N1, N2 = MHD.dens.shape
         sf = {'dens': MHD.dens, 'pres': MHD.pres,
               'vel1': MHD.vel1, 'vel2': MHD.vel2, 'vel3': MHD.vel3,
-              'bfi1': MHD.vel1, 'bfi2': MHD.bfi2, 'bfi3': MHD.bfi3,
+              'bfi1': MHD.bfi1, 'bfi2': MHD.bfi2, 'bfi3': MHD.bfi3,
               'bglm': MHD.bglm}
         for face in (0, 1, 2, 3):
             if BC_fixed.get(face):

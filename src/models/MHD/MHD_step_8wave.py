@@ -42,6 +42,7 @@ from src.models.MHD.MHD_phys import (
 from src.grid.grid_misc import div_cell_vector 
 from src.common.high_order_rec import VarReconstruct 
 import numpy as np 
+from src.gravity import body_force_dt
 import copy 
 
 
@@ -175,7 +176,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     dt_inv = np.max((np.abs(vel1) + cfast)/g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
         (np.abs(vel2) + cfast)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
-    return CFL/dt_inv
+    return min(CFL/dt_inv, body_force_dt(g, MHD, CFL))
 
 
 
@@ -366,6 +367,13 @@ def flux_calc_MHD_8wave(g, MHD, par, eos):
     """
     #fill the ghost cells
     MHD = boundCond_MHD(g, par.BC, par.BCm, MHD, par.BC_fixed)
+
+    #re-evaluate a state- or time-dependent body force for THIS RK stage
+    #(self-gravity, Coriolis, an orbiting perturber -- see gravity.py).
+    #A static force leaves body_force = None and simply keeps the F1/F2
+    #the initial condition wrote.
+    if MHD.body_force is not None:
+        MHD.body_force(g, MHD, par)
     
     #make copies of ghost cell and real cell numbers in each direction
     #to simplify indexing below 

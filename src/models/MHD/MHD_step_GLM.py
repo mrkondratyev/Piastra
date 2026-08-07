@@ -42,6 +42,7 @@ from src.models.MHD.MHD_phys import (
 from src.grid.grid_misc import div_cell_vector 
 from src.common.high_order_rec import VarReconstruct 
 import numpy as np 
+from src.gravity import body_force_dt
 import copy 
 
 
@@ -185,7 +186,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     # div(B) cleaning speed     
     c_h = np.max(np.maximum(np.abs(vel1) + cfast, np.abs(vel2) + cfast))
         
-    return CFL / dt_inv, c_h 
+    return min(CFL / dt_inv, body_force_dt(g, MHD, CFL)), c_h
 
 
 
@@ -387,6 +388,13 @@ def flux_calc_MHD_GLM(g, MHD, par, eos, c_h):
     """
     #fill the ghost cells
     MHD = boundCond_MHD(g, par.BC, par.BCm, MHD, par.BC_fixed)
+
+    #re-evaluate a state- or time-dependent body force for THIS RK stage
+    #(self-gravity, Coriolis, an orbiting perturber -- see gravity.py).
+    #A static force leaves body_force = None and simply keeps the F1/F2
+    #the initial condition wrote.
+    if MHD.body_force is not None:
+        MHD.body_force(g, MHD, par)
     
     #make copies of ghost cell and real cell numbers in each direction
     #to simplify indexing below 

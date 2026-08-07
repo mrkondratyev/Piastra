@@ -35,7 +35,8 @@ lives in the dispatch dictionaries of src/misc/helpers.py (initial_model).
     HD   (see src/models/HD/HD_init_cond.py):
         sod1Dcart, sod1Dcyl, sod1Dsph, strong1D, DBW1D, shuosher1D, einfeldt1D,
         sod2Dcart, sod2Dsph, sod2Dpol, sedov2Dcart, sedov2Dcyl, RP2D, gresho2D,
-        KHI2D, RTI2D, shock-cloud, gap-opening, jet2Dcyl
+        KHI2D, RTI2D, shock-cloud, gap-opening, jet2Dcyl,
+        collapse1D, jeans2D, collapse2D          (self-gravitating)
 
     rHD  (see src/models/rHD/rHD_init_cond.py):
         RP1, RP3, RP4, RP5, RP2D, RTI, jet2Dcart, jet2Dcyl

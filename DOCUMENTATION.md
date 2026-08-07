@@ -19,7 +19,8 @@ wasn't shipped with. It assumes you've read the README once.
 9. [Saving, loading, and restarting](#9-saving-loading-and-restarting)
 10. [Visualization](#10-visualization)
 11. [The testbed](#11-the-testbed)
-12. [Use cases / recipes](#12-use-cases--recipes)
+12. [Use cases / recipes](#12-use-cases--recipes) — including
+    [the astrophysics problems](#128-the-astrophysics-problems)
 13. [Extending the framework](#13-extending-the-framework)
 14. [Conventions cheat-sheet](#14-conventions-cheat-sheet)
 
@@ -313,11 +314,51 @@ The full test-problem catalogue (which `problem` string maps to which
 
 ## 8. Gravity and other body forces
 
-`src/gravity.py` provides three optional body-force sources, each meant to
-be called once per step (or once per RK stage for higher accuracy) *before*
-the solver's own `step_RK()`/residual evaluation, since every HD/MHD-family
-solver reads `state.F1`/`state.F2` as a source term already baked into its
-residual.
+`src/gravity.py` provides the body-force sources that feed every
+HD/MHD-family solver's momentum and energy residual through `state.F1` and
+`state.F2`.
+
+### Static vs. per-stage forces
+
+A force that never changes — a fixed central point mass — can be written
+into `state.F1`/`F2` once by the IC function; the arrays persist and the RK
+integrators' deep copies carry them along.
+
+A force that depends on the **evolving solution** (self-gravity: ρ changes
+every stage; Coriolis: **v** changes every stage) or explicitly on **time**
+(an orbiting perturber) must be recomputed every Runge-Kutta stage. That's
+what the optional `state.body_force` hook is for: a callable
+`body_force(grid, state, par)` invoked at the top of each stage's residual
+evaluation, on *that stage's* state. Build one with the `*_hook` factories:
+
+```python
+state.body_force = selfgravity_poisson_hook(G=1.0, BC=['peri'] * 4)
+```
+
+The hook is a plain closure, which `copy.deepcopy` treats as atomic, so the
+per-stage deep copy shares it rather than duplicating what it captured. It
+is **not** serialized by `save_data` (only arrays and scalars are), so a run
+resumed via `restart_simulation` must re-install its hook — `save_data`
+prints a warning when the state carries one.
+
+### The gravitational timestep limit
+
+An ordinary CFL condition limits `dt` by the *signal* speed `|v| + c_s`. In a
+cold, self-gravitating flow released from rest both terms are ≈ 0, so the
+hydrodynamic CFL imposes essentially **no limit** — a pressureless collapse
+will take one enormous step and integrate the whole run in a single forward
+Euler update, producing a smooth, plausible, completely wrong answer. Gravity
+accelerates the gas without any wave carrying information about it, so it
+must supply its own constraint:
+
+```
+(1/2)|a| dt² ≤ CFL·dx   ⟹   dt ≤ sqrt(2·CFL·dx / |a|)
+```
+
+`gravity.body_force_dt(grid, state, CFL)` evaluates this per cell, and every
+`CFLcondition_*` routine takes the `min` of it and the hydrodynamic limit.
+It returns `inf` when the force is zero, so problems without gravity are
+unaffected.
 
 **Sign convention** (spelled out in full at the top of `gravity.py`): every
 solver applies the body force as `Res += -dens*F`, and the update is
@@ -328,11 +369,39 @@ below follow this convention; if you write a fourth one, follow it too — an
 accidental sign flip here turns attraction into repulsion silently (no
 crash, no NaN, just a slowly-unbinding "self-gravitating" cloud).
 
+### The routines
+
 | Function | Use case | Method |
 |---|---|---|
-| `planet_gravity_polar(grid, state, par, M_star, M_planet, r_planet, phi0=0.0, indirect=True)` | protoplanetary-disk-style star + orbiting planet, polar grid | closed-form softened point-mass + indirect term, no elliptic solve |
-| `selfgravity_monopole_spherical(grid, state, par)` | nearly-spherical self-gravitating object (e.g. a proto-neutron star), spherical-polar grid | angular-averaged (l=0) enclosed-mass integration, no elliptic solve |
-| `selfgravity_poisson(grid, state, par, G=1.0, BC=None, BC_value=None, tol=1e-10, maxiter=None)` | general self-gravity, any density field, any geometry | actual elliptic solve via `solve_poisson`, `Phi` then differentiated with `cell_gradient` |
+| `planet_gravity_polar(...)` | star + orbiting planet, **lab frame**, polar grid | closed-form softened point-mass + indirect term, no elliptic solve. Time-dependent → needs the hook |
+| `corotating_planet_disk(...)` | disk-planet / gap opening, **co-rotating frame**, polar grid | static planet potential + centrifugal + Coriolis. Velocity-dependent → needs the hook |
+| `selfgravity_monopole_spherical(grid, state, par)` | nearly-spherical self-gravitating object, spherical-polar grid | angular-averaged (l=0) enclosed-mass integration, no elliptic solve |
+| `selfgravity_poisson(grid, state, par, G=1.0, BC=None, BC_value=None, tol=1e-10, maxiter=None)` | general self-gravity, any density field, any geometry | actual elliptic solve via `solve_poisson`, `Phi` differentiated with `cell_gradient` |
+| `body_force_dt(grid, state, CFL)` | timestep limit from any body force | `sqrt(2·CFL·dx/|a|)`, called by every `CFLcondition_*` |
+
+Each of the first four has a matching `*_hook(...)` factory returning a
+`state.body_force` callable.
+
+### Choosing the Poisson boundary condition
+
+This is the part that is easy to get silently wrong, because both choices
+run without complaint:
+
+- **Periodic box** (`['peri']*4`): a pure-Neumann problem is solvable only if
+  the source has zero volume integral, so `solve_poisson` subtracts the
+  volume-weighted mean of `rhs`. For self-gravity that subtraction *is* the
+  Jeans swindle — exactly right, and not a fudge.
+- **Isolated body**: that same mean subtraction is *wrong* — it adds a
+  uniform negative background density and changes the enclosed mass. Use a
+  `'dirichlet'` face carrying the exterior potential instead: `-G·M/r` for a
+  point mass (`collapse1D`), or the monopole `-G·M/sqrt(R²+z²)` evaluated on
+  each face (`collapse2D`). `'free'` is exact on a symmetry axis (`r=0`),
+  where `dΦ/dr = 0`.
+
+On a strongly graded mesh (spherical `cVol ~ r²dr`) the operator is poorly
+conditioned near the origin and CG needs more than its default cap of
+`Nx1*Nx2` iterations — pass `maxiter` explicitly, or an unconverged
+potential will be returned silently.
 
 `selfgravity_poisson` solves `div(grad(Phi)) = 4*pi*G*rho` and sets
 `F1, F2 = -grad(Phi)` **on interior cells only** — matching `state.F1`/`F2`'s
@@ -531,31 +600,43 @@ builds on.
 to be called once per step, before the solver's residual evaluation reads
 `state.F1`/`F2`:
 
+Install a hook and the solver re-solves the potential every RK stage — you
+do **not** call it yourself in the loop, and you must not compute it once
+before the loop, because the density it depends on changes every stage:
+
 ```python
-from src.gravity import selfgravity_poisson
-from src.parameters import Parameters
-from src.grid.grid_setup import Grid
-from src.sim_state import SimState
-from src.misc.helpers import initial_model
-from src.models.HD.HD_step import HD2D
+from src.gravity import selfgravity_poisson_hook
 
-par = Parameters(mode="HD", problem="user_defined", Nx1=64, Nx2=64)
-# ... build/override the IC as in §12.2, e.g. a self-gravitating cloud ...
-grid = Grid(par.Nx1, par.Nx2, par.Ngc)
-state = SimState(grid, par)
-grid, state, par, eos = initial_model(grid, state, par)
-solver = HD2D(grid, state, eos, par)
-
-while par.timenow < par.timefin:
-    state = selfgravity_poisson(grid, state, par, G=1.0)   # updates F1, F2
-    state = solver.step_RK()
+# inside an IC function, after the density is set:
+state.body_force = selfgravity_poisson_hook(G=1.0, BC=['peri'] * 4)
 ```
 
-For a periodic self-gravitating box use `BC=['peri']*4`; for an isolated
-object on a non-periodic grid the default `BC=['free']*4` is fine as long as
-you only need `-grad(Phi)` (true isolated/multipole boundary conditions
-would need `'dirichlet'` faces fed from an exterior multipole expansion,
-which this function doesn't attempt — a deliberate scope limit, not a bug).
+Then the ordinary time loop of [§12.4](#124-drive-the-time-loop-by-hand)
+needs no change at all — `step_RK()` invokes the hook internally, once per
+stage, on that stage's state.
+
+Boundary conditions decide correctness here, so pick deliberately:
+
+```python
+# periodic box (Jeans problem): mean subtraction IS the Jeans swindle
+BC = ['peri'] * 4
+
+# isolated sphere, spherical grid: exact exterior potential on the outer face
+BC     = ['free', 'free', 'dirichlet', 'free']   # 'free' at r=0 is exact
+BC_val = {2: -G * M_total / r_out}
+
+# isolated body, cylindrical (R,z): monopole potential on each outer face
+BC     = ['free', 'dirichlet', 'dirichlet', 'dirichlet']
+```
+
+Using `['free']*4` for an *isolated* body is the trap: with no Dirichlet
+face the solver must enforce solvability by subtracting the mean source,
+which quietly adds a uniform negative background density and changes the
+enclosed mass. It runs, and it is wrong. See
+[§8](#8-gravity-and-other-body-forces).
+
+Three worked examples ship as test problems — `collapse1D` (isolated,
+Dirichlet), `jeans2D` (periodic), `collapse2D` (isolated, monopole faces).
 
 ### 12.6. Save, restart, and post-process a run
 
@@ -605,6 +686,36 @@ the sanity suite. If it's also meant to stress-test every solver/
 reconstruction/RK-order combination (robustness), register it explicitly in
 `test_robustness.py` instead (see [§11](#11-the-testbed)) — that suite
 opts problems in one call per problem, not from the sanity catalogue.
+
+## 12.8. The astrophysics problems
+
+Six problems in the catalogue are set up as end-to-end astrophysical
+applications rather than numerical benchmarks. They are the place to look
+for how the pieces (curvilinear geometry, inlet boundaries, CT, self-gravity,
+rotating frames) combine in practice.
+
+| Problem | Mode | Geometry | What it demonstrates |
+|---|---|---|---|
+| `gap-opening` | HD | polar (R,φ) | A planet carving an annular gap in a protoplanetary disk, in the frame **co-rotating** with the planet: static planet potential plus centrifugal and Coriolis terms, a smooth planet-mass ramp, and radial boundaries pinned to the analytic power-law equilibrium |
+| `jet2Dcyl` (HD) | HD | cylindrical (R,z) | A Mach-6 light jet injected through a fixed-state nozzle boundary, developing a bow shock, Mach disk and cocoon |
+| `jet2Dcyl` (MHD) | MHD | cylindrical (R,z) | The magnetized counterpart, on a uniform axial field. **Run with `divb_tr='CT'`** |
+| `disk2D` | MHD | cylindrical (R,z) | A constant-angular-momentum accretion torus in an exactly hydrostatic atmosphere, seeded with a divergence-free poloidal field for the MRI |
+| `collapse1D` | HD | spherical (r,θ) | Pressureless collapse of a uniform sphere, checked against the exact free-fall cycloid |
+| `jeans2D` | HD | Cartesian | Gravitational instability at the exact linear growth rate |
+| `collapse2D` | HD | cylindrical (R,z) | A rotating cloud collapsing and **flattening into a disk** — angular momentum conserved to ~1e-4 |
+
+Two practical notes, both learned the hard way and easy to hit again:
+
+- **The MHD jet and torus want `divb_tr='CT'`.** A uniform axial field is
+  exactly divergence-free on the staggered mesh, and CT holds it at round-off
+  (measured `max|divB|/(B0/dR) ~ 4e-15`). Under GLM cleaning the same setup
+  reaches 4–12 and the divergence error drives the gas pressure into its
+  floor near the nozzle. The jet IC prints a warning if handed anything else.
+- **An ambient medium in a point-mass potential must be hydrostatic.** A
+  constant-density floor is not a solution of anything: it free-falls from
+  the first step and pins the pressure floor across the grid. The torus uses
+  `rho ~ r^(-n)` with the matching `p(r)`, which is exactly static for any
+  `n`.
 
 ## 13. Extending the framework
 

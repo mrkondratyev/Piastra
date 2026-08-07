@@ -223,3 +223,128 @@ def test_mhd_alfven_2d_convergence():
         e3 = l2_error(grid, state.bfi3[Ngc:-Ngc, Ngc:-Ngc], bfi3_0)
         errors.append(e3)
     _assert_converging(errors, min_order=1.0, label="MHD/alfven2D")
+
+
+# ============================================================================
+#   Self-gravity: growth rate and free-fall against exact solutions
+# ============================================================================
+
+def test_jeans_growth_rate():
+    """
+    2D Jeans instability against the EXACT linear dispersion relation
+
+        sigma = sqrt( 4 pi G rho0 - c_s^2 k^2 ) ,
+
+    which is a far sharper statement than a convergence order: the seeded
+    mode's amplitude must grow at a specific, analytically known rate.
+
+    This exercises the whole self-gravity chain end to end -- the periodic
+    Poisson solve (whose automatic mean subtraction IS the Jeans swindle),
+    the cell-centred gradient, the body force entering the momentum and
+    energy residuals, and the per-stage ``body_force`` hook that re-solves
+    the potential as rho evolves. A sign error, a stale potential (hook not
+    firing), or a mis-scaled 4 pi G would all show up here as a wrong rate,
+    not merely a wrong order.
+
+    The amplitude is measured by projecting drho/rho0 onto cos(kx), so a
+    contaminating decaying mode or a phase drift cannot inflate it, and
+    the run stops at t = 1 (about 2.5 e-foldings) while still linear.
+    """
+    G, rho0, cs = 1.0, 1.0, 0.4
+    k = 2.0 * np.pi
+    sigma_exact = np.sqrt(4.0 * np.pi * G * rho0 - cs**2 * k**2)
+
+    errors = []
+    for Nx in (32, 64):
+        grid, state, par, eos, solver = build_case(
+            "HD", "jeans2D", Nx, Nx // 2, rec_type="PLM", RK_order="RK2",
+            solver_type="HLLC", CFL=0.4)
+        par.timefin = 1.0
+        Ngc = grid.Ngc
+        x = grid.cx1[Ngc:-Ngc, Ngc:-Ngc]
+
+        def modal_amp(s):
+            drho = s.dens[Ngc:-Ngc, Ngc:-Ngc] / rho0 - 1.0
+            return 2.0 * float(np.mean(drho * np.cos(k * x)))
+
+        a0, t0 = modal_amp(state), par.timenow
+        state, _ = run_to_tfin(solver, par)
+        a1 = modal_amp(state)
+
+        assert a1 > a0 > 0.0, (
+            f"jeans2D at Nx={Nx}: the mode did not grow "
+            f"(a0={a0:.3e} -> a1={a1:.3e}); self-gravity may be absent or "
+            f"have the wrong sign")
+        sigma = np.log(a1 / a0) / (par.timenow - t0)
+        errors.append(abs(sigma - sigma_exact))
+
+    # tightest resolution must land close to the analytic rate
+    rel = errors[-1] / sigma_exact
+    assert rel < 0.01, (
+        f"jeans2D: measured growth rate is off by {rel*100:.2f}% "
+        f"(exact sigma = {sigma_exact:.6f}); expected < 1%")
+    _assert_converging(errors, min_order=1.0, label="HD/jeans2D growth rate")
+
+
+def test_dust_collapse_freefall():
+    """
+    1D spherical pressureless collapse against the EXACT free-fall (cycloid)
+    solution.
+
+    A uniform sphere released from rest collapses homologously, staying
+    uniform, so its half-mass radius is exactly R(t) * 2^(-1/3) with R(t)
+    given by the parametric free-fall solution.  Comparing against that is a
+    nonlinear check on self-gravity, complementing the linear-regime Jeans
+    test above.
+
+    It is also the test that pins the GRAVITATIONAL TIMESTEP LIMIT
+    (gravity.body_force_dt) in place: a cold flow released from rest has
+    |v| + c_s ~ 0, so without that limit the hydrodynamic CFL condition
+    permits an essentially unbounded step and the entire run collapses into
+    one forward-Euler update -- which still produces a smooth, uniform,
+    v ~ r profile (homologous, as it should be) at completely the wrong
+    time.  Convergence of the half-mass radius is what catches that.
+
+    Only first order is demanded: the sphere's surface is a contact
+    discontinuity, and a Godunov scheme smears it at first order, which
+    limits how fast an integral measure of its position can converge.
+    """
+    G, rho0, R0 = 1.0, 1.0, 1.0
+    t_ff = np.sqrt(3.0 * np.pi / (32.0 * G * rho0))
+
+    def exact_radius(frac):
+        """Invert t/t_ff = (2/pi)(xi + sin xi cos xi) for R/R0 = cos^2 xi."""
+        lo, hi = 0.0, 0.5 * np.pi
+        for _ in range(200):
+            mid = 0.5 * (lo + hi)
+            if (2.0 / np.pi) * (mid + np.sin(mid) * np.cos(mid)) < frac:
+                lo = mid
+            else:
+                hi = mid
+        return np.cos(0.5 * (lo + hi))**2
+
+    M_sphere = (4.0 / 3.0) * np.pi * R0**3 * rho0
+    errors = []
+    for Nx in (64, 128):
+        grid, state, par, eos, solver = build_case(
+            "HD", "collapse1D", Nx, 1, rec_type="PLM", RK_order="RK2",
+            solver_type="HLLC", CFL=0.4)
+        Ngc = grid.Ngc
+        r = grid.cx1[Ngc:-Ngc, Ngc]
+        vol = grid.cVol[:, 0]
+        state, nsteps = run_to_tfin(solver, par)
+
+        assert nsteps > 5, (
+            f"collapse1D at Nx={Nx}: only {nsteps} step(s) for the whole run. "
+            f"The gravitational timestep limit (gravity.body_force_dt) is not "
+            f"constraining dt -- a cold collapse has no hydrodynamic CFL limit.")
+
+        d = state.dens[Ngc:-Ngc, Ngc]
+        r_half = float(np.interp(0.5 * M_sphere, np.cumsum(vol * d), r))
+        r_half_exact = exact_radius(par.timenow / t_ff) * 2.0**(-1.0 / 3.0)
+        errors.append(abs(r_half - r_half_exact) / r_half_exact)
+
+    assert errors[-1] < 0.03, (
+        f"collapse1D: half-mass radius is off the exact free-fall solution "
+        f"by {errors[-1]*100:.2f}% at the finest resolution; expected < 3%")
+    _assert_converging(errors, min_order=0.7, label="HD/collapse1D free-fall")
