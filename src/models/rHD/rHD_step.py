@@ -238,7 +238,7 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy        
         _rk_stage(HD_h, HD, HD_h, \
-            ResM, Res1, Res2, Res3, ResE, dt, 1.0/4.0, 3.0/4.0, -1.0/4.0)
+            ResM, Res1, Res2, Res3, ResE, dt, 3.0/4.0, 1.0/4.0, -1.0/4.0)
 
         # Primitive recovery after 2nd stage
         _prim_recovery(HD_h, Ngc, HD_h.pres[Ngc:-Ngc, Ngc:-Ngc], eos)
@@ -249,7 +249,7 @@ def oneStep_rHD_RK(g, HD, eos, par, dt):
         # Conservative update - final 3rd RK iteration
         # update mass, three components of momentum and total energy
         _rk_stage(HD, HD, HD_h, \
-            ResM, Res1, Res2, Res3, ResE, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
+            ResM, Res1, Res2, Res3, ResE, dt, 1.0/3.0, 2.0/3.0, -2.0/3.0)
 
     else:
         
