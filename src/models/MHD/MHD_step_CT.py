@@ -100,7 +100,6 @@ class MHD2D_CT:
         return self.MHD
 
 
-
 # -------------------------
 # Small helper: one RK stage applied to all five conservative variables
 # -------------------------
@@ -180,7 +179,6 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
         (np.abs(vel2) + cfast)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
     return CFL/dt_inv
-
 
  
 def oneStep_MHD_RK_CT(g, MHD, eos, par, dt):
@@ -313,7 +311,7 @@ def oneStep_MHD_RK_CT(g, MHD, eos, par, dt):
         # update mass, 3 components of momentum, total energy and 3 comps of magnetic field
         _rk_stage(MHD, MHD_h, MHD, \
            ResM, ResV1, ResV2, ResV3, ResE, \
-           ResB1, ResB2, ResB3, dt, 1.0/3.0, 2.0/3.0, -2.0/3.0)
+           ResB1, ResB2, ResB3, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
             
     else:
         
