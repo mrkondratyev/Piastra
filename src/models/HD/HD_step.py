@@ -106,7 +106,6 @@ class HD2D:
         return self.HD
 
 
-
 # -------------------------
 # Small helper: one RK stage applied to all five conservative variables
 # -------------------------
@@ -188,8 +187,6 @@ def CFLcondition_HD(g, HD, eos, CFL):
         (np.abs(vel2) + sound)/(g.dx2[Ngc:-Ngc, Ngc:-Ngc]* g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
         
     return CFL/dt_inv
-
-
 
 
 def oneStep_HD_RK(g, HD, eos, par, dt):
@@ -304,7 +301,7 @@ def oneStep_HD_RK(g, HD, eos, par, dt):
         # Conservative update - 2nd RK iteration
         # update mass, three components of momentum and total energy        
         _rk_stage(HD_h, HD, HD_h, \
-            ResM, Res1, Res2, Res3, ResE, dt, 1.0/4.0, 3.0/4.0, -1.0/4.0)
+            ResM, Res1, Res2, Res3, ResE, dt, 3.0/4.0, 1.0/4.0, -1.0/4.0)
     
         # Primitive variables recovery after second stage
         #auxilary density, 3 components of velocity and pressure are evaluated 
@@ -316,7 +313,7 @@ def oneStep_HD_RK(g, HD, eos, par, dt):
         # Conservative update - final 3rd RK iteration
         # update mass, three components of momentum and total energy
         _rk_stage(HD, HD, HD_h, \
-            ResM, Res1, Res2, Res3, ResE, dt, 2.0/3.0, 1.0/3.0, -2.0/3.0)
+            ResM, Res1, Res2, Res3, ResE, dt, 1.0/3.0, 2.0/3.0, -2.0/3.0)
             
     else:
         
