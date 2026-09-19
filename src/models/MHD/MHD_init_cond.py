@@ -1170,7 +1170,7 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     """
     Axisymmetric magnetized non-relativistic jet in cylindrical (R, Z) coords.
 
-    Simplified teaching version of the PLUTO MHD jet (Mignone et al. 2007):
+    Simplified teaching version of the MHD jet:
     a supersonic light beam is injected through a nozzle on the BOTTOM boundary
     (x2-inner, face 1) over R < r_jet, carrying a CONSTANT axial field B_z (and,
     optionally, a constant toroidal B_phi).  The ambient is uniform and threaded
@@ -1196,8 +1196,7 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
       Field imposed as a cell-centred Dirichlet ghost-fill (bfi1=0, bfi2=B0,
       bfi3=Bphi0) via par.BC_fixed[1], plus pinning GLM psi (bglm)=0.  NOT
       CT-compatible.  Run with divb_tr='GLM' (preferred) or '8wave'; watch
-      max|divB| near the nozzle.  The poloidal jump at R=r_jet is a physical
-      current sheet.
+      max|divB| near the nozzle.
 
     Requires: Parameters with BC_fixed = {0:[],1:[],2:[],3:[]}; boundCond_MHD
     applying apply_bc_fixed with bfi1/2/3 and bglm in state_fields;
@@ -1217,14 +1216,19 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     ----------
     Mignone, A. et al. (2007), ApJS 170, 228   (PLUTO; MHD/Jet test, simplified)
     """
+    
     print("2D axisymmetric magnetized jet (cylindrical, constant inlet field, GLM)")
+    if par.divb_tr not in ["8wave", "GLM"]:
+        raise ValueError(
+            f"Invalid divb_tr: '{par.divb_tr}' for MHD jet2D. "
+            f"Expected one of ['8wave', 'GLM'].")
 
     # --- grid + time ---
     R_in, R_out = 0.0, 5.0
     Z_in, Z_out = 0.0, 20.0
     grid.CylindricalGrid(R_in, R_out, Z_in, Z_out)
     par.timenow = 0.0
-    par.timefin = 15.0
+    par.timefin = 12.0
     eos = EOSdata(5.0 / 3.0)
 
     # --- aliases ---
@@ -1246,7 +1250,7 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     Bphi0    = 0.0                        # constant toroidal field (0 = pure axial)
 
     # --- ambient: uniform, threaded by axial B_z = B0; total-pressure matched ---
-    p_amb = p_jet + 0.5 * B0**2           # gas+magnetic balance with the beam
+    p_amb = p_jet# + 0.5 * B0**2 # gas+magnetic balance with the beam
 
     MHD.dens[:, :] = rho_amb
     MHD.pres[:, :] = p_amb
