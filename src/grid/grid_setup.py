@@ -255,6 +255,7 @@ class Grid:
         # Uniform grid resolution
         dx1uc = (x1fin - x1ini) / Nx1
         dx2uc = (x2fin - x2ini) / Nx2
+        self.dx1uc, self.dx2uc = dx1uc, dx2uc
         dx1 = np.full(Nx1 + Ngc * 2, dx1uc, dtype=np.double)
         dx2 = np.full(Nx2 + Ngc * 2, dx2uc, dtype=np.double)
         self.dx1 = np.tile(dx1, (Nx2 + Ngc * 2, 1)).T
