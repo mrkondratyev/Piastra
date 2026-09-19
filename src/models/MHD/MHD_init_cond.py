@@ -1038,12 +1038,11 @@ def IC_MHD2D_disk(grid, MHD, par):
     # --- enthalpy, density, pressure ---
     W      = C + GM / rsph - l_kep**2 / (2.0 * Rsafe**2)
     inside = W > 0.0
-    rho_t  = np.where(inside,
-                      (np.maximum(W, 0.0) / W_max)**(1.0 / (gamma - 1.0)) * rho_max,
-                      0.0)
+    rho_t  = np.where(inside, (np.maximum(W, 0.0) / W_max)**(1.0 / (gamma - 1.0)) * rho_max, 0.0)
 
-    rho_atm = 1.0e-3 * rho_max          # ambient floor (see note in chat: not HSE)
-    p_atm   = Kpoly * rho_atm**gamma
+    rho_atm = 1.0e-3 * rho_max * (R_max / rsph)**(1.0 / (gamma - 1.0))
+    p_atm   = (gamma - 1.0) / gamma * rho_atm * GM / rsph
+    
     in_t    = rho_t > rho_atm
     rho     = np.where(in_t, rho_t, rho_atm)
     pres    = np.where(in_t, Kpoly * rho_t**gamma, p_atm)
@@ -1082,7 +1081,7 @@ def IC_MHD2D_disk(grid, MHD, par):
     MHD.bfi2[sl] = fac * B_z
 
     # --- boundaries ---
-    par.BC[0]  = 'wall'; par.BC[1:3]  = 'wall' 
+    par.BC[:]  = 'wall' 
     par.BCm[:] = 'free'
 
     return grid, MHD, par, eos
