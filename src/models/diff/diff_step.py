@@ -197,9 +197,12 @@ def CFLcondition_diff(g, diff, CFL):
         if np.isscalar(diff.kappa)
         else float(np.max(diff.kappa))
     )
-    dx1 = g.dx1uc
-    dx2 = g.dx2uc
-    dt = CFL * dx1**2 * dx2**2 / (2.0 * kappa_max * (dx1**2 + dx2**2))
+    
+    Ngc = g.Ngc
+    dx1 = g.dx1[Ngc:-Ngc, Ngc:-Ngc]
+    dx2 = g.dx2[Ngc:-Ngc, Ngc:-Ngc] * g.hx2[Ngc:-Ngc, Ngc:-Ngc]
+    dt = CFL * np.min(dx1**2 * dx2**2 / (2.0 * kappa_max * (dx1**2 + dx2**2)))
+    
     return dt
 
 
