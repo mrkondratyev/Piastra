@@ -516,7 +516,8 @@ def IC_HD2D_RTI(grid, fluid, par):
     -----
     - Sets up a two-layer fluid with heavier fluid on top of lighter fluid.
     - Applies a small interface perturbation for instability growth.
-    - Hydrostatic equilibrium is satisfied in the vertical direction.
+    - Hydrostatic equilibrium is NOT satisfied in the vertical direction 
+      (it is not a big deal for this test problem though -- the error is small).
     - Boundary conditions: wall-peri-wall-peri.
     """
     print("Rayleigh-Taylor instability in 2D")
@@ -820,7 +821,7 @@ def IC_HD2D_Sedov_cyl(grid, fluid, par):
     x1ini, x1fin = 0.0, 0.5; x2ini, x2fin = 0.0, 0.5
     grid.CylindricalGrid(x1ini, x1fin, x2ini, x2fin)
     
-    par.timenow = 0.0; par.timefin = 0.2
+    par.timenow = 0.0; par.timefin = 0.15
     
     eos = EOSdata(7.0/5.0)
 
@@ -1174,7 +1175,7 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     cocoon and Mach disk.
 
     Coordinate system : cylindrical (R, Z) = (x1, x2)
-    Domain            : R in [0, 5], Z in [0, 20]
+    Domain            : R in [0, 5], Z in [0, 25]
     Inlet (face 1)    : R < 1, rho=1, v_z=6, p = rho cs^2 / gamma  (Mach 6)
     Ambient           : rho=10, v=0, same p     (eta = rho_jet/rho_amb = 0.1)
 
