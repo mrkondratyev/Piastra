@@ -167,6 +167,7 @@ from src.models.rMHD.rMHD_init_cond import (
     IC_rMHD1D_RP4,
     IC_rMHD2D_blast,
     IC_rMHD2D_rotor,
+    IC_rMHD2D_OT,
     IC_rMHD_user_defined,
 )
 from src.models.SWE.SWE_init_cond import (
@@ -295,6 +296,7 @@ def initial_model(grid, state, par):
         "RP4":          IC_rMHD1D_RP4,
         "blast2D":      IC_rMHD2D_blast,
         "rotor2D":      IC_rMHD2D_rotor,
+        "OT2D":         IC_rMHD2D_OT,
         "user_defined": IC_rMHD_user_defined,
     }
 
