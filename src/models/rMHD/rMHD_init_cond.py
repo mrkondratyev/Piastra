@@ -26,6 +26,7 @@ Currently implemented
   IC_rMHD1D_BW,RP2,RP3,RP4     : 1D relativistic MHD shock tubes (Mignone & Bodo 2006)
   IC_rMHD2D_rotor     : 2D relativistic rotor (Del Zanna et al. 2003)
   IC_rMHD2D_blast    : 2D relativistic blast wave (Komissarov 1999)
+  IC_rMHD2D_OT    : 2D relativistic Orszag-Tang vortex (Beckwith & Stone 2011)
   IC_rMHD_user_defined : placeholder for custom ICs
 
 Author
@@ -487,4 +488,57 @@ def IC_rMHD2D_rotor(grid, state, par):
     par.BC[:] = 'free'
     par.BCm[:] = par.BC[:]
 
+    return grid, state, par, eos
+
+
+
+def IC_rMHD2D_OT(grid, state, par):
+    """
+    Relativistic Orszag-Tang vortex (Beckwith & Stone 2011, ApJS 193, 6).
+
+    The Newtonian set-up of IC_MHD2D_OT (unit periodic box, Gamma = 5/3,
+    rho = 25/(36 pi), p = 5/(12 pi), B0 = 1/sqrt(4 pi)) with the velocity
+    amplitude reduced from 1 to 1/2, so that the flow stays subluminal
+    (initially max|v| = 0.5*sqrt(2) ~ 0.71, i.e. W_max ~ 1.41):
+
+        v = 0.5 (-sin 2 pi y,  sin 2 pi x, 0)
+        B = B0  (-sin 2 pi y,  sin 4 pi x, 0)
+
+    Face fields: fb1 depends only on y and fb2 only on x, so the discrete
+    face divergence is zero to round-off from the start (CT).
+    Reference solution: Beckwith & Stone (2011).
+    """
+    print("rMHD 2D -- relativistic Orszag-Tang vortex")
+
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+
+    par.timenow = 0.0; par.timefin = 1.0
+    eos = EOSdata(5.0 / 3.0)
+
+    Ngc  = grid.Ngc
+    Nx1  = grid.Nx1; Nx2 = grid.Nx2
+    Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
+    b0 = 1.0 / np.sqrt(4.0 * np.pi)
+    v0 = 0.5
+
+    state.dens[:, :] = 25.0 / 36.0 / np.pi
+    state.pres[:, :] =  5.0 / 12.0 / np.pi
+    state.vel3[:, :] = 0.0
+    state.bfi3[:, :] = 0.0
+
+    # face-centred field (CT)
+    state.fb1[:Nx1 + 1, :] = -np.sin(2.0 * np.pi * grid.cx2[:Nx1 + 1, Ngc:-Ngc]) * b0
+    state.fb2[:, :Nx2 + 1] =  np.sin(4.0 * np.pi * grid.cx1[Ngc:-Ngc, :Nx2 + 1]) * b0
+
+    # cell-centred primitives
+    sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
+    x  = grid.cx1[sl]; y = grid.cx2[sl]
+    state.bfi1[sl] = -np.sin(2.0 * np.pi * y) * b0
+    state.bfi2[sl] =  np.sin(4.0 * np.pi * x) * b0
+    state.vel1[sl] = -v0 * np.sin(2.0 * np.pi * y)
+    state.vel2[sl] =  v0 * np.sin(2.0 * np.pi * x)
+
+    par.BC[:] = 'peri'
+    par.BCm[:] = par.BC[:]
     return grid, state, par, eos
