@@ -1123,7 +1123,7 @@ def IC_MHD2D_shock_cloud(grid, MHD, par):
     x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     
-    par.timenow = 0.0; par.timefin = 0.06
+    par.timenow = 0.0; par.timefin = 0.15
 
     eos = EOSdata(5.0 / 3.0)
     
