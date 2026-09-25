@@ -187,7 +187,7 @@ def IC_HD1D_Sod_cyl(grid, fluid, par):
     
     #grid creation
     x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    grid.CylindricalGrid(x1ini, x1fin, x2ini, x2fin)
         
     par.timenow = 0.0; par.timefin = 0.2
         
@@ -240,7 +240,7 @@ def IC_HD1D_Sod_sph(grid, fluid, par):
     
     #grid creation
     x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    grid.SphericalPolarGrid(x1ini, x1fin, x2ini, x2fin)
         
     par.timenow = 0.0; par.timefin = 0.2
         
@@ -376,10 +376,10 @@ def IC_HD1D_ShuOsher(grid, fluid, par):
     eos = EOSdata(7.0 / 5.0)
 
     fluid.vel2[:, :] = 0.0; fluid.vel3[:, :] = 0.0
-    fluid.dens[:, :] = np.where(grid.cx1 < 4.0, 3.857143, \
+    fluid.dens[:, :] = np.where(grid.cx1 < -4.0, 3.857143, \
         1.0 + 0.2 * np.sin(5.0 * grid.cx1))
-    fluid.vel1[:, :] = np.where(grid.cx1 < 4.0, 2.629369, 0.0)
-    fluid.pres[:, :] = np.where(grid.cx1 < 4.0, 10.33333, 1.0)
+    fluid.vel1[:, :] = np.where(grid.cx1 < -4.0, 2.629369, 0.0)
+    fluid.pres[:, :] = np.where(grid.cx1 < -4.0, 10.33333, 1.0)
                 
     #boundaries 
     par.BC[:] = 'free'
