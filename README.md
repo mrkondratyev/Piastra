@@ -301,23 +301,23 @@ Piastra/
 │                            #   convergence / robustness / restart, see Testbed below
 ├── tests/                  # the testbed itself (plain test_* functions)
 └── src/
-|   ├── parameters.py       # Parameters: configuration and defaults
-|   ├── sim_state.py        # SimState: per-mode variable storage
-|   ├── gravity.py          # body forces: planet, monopole and Poisson self-gravity
-|   ├── grid/
-|   │   ├── grid_setup.py   # Grid: cart / cyl / pol / sph geometries
-|   │   └── grid_misc.py    # divergence, gradient, curl, interpolation, norms
-|   ├── common/
-|   │   ├── boundaries.py   # scalar / vector / fixed ghost-cell fillers
-|   │   ├── high_order_rec.py  # PCM / PLM / PPM / WENO / MP5
-|   │   ├── eos_setup.py    # EOSdata (ideal-gas equation of state)
-|   │   └── poisson_solver.py  # FV Poisson solve via preconditioned CG
-|   ├── misc/
-|   │   ├── helpers.py      # PROBLEMS catalogue, initial_model, run_simulation
-|   │   ├── io_visual.py    # live matplotlib visualization
+│   ├── parameters.py       # Parameters: configuration and defaults
+│   ├── sim_state.py        # SimState: per-mode variable storage
+│   ├── gravity.py          # body forces: planet, monopole and Poisson self-gravity
+│   ├── grid/
+│   │   ├── grid_setup.py   # Grid: cart / cyl / pol / sph geometries
+│   │   └── grid_misc.py    # divergence, gradient, curl, interpolation, norms
+│   ├── common/
+│   │   ├── boundaries.py   # scalar / vector / fixed ghost-cell fillers
+│   │   ├── high_order_rec.py  # PCM / PLM / PPM / WENO / MP5
+│   │   ├── eos_setup.py    # EOSdata (ideal-gas equation of state)
+│   │   └── poisson_solver.py  # FV Poisson solve via preconditioned CG
+│   ├── misc/
+│   │   ├── helpers.py      # PROBLEMS catalogue, initial_model, run_simulation
+│   │   ├── io_visual.py    # live matplotlib visualization
 |   │   └── io_utils.py     # snapshots: save / load / restart (.npz), 1D text dump
-|   └── models/             # one self-contained package per physics mode
-|       └── adv/  HD/  rHD/  MHD/  rMHD/  SWE/  diff/
+│   └── models/             # one self-contained package per physics mode
+│       └── adv/  HD/  rHD/  MHD/  rMHD/  SWE/  diff/
 └── notebooks/              # pedagogical notebooks (TBD)
 ```
 
