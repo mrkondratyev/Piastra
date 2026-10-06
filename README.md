@@ -47,7 +47,7 @@ zones.
   solver returns the interface flux, and the conservative update is the
   divergence of those fluxes — the textbook recipe, applied uniformly.
 - **Reconstruction:** `PCM` (1st order), `PLM` (2nd, van Leer-limited slopes),
-  `PPMorig` (Colella & Woodward 1984), `PPM` (Mignone 2014, curvilinear-aware),
+  `PPMorig` (Colella & Woodward 1984), `PPM` (Mignone 2014, Cartesian part only),
   `WENO` (central WENO, 3rd order), `MP5` (Suresh & Huynh 1997). The number of
   ghost cells is chosen automatically from `rec_type`.
 - **Time integration:** SSP (TVD) Runge–Kutta `RK1`/`RK2`/`RK3`
@@ -301,23 +301,24 @@ Piastra/
 │                            #   convergence / robustness / restart, see Testbed below
 ├── tests/                  # the testbed itself (plain test_* functions)
 └── src/
-    ├── parameters.py       # Parameters: configuration and defaults
-    ├── sim_state.py        # SimState: per-mode variable storage
-    ├── gravity.py          # body forces: planet, monopole and Poisson self-gravity
-    ├── grid/
-    │   ├── grid_setup.py   # Grid: cart / cyl / pol / sph geometries
-    │   └── grid_misc.py    # divergence, gradient, curl, interpolation, norms
-    ├── common/
-    │   ├── boundaries.py   # scalar / vector / fixed ghost-cell fillers
-    │   ├── high_order_rec.py  # PCM / PLM / PPM / WENO / MP5
-    │   ├── eos_setup.py    # EOSdata (ideal-gas equation of state)
-    │   └── poisson_solver.py  # FV Poisson solve via preconditioned CG
-    ├── misc/
-    │   ├── helpers.py      # PROBLEMS catalogue, initial_model, run_simulation
-    │   ├── io_visual.py    # live matplotlib visualization
-    │   └── io_utils.py     # snapshots: save / load / restart (.npz), 1D text dump
-    └── models/             # one self-contained package per physics mode
-        └── adv/  HD/  rHD/  MHD/  rMHD/  SWE/  diff/
+|   ├── parameters.py       # Parameters: configuration and defaults
+|   ├── sim_state.py        # SimState: per-mode variable storage
+|   ├── gravity.py          # body forces: planet, monopole and Poisson self-gravity
+|   ├── grid/
+|   │   ├── grid_setup.py   # Grid: cart / cyl / pol / sph geometries
+|   │   └── grid_misc.py    # divergence, gradient, curl, interpolation, norms
+|   ├── common/
+|   │   ├── boundaries.py   # scalar / vector / fixed ghost-cell fillers
+|   │   ├── high_order_rec.py  # PCM / PLM / PPM / WENO / MP5
+|   │   ├── eos_setup.py    # EOSdata (ideal-gas equation of state)
+|   │   └── poisson_solver.py  # FV Poisson solve via preconditioned CG
+|   ├── misc/
+|   │   ├── helpers.py      # PROBLEMS catalogue, initial_model, run_simulation
+|   │   ├── io_visual.py    # live matplotlib visualization
+|   │   └── io_utils.py     # snapshots: save / load / restart (.npz), 1D text dump
+|   └── models/             # one self-contained package per physics mode
+|       └── adv/  HD/  rHD/  MHD/  rMHD/  SWE/  diff/
+└── notebooks/              # pedagogical notebooks (TBD)
 ```
 
 Every physics package follows the same rhythm: `*_step.py` (the
@@ -359,6 +360,7 @@ statements — no test-framework dependency — so `tests/` also works with
 
 - Toro, *Riemann Solvers and Numerical Methods for Fluid Dynamics*, 3rd ed. (2009) — Godunov-type solvers
 - Balsara (2017), *Living Rev. Comput. Astrophys.* **3**, 2 — high-order methods and models
+- Zingale (2021) *Tutorial on Computational Astrophysics*, https://zingale.github.io/comp_astro_tutorial/intro.html
 - Shu & Osher (1988), *JCP* **77**, 439 — TVD (SSP) Runge–Kutta
 - Colella & Woodward (1984), *JCP* **54**, 174 — PPM
 - Mignone (2014), *JCP* **270**, 784 — high-order curvilinear reconstruction
