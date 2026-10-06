@@ -6,11 +6,19 @@ boundaries.py
 Boundary condition module for 2D hydrodynamics, diffusion, and MHD simulations.
 
 This module provides functions to fill ghost cells for scalar and vector fields.
-Supported boundary types:
-    'free'  - non-reflective (zero-gradient) boundary
-    'wall'  - reflective (normal component flips) boundary
-    'peri'  - periodic boundary
-    'axis'  - axis boundary (normal and azimuthal components flip)
+Supported boundary types (BC list order: [x1_inner, x2_inner, x1_outer, x2_outer]):
+    'free'  - outflow: ghost cells are the mirror image of the interior
+              (zero gradient at the boundary face; for Ngc = 1 this is a
+              plain copy of the last interior cell)
+    'wall'  - reflective: mirror image, normal vector component flips
+    'peri'  - periodic
+    'axis'  - symmetry axis: mirror image, normal and azimuthal components
+              flip. Valid only at x1_inner (R = 0) and on x2 faces
+              (theta = 0, pi). The flipped "azimuthal" component is V3,
+              i.e. the cylindrical (R, Z, phi) / spherical (r, theta, phi)
+              ordering; on a polar (R, phi) grid the azimuthal velocity is
+              V2, so 'axis' at R = 0 is only correct there if v_phi = 0.
+Any other string raises ValueError.
 
 Functions
 ---------
@@ -36,7 +44,7 @@ The approach separates scalar and vector fields for clarity and correctness:
    - Treats the normal component differently for reflective (wall) boundaries
      while leaving tangential components unchanged.
 
-3. ``apply_bc_fixed(V1, V2, V3, ...)``
+3. ``apply_bc_fixed(state_fields, Ngc, N1, N2, face, patches)``
    - Pin ghost cells to prescribed (Dirichlet) values on one face
 
 4. ``apply_bc_scalar_Ngc1(var, ...)``
@@ -50,6 +58,23 @@ corresponding MHD solver modules (MHD_step_CT.py, rMHD_step.py).
 
 Author: mrkondratyev
 """
+
+_VALID_BC = ('free', 'wall', 'peri', 'axis')
+
+
+def _check_bc(BC_type, axis, side):
+    """Raise ValueError for an unknown boundary type, axis or side."""
+    if BC_type not in _VALID_BC:
+        raise ValueError(f"Unknown boundary type '{BC_type}'. "
+                         f"Expected one of {_VALID_BC}.")
+    if axis not in (1, 2):
+        raise ValueError(f"Invalid axis: {axis}. Expected 1 or 2.")
+    if side not in ('inner', 'outer'):
+        raise ValueError(f"Invalid side: '{side}'. Expected 'inner' or 'outer'.")
+    if BC_type == 'axis' and axis == 1 and side == 'outer':
+        raise ValueError("'axis' is not a valid x1_outer boundary: the axis "
+                         "can only be at R = 0 (x1_inner) or at theta = 0, pi.")
+        
 
 def apply_bc_scalar(var, Ngc, BC_type, axis=1, side='inner'):
     """
@@ -73,6 +98,9 @@ def apply_bc_scalar(var, Ngc, BC_type, axis=1, side='inner'):
     var : np.ndarray
         Field with ghost cells updated.
     """
+    
+    _check_bc(BC_type, axis, side)
+    
     shape = var.shape
     N1, N2 = shape[0], shape[1]
 
@@ -140,6 +168,9 @@ def apply_bc_vector(V1, V2, V3, Ngc, BC_type, axis=1, side='inner'):
     V1, V2, V3 : np.ndarray
         Vector field components with ghost cells updated.
     """
+    
+    _check_bc(BC_type, axis, side)
+    
     shape = V1.shape
     N1, N2 = shape[0], shape[1]
     
@@ -238,13 +269,17 @@ def apply_bc_fixed(state_fields, Ngc, N1, N2, face, patches):
         boundary (0-based from the first interior cell) and a {field: value}
         dict of prescribed values.
     """
+    if face not in (0, 1, 2, 3):
+          raise ValueError(f"Invalid face index {face}. Expected 0, 1, 2 or 3.")
+    
     for (start, end, sdict) in patches:
         t0 = Ngc + start          # interior index -> full-array index (tangential)
         t1 = Ngc + end
 
         for name, value in sdict.items():
             if name not in state_fields:
-                continue
+                raise ValueError(f"BC_fixed: unknown field '{name}' for this "
+                f"mode. Available: {list(state_fields)}.")
             arr = state_fields[name]
 
             if face == 0:            # x1 inner: ghost rows [0:Ngc], tangential = x2

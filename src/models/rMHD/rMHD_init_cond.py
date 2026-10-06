@@ -144,8 +144,8 @@ def IC_rMHD1D_BW(grid, MHD, par):
     MHD.bfi2[:, :] = np.where(left, 1.0, -1.0)
     
     # facial B-field 
-    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5 # shape (Nx1,)
-    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 1.0, -1.0)
+    left_c = grid.cx1[grid.Ngc:grid.Ngc + grid.Nx1, grid.Ngc] < 0.5
+    MHD.fb2[:grid.Nx1, :] = np.where(left_c[:, None], 1.0, -1.0)
     
     par.BC[:] = 'free'
     par.BCm[:] = par.BC[:]
@@ -206,8 +206,8 @@ def IC_rMHD1D_RP2(grid, MHD, par):
     MHD.bfi3[:, :] = np.where(left, 6.0, 0.7)
     
     # facial B-field 
-    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5 # shape (Nx1,)
-    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 6.0, 0.7)
+    left_c = grid.cx1[grid.Ngc:grid.Ngc + grid.Nx1, grid.Ngc] < 0.5
+    MHD.fb2[:grid.Nx1, :] = np.where(left_c[:, None], 6.0, 0.7)
                 
     par.BC[:] = 'free'
     par.BCm[:] = par.BC[:]
@@ -268,8 +268,8 @@ def IC_rMHD1D_RP3(grid, MHD, par):
     MHD.bfi3[:, :] = np.where(left, 7.0, 0.7)
     
     # facial B-field 
-    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5
-    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 7.0, 0.7)
+    left_c = grid.cx1[grid.Ngc:grid.Ngc + grid.Nx1, grid.Ngc] < 0.5
+    MHD.fb2[:grid.Nx1, :] = np.where(left_c[:, None], 7.0, 0.7)
 
     par.BC[:] = 'free'
     par.BCm[:] = par.BC[:]
@@ -331,8 +331,8 @@ def IC_rMHD1D_RP4(grid, MHD, par):
     MHD.bfi3[:, :] = np.where(left, 7.0, -7.0)
             
     # facial B-field 
-    left_face = grid.fx1[grid.Ngc:grid.Ngc + grid.Nx1, 1] < 0.5 # shape (Nx1,)
-    MHD.fb2[:grid.Nx1, :] = np.where(left_face[:, None], 7.0, -7.0)
+    left_c = grid.cx1[grid.Ngc:grid.Ngc + grid.Nx1, grid.Ngc] < 0.5
+    MHD.fb2[:grid.Nx1, :] = np.where(left_c[:, None], 7.0, -7.0)
                 
     par.BC[:] = 'free'
     par.BCm[:] = par.BC[:]
@@ -347,7 +347,7 @@ def IC_rMHD2D_blast(grid, MHD, par):
     """
     2D relativistic MHD explosion problem (cylindrical blast).
     
-    Standard RMHD test used in many codes (e.g. PLUTO, ATHENA++).
+    Standard RMHD test with high magnetization (Komissarov (1999)).
     A high-pressure region expands into a magnetized ambient medium.
     
     Parameters
@@ -380,18 +380,20 @@ def IC_rMHD2D_blast(grid, MHD, par):
     # ------------------------------------------------------------------
     # Initial uniform state (ambient medium)
     # ------------------------------------------------------------------
-    MHD.vel1[:, :] = 0.0; MHD.vel2[:, :] = 0.0; MHD.vel3[:, :] = 0.0
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
     
     # uniform magnetic field (x-direction)
-    MHD.bfi1[:, :] = 0.1; MHD.bfi2[:, :] = 0.0; MHD.bfi3[:, :] = 0.0
+    MHD.bfi1[:, :] = 0.1; MHD.bfi2[:, :] = MHD.bfi3[:, :] = 0.0
     
-    MHD.fb1[:, :] = 0.1
-    MHD.fb2[:, :] = 0.0
+    MHD.fb1[:, :] = 0.1; MHD.fb2[:, :] = 0.0
     
     # ------------------------------------------------------------------
     # Explosion parameters
     # ------------------------------------------------------------------
-    x0 = 0.0; y0 = 0.0; r0 = 0.08   # blast radius
+    # Komissarov (1999): inner core r < r_in, linear transition
+    # r_in < r < r_out, ambient medium r > r_out
+    x0 = 0.0; y0 = 0.0
+    r_in = 0.8; r_out = 1.0
     
     # Ambient state
     rho_out = 1.0e-4; p_out   = 3.0e-5
@@ -399,17 +401,18 @@ def IC_rMHD2D_blast(grid, MHD, par):
     # Inner (explosion) state
     rho_in = 0.01; p_in   = 1.0   # high pressure → explosion
     
-    #raidal coordinate 
+    # radial coordinate 
     x = grid.cx1; y = grid.cx2
     r = np.sqrt((x - x0)**2 + (y - y0)**2)
+    
+    # linear weight: 1 in the core, 0 in the ambient medium
+    w = np.clip((r_out - r) / (r_out - r_in), 0.0, 1.0)
     
     # ------------------------------------------------------------------
     # Fill domain
     # ------------------------------------------------------------------
-    MHD.dens[:,:] = np.where(r < r0, rho_in, \
-        np.where(r < r0, (rho_in*(1.0 - r) + rho_out*(r - r0))/(1.0 - r0), rho_out))
-    MHD.pres[:,:] = np.where(r < r0, p_in, \
-        np.where(r < r0, (p_in*(1.0 - r) + p_out*(r - r0))/(1.0 - r0), p_out))
+    MHD.dens[:,:] = w * rho_in + (1.0 - w) * rho_out
+    MHD.pres[:,:] = w * p_in   + (1.0 - w) * p_out
     
     # ------------------------------------------------------------------
     # Boundary conditions
@@ -479,8 +482,7 @@ def IC_rMHD2D_rotor(grid, state, par):
     vmax = np.sqrt(np.max(v2))
     if vmax >= 1.0:
         fac = 0.995 / vmax
-        state.vel1[mask] *= fac
-        state.vel2[mask] *= fac
+        state.vel1[mask] *= fac; state.vel2[mask] *= fac
         
     # ------------------------------------------------------------------
     # Boundary conditions

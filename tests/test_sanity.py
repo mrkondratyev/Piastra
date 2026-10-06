@@ -10,9 +10,7 @@ step a few times without crashing, producing a NaN/Inf, or going unphysical
 (negative density, pressure, or SWE height).
 
 Deliberately run on a NON-SQUARE grid (Nx1 != Nx2): a square grid silently
-hides axis-swap / mis-slicing bugs -- this is exactly how the grid.cVol
-ghost-offset bug in the Sedov ICs (and gravity.py's monopole self-gravity)
-went unnoticed before being found and fixed.
+hides axis-swap / mis-slicing bugs
 
 'user_defined' is excluded from every mode's list: it is a deliberate
 template stub that raises ValueError by design (see e.g.
@@ -24,23 +22,13 @@ Author: mrkondratyev
 from tests.testbed_common import build_case, run_steps, check_state_sane
 
 # Mirrors the catalogue documented in README.md and main.py's module docstring.
+from src.misc.helpers import PROBLEMS
+
+# Built directly from the problem catalogue in src/misc/helpers.py, so a
+# problem added to (or removed from) PROBLEMS is picked up automatically.
 CATALOGUE = {
-    "adv":  ["smooth1D", "disc1D", "smooth2D", "disc2D"],
-    "HD":   ["sod1Dcart", "sod1Dcyl", "sod1Dsph", "strong1D", "DBW1D",
-             "shuosher1D", "einfeldt1D", "sod2Dcart", "sod2Dsph", "sod2Dpol",
-             "sedov2Dcart", "sedov2Dcyl", "RP2D", "gresho2D", "KHI2D",
-             "RTI2D", "shock-cloud", "gap-opening", "jet2Dcyl"],
-    "rHD":  ["RP1", "RP3", "RP4", "RP5", "RP2D", "RTI", "jet2Dcart",
-             "jet2Dcyl"],
-    "MHD":  ["BW1D", "toth1D", "RJ1D", "alfven1D", "alfven2D",
-             "blast2Dcart", "blast2Dcyl", "blast2Dsph", "rotor2D", "OT2D",
-             "current-sheet", "field-loop", "disk2D", "jet2Dcyl",
-             "shock-cloud"],
-    "rMHD": ["BW1D", "RP2", "RP3", "RP4", "blast2D", "rotor2D"],
-    "SWE":  ["dam1D", "bump1D", "bathtub2D", "expl2D", "tsunami2D",
-             "ocean2D", "atmo2D", "dam2D", "jet2D", "KHI2D"],
-    "diff": ["gauss1D", "gauss2D", "step1D", "sine1D", "cross2D", "ring2D",
-             "cyl2D"],
+    mode: [name for name in problems if name != "user_defined"]
+    for mode, problems in PROBLEMS.items()
 }
 
 NX1, NX2 = 22, 18     # small + deliberately rectangular (see module docstring)

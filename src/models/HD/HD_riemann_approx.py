@@ -81,8 +81,7 @@ def cons_and_flux_HD(rho, vx, vy, vz, p, eos):
     Fe = vx * (p + e)
     
     #output -- conservative state + fluxes 
-    return m, mx, my, mz, e, \
-        Fm, Fx, Fy, Fz, Fe
+    return m, mx, my, mz, e, Fm, Fx, Fy, Fz, Fe
 
     
 
@@ -181,9 +180,9 @@ def HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
     csl = eos.sound_speed_nr(rhol, pl)
     csr = eos.sound_speed_nr(rhor, pr)
     
-    #one-line form of maximal and minimal eigenvalues HLL estimate according to Davis (1988)
-    Sl = np.minimum(np.minimum(vxl, vxr) - np.maximum(csl, csr), 0.0)
-    Sr = np.maximum(np.maximum(vxl, vxr) + np.maximum(csl, csr), 0.0)
+    #maximal and minimal eigenvalues HLL estimate according to Davis (1988)
+    Sl = np.minimum(vxl, vxr) - np.maximum(csl, csr)
+    Sr = np.maximum(vxl, vxr) + np.maximum(csl, csr)
     
     #contact wave speed in HLLC approximation
     Sstar = (pr - pl + rhol * vxl * (Sl - vxl) - 

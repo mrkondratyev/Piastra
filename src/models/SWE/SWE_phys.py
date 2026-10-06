@@ -97,7 +97,7 @@ def boundCond_SWE(grid, BC, SWE):
 
 def Riemann_SWE(hl, hr, vxl, vxr, vyl, vyr, g_ff, solver_type, dim):
     """
-   Approximate Riemann solver for the shallow water equations.
+   Riemann solver for the shallow water equations.
 
    Parameters
    ----------

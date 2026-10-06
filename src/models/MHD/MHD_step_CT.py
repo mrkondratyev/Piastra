@@ -59,7 +59,7 @@ class MHD2D_CT:
     MHD : object
         SimState object containing primitive and conservative variables.
     par : object
-        Simulation parameters including CFL, RK_order, flux_type, rec_type, phystime, phystimefin.
+        Simulation parameters including CFL, RK_order, solver_type, rec_type, timenow, timefin.
     eos : object
         Equation of state object.
     """
@@ -79,6 +79,16 @@ class MHD2D_CT:
         par : object
             Simulation parameters object.
         """
+        # Fixed (inflow) ghost states are not supported with CT: the face
+        # fields fb1, fb2 are advanced by the corner EMF, and at a boundary
+        # corner half of that EMF comes from the mirrored ghost-face fluxes
+        # (boundCond_electric_field), not from the prescribed inflow state.
+        # The magnetic flux entering through an inflow patch would thus be
+        # wrong. Use divb_tr = 'GLM' or '8wave' for problems with BC_fixed.
+        if any(par.BC_fixed.get(face) for face in (0, 1, 2, 3)):
+            raise ValueError(
+                "par.BC_fixed (fixed inflow states) is not supported by the CT "
+                "MHD solver; use divb_tr='GLM' or '8wave' for this problem.")
         self.g = g
         self.MHD = MHD
         self.eos = eos
@@ -95,18 +105,24 @@ class MHD2D_CT:
         """
         dt = min(CFLcondition_MHD(self.g, self.MHD, self.eos, self.par.CFL),
                  self.par.timefin - self.par.timenow)
+                
+        # procedures that involve some evaluations before the timestep 
+        # e.g., self-gravity, cooling and so on 
+        if self.par.before_step is not None:
+            self.par.before_step(self.g, self.MHD, self.par, dt) 
+                 
         self.MHD = oneStep_MHD_RK_CT(self.g, self.MHD, self.eos, self.par, dt)
         self.par.timenow += dt
         return self.MHD
 
 
 # -------------------------
-# Small helper: one RK stage applied to all five conservative variables
+# Small helper: one RK stage applied to all eight conservative variables
 # -------------------------
 def _rk_stage(MHD_out, MHD_a, MHD_b, \
     ResM, Res1, Res2, Res3, ResE, ResB1, ResB2, ResB3, dt, a, b, c):
     """
-    Set HD_out.* = a * HD_a.* + b * HD_b.* + c * dt * Res*
+    Set MHD_out.* = a * MHD_a.* + b * MHD_b.* + c * dt * Res*
  
     For SSP-RK, the standard combinations are:
       Stage 1 (predictor): a=1,    b=0,    c=-1     -> HD_h = HD - dt*R(HD)
@@ -136,7 +152,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     g   : object
         Grid object.
     MHD : object
-        Fluid state object.
+        SimState object.
     eos : object
         Equation of state object.
     CFL : float
@@ -190,18 +206,18 @@ def oneStep_MHD_RK_CT(g, MHD, eos, par, dt):
     g   : object
         Computational grid with geometry and metric data.
     MHD : object
-        Fluid state containing primitive and conservative variables.
+        SimState containing primitive and conservative variables.
     eos : object
         Equation of state object.
     par : object
-        Simulation parameters (RK order, reconstruction type, flux type, etc.).
+        Simulation parameters (RK order, reconstruction type, solver type, etc.).
     dt : float
         Timestep size.
 
     Returns
     -------
     MHD : object
-        Updated fluid state after one timestep.
+        Updated SimState after one timestep.
 
     Notes
     -----
@@ -343,7 +359,7 @@ def flux_calc_MHD_CT(g, MHD, par, eos):
     g   : object
         Computational grid object.
     MHD : object
-        Fluid state (primitive + conservative variables).
+        SimState (primitive + conservative variables).
     eos : object
         Equation of state.
     par : object

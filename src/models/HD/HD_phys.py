@@ -134,12 +134,12 @@ def boundCond_HD(grid, BC, fluid, BC_fixed=None):
         Boundary types for each boundary [inner_x1, inner_x2, outer_x1, outer_x2].
         Supported: 'free', 'wall', 'peri', 'axis'.
     fluid : object
-        Fluid state object with attributes dens, pres, vel1, vel2, vel3.
+        SimState object with attributes dens, pres, vel1, vel2, vel3.
 
     Returns
     -------
     fluid : object
-        Fluid object with ghost cells updated according to BCs.
+        SimState object with ghost cells updated according to BCs.
     """
     Ngc = grid.Ngc
     

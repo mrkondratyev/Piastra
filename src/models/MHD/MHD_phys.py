@@ -6,7 +6,7 @@ This module provides functions for evolving the equations of
 non-relativistic ideal magnetohydrodynamics (MHD) using
 finite-volume Godunov-type schemes. The routines handle conversion
 between primitive and conservative variables, calculation of wave
-speeds, approximate Riemann solvers (LLF, HLL, HLLD), and divergence
+speeds, approximate Riemann solvers (LLF, HLL, HLLC, HLLD), and divergence
 cleaning with the GLM method.
 
 Implemented features
@@ -17,8 +17,9 @@ Implemented features
 - Approximate Riemann solvers:
   * LLF (Local Lax-Friedrichs / Rusanov)
   * HLL (Harten–Lax–van Leer)
+  * HLLC (Harten–Lax–van Leer + Contact)
   * HLLD (Harten–Lax–van Leer with Discontinuities)
-- Dedner GLM divergence cleaning subsystem (solver will be supported in future)
+- Dedner GLM divergence cleaning subsystem
 
 Assumptions
 -----------
@@ -148,7 +149,7 @@ def cons2prim_MHD(mass, mom1, mom2, mom3, etot, bcon1, bcon2, bcon3, eos):
 
 def _prim_recovery(state, Ngc, eos):
     """
-    Call cons2prim_nr_MHD and write results back into
+    Call cons2prim_MHD and write results back into
     state.{dens,vel*,pres,bfi*}.
 
     Parameters
@@ -215,11 +216,6 @@ def boundCond_MHD(grid, BC, BCm, MHD, BC_fixed=None):
         Fixed (Dirichlet) ghost-fill patches keyed by face index 0..3,
         applied after the standard BC/BCm fill (see boundaries.apply_bc_fixed).
 
-    Notes
-    -----
-    Fixed boundaries are not supported yet for CT MHD's staggered
-    face-centred field (fb1, fb2) -- only the cell-centred fields.
-
     Returns
     -------
     MHD : object
@@ -268,7 +264,7 @@ def boundCond_MHD(grid, BC, BCm, MHD, BC_fixed=None):
         N1, N2 = MHD.dens.shape
         sf = {'dens': MHD.dens, 'pres': MHD.pres,
               'vel1': MHD.vel1, 'vel2': MHD.vel2, 'vel3': MHD.vel3,
-              'bfi1': MHD.vel1, 'bfi2': MHD.bfi2, 'bfi3': MHD.bfi3,
+              'bfi1': MHD.bfi1, 'bfi2': MHD.bfi2, 'bfi3': MHD.bfi3,
               'bglm': MHD.bglm}
         for face in (0, 1, 2, 3):
             if BC_fixed.get(face):
@@ -282,7 +278,7 @@ def Riemann_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, b
     """
     Compute approximate Riemann fluxes for non-relativistic MHD.
 
-    Supports LLF, HLL, and HLLD solvers.
+    Supports LLF, HLL, HLLC, and HLLD solvers.
 
     Parameters
     ----------
@@ -296,7 +292,7 @@ def Riemann_MHD(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, b
         Left and right magnetic field components.
     eos : object
         Equation of state object with attribute `GAMMA`.
-    solver_type : {'LLF', 'HLL', 'HLLD'}
+    solver_type : {'LLF', 'HLL', 'HLLC', 'HLLD'}
         Choice of Riemann solver.
     dim : int
         Normal direction (1 or 2). If `dim == 2`, system is rotated.

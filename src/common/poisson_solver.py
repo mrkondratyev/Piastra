@@ -429,6 +429,12 @@ def solve_poisson(grid, rhs, BC, BC_value=None, phi0=None,
         rz_old = rz_new
 
     residual = np.sqrt(_dot(grid, r, r)) / bnorm_safe
+    
+    # Pure-periodic / pure-Neumann: phi is defined only up to a constant.
+    # Fix it: zero volume-weighted mean. Both a warm start (phi0) and the
+    # diagonal preconditioner on non-uniform grids can shift this constant.
+    if no_dirichlet:
+        phi_int -= _dot(grid, phi_int, np.ones(shape)) / np.sum(grid.cVol)
 
     if verbose:
         print(f"solve_poisson: niter = {niter}, residual = {residual:.3e}, "

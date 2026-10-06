@@ -60,7 +60,7 @@ from src.common.poisson_solver import solve_poisson
 # ===========================================================================
 def planet_gravity_polar(grid, state, par,
                          M_star, M_planet, r_planet,
-                         phi0=0.0, indirect=True):
+                         phi0=0.0, indirect=True, soft = 0.05):
     """Star + orbiting-planet gravitational acceleration in polar (r, phi).
 
     The planet is on a fixed circular orbit at radius ``r_planet`` with
@@ -84,10 +84,10 @@ def planet_gravity_polar(grid, state, par,
     """
     G = 1.0 # gravitational constant in code units
 
-    phi0 = 0.0 # planet azimuth at time = 0
-    r_planet = 1.0 # planet orbital radius
+    #phi0 = 0.0 # planet azimuth at time = 0
+    #r_planet = 1.0 # planet orbital radius
 
-    soft = 0.05 #gravitational softening length
+    #soft = 0.05 #gravitational softening length
     # (smooths the planet potential inside ~soft; pick a fraction
     # of the local cell size or the Hill radius)
 
@@ -144,7 +144,6 @@ def selfgravity_monopole_spherical(grid, state, par):
     distribution.  It IGNORES the gravity of non-radial density variations
     (the l >= 1 multipoles), so it is appropriate for nearly-spherical
     configurations (e.g. a proto-neutron star) and approximate otherwise.
-    <-- MONOPOLE-ONLY CAVEAT
 
     Parameters
     ----------
@@ -248,13 +247,8 @@ def selfgravity_poisson(grid, state, par, G=1.0, BC=None, BC_value=None,
         Poisson boundary conditions for the potential, forwarded to
         solve_poisson: 'peri', 'free', or 'dirichlet' per face (see
         poisson_solver.py / boundaries.apply_bc_scalar_Ngc1). Defaults to
-        ['free', 'free', 'free', 'free'] -- safe even though it leaves
-        Phi's absolute normalisation undetermined (a pure-Neumann Poisson
-        problem is only fixed up to an additive constant), because only
-        Phi's GRADIENT is used here and a constant offset has zero
-        gradient. Pass 'peri' for a periodic box, or 'dirichlet' with
-        BC_value set from an analytic/multipole exterior potential, for a
-        genuinely isolated (non-periodic, non-zero-gradient) boundary.
+        ['free', 'free', 'free', 'free']. 
+        (note that for non-Dirichlet boundaries we subtract the mean part of density!)
     BC_value : dict, optional
         Dirichlet boundary values, forwarded to solve_poisson.
     tol, maxiter : optional

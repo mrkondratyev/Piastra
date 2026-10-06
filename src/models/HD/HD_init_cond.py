@@ -13,7 +13,6 @@ Available tests
     - Sod shock tube in various coordinate systems
     - Strong shock tube
     - Double blast wave (DBW)
-    - Noh problem (Noh 1987) – infinite-strength shock
     - Shu-Osher problem (Shu & Osher 1989) – shock-entropy wave interaction
     - Einfeldt rarefaction (Einfeldt et al. 1991) – 1-2-3 problem
 
@@ -25,9 +24,13 @@ Available tests
     - Cylindrical Sedov-Taylor explosion
     - Four-quadrant 2D Riemann problem (Lax & Liu 1998)
     - Gresho vortex (Gresho & Chan 1990) – angular momentum preservation
+    - Isentropic vortex - convergence 
     - Shock-cloud interaction (Klein et al. 1994) – astrophysical
     - Gap opening in protoplanetary disk (polar coordinates) – astrophysical
     - Axisymmetric non-relativistic jet (cylindrical coordinates) – astrophysical
+    - Jeans instability in 1D 
+    - Gravitational collapse of a uniform cloud (Colgate & White (1966))
+    - Merger of two gravitating blobs in 2D cartesian geometry (setup is close to ULULA code)
 
 aux:
     -user-defined
@@ -45,7 +48,7 @@ mrkondratyev
 """
 import numpy as np
 from src.common.eos_setup import EOSdata
-
+from src.gravity import selfgravity_poisson, planet_gravity_polar
 
 
 def IC_HD_user_defined(grid, fluid, par):
@@ -57,7 +60,7 @@ def IC_HD_user_defined(grid, fluid, par):
     grid : object
         Grid object.
     fluid : object
-        FluidState object to be initialized.
+        SimState object to be initialized.
     par : object
         Simulation parameters including BC, timefin, timenow.
 
@@ -95,7 +98,6 @@ def IC_HD_user_defined(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 # ============================================================================
 #   1D problems
 # ============================================================================
@@ -109,7 +111,7 @@ def IC_HD1D_Sod_cart(grid, fluid, par):
     grid : object
         Grid object with Nx1r, Nx2r, fx1, fx2, etc.
     fluid : object
-        FluidState object containing vel1, vel2, vel3, dens, pres.
+        SimState object containing vel1, vel2, vel3, dens, pres.
     par : object
         Simulation parameters object with BC, timefin, timenow.
 
@@ -152,7 +154,6 @@ def IC_HD1D_Sod_cart(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD1D_Sod_cyl(grid, fluid, par):
     """
     Initialize the 1D Sod shock tube test in cylindrical geometry.
@@ -162,7 +163,7 @@ def IC_HD1D_Sod_cyl(grid, fluid, par):
     grid : object
         Grid object with Nx1r, Nx2r, fx1, fx2, etc.
     fluid : object
-        FluidState object containing vel1, vel2, vel3, dens, pres.
+        SimState object containing vel1, vel2, vel3, dens, pres.
     par : object
         Simulation parameters object with BC, timefin, timenow.
 
@@ -205,7 +206,6 @@ def IC_HD1D_Sod_cyl(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD1D_Sod_sph(grid, fluid, par):
     """
     Initialize the 1D Sod shock tube test in spherical geometry.
@@ -215,7 +215,7 @@ def IC_HD1D_Sod_sph(grid, fluid, par):
     grid : object
         Grid object with Nx1r, Nx2r, fx1, fx2, etc.
     fluid : object
-        FluidState object containing vel1, vel2, vel3, dens, pres.
+        SimState object containing vel1, vel2, vel3, dens, pres.
     par : object
         Simulation parameters object with BC, timefin, timenow.
 
@@ -258,7 +258,6 @@ def IC_HD1D_Sod_sph(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD1D_strong_shock(grid, fluid, par):
     """
     Initialize a 1D strong shock tube test in Cartesian coordinates.
@@ -298,7 +297,6 @@ def IC_HD1D_strong_shock(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD1D_DBW(grid, fluid, par):
     """
     Initialize the 1D double blast wave test (Woodward & Colella 1984) in Cartesian coordinates.
@@ -336,7 +334,6 @@ def IC_HD1D_DBW(grid, fluid, par):
     par.BC[:] = 'wall'
     
     return grid, fluid, par, eos
-
 
 
 def IC_HD1D_ShuOsher(grid, fluid, par):
@@ -387,15 +384,13 @@ def IC_HD1D_ShuOsher(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD1D_Einfeldt(grid, fluid, par):
     """
     Initialize the 1D Einfeldt rarefaction test (1-2-3 problem).
 
     Two symmetric rarefaction waves propagate outward from the centre,
     leaving a near-vacuum in between.  This problem is a severe test for
-    positivity preservation and for the carbuncle/entropy-fix behaviour
-    of Riemann solvers (especially Roe).
+    positivity preservation and for Riemann solvers (especially Roe).
 
     Left  state: rho=1, v=-2, p=0.4
     Right state: rho=1, v= 2, p=0.4
@@ -432,8 +427,6 @@ def IC_HD1D_Einfeldt(grid, fluid, par):
     par.BC[:] = 'free'
 
     return grid, fluid, par, eos
-
-
 
 
 # ============================================================================
@@ -493,7 +486,6 @@ def IC_HD2D_KHI(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_RTI(grid, fluid, par):
     """
     Initialize the 2D Rayleigh-Taylor instability problem.
@@ -503,7 +495,7 @@ def IC_HD2D_RTI(grid, fluid, par):
     grid : object
         Grid object used to create the domain.
     fluid : object
-        FluidState object to be initialized.
+        SimState object to be initialized.
     par : object
         Simulation parameters including BC, timefin, timenow.
 
@@ -561,7 +553,6 @@ def IC_HD2D_RTI(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_Sod(grid, fluid, par):
     """
     Initialize the 2D cylindrical Sod shock tube problem (quadrant symmetry).
@@ -572,7 +563,7 @@ def IC_HD2D_Sod(grid, fluid, par):
     grid : object
         Grid object.
     fluid : object
-        FluidState object to be initialized.
+        SimState object to be initialized.
     par : object
         Simulation parameters including BC, timefin, timenow.
 
@@ -611,7 +602,6 @@ def IC_HD2D_Sod(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_Sod_sph(grid, fluid, par):
     """
     Initialize the 1D cartesian Sod shock tube test in 2D spherical geometry.
@@ -621,7 +611,7 @@ def IC_HD2D_Sod_sph(grid, fluid, par):
     grid : object
         Grid object with Nx1r, Nx2r, fx1, fx2, etc.
     fluid : object
-        FluidState object containing vel1, vel2, vel3, dens, pres.
+        SimState object containing vel1, vel2, vel3, dens, pres.
     par : object
         Simulation parameters object with BC, timefin, timenow.
 
@@ -638,8 +628,9 @@ def IC_HD2D_Sod_sph(grid, fluid, par):
 
     Notes
     -----
-    The domain is divided at x=0.5. Left state: rho=1, p=1; right state: rho=0.125, p=0.1.
-    Boundary conditions are set to 'wall'.
+    The domain is divided at rcos(theta)=0, 
+    Left state: rho=1, p=1; right state: rho=0.125, p=0.1.
+    Boundary conditions are set to 'axis, axis, free, axis'.
     """
     
     print("cartesian 1D Sod shock tube test (G.A. Sod (1978)) in a 2D spherical-polar geometry")
@@ -665,7 +656,6 @@ def IC_HD2D_Sod_sph(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_Sod_polar(grid, fluid, par):
     """
     Initialize the 1D cartesian Sod shock tube test in 2D polar geometry.
@@ -675,7 +665,7 @@ def IC_HD2D_Sod_polar(grid, fluid, par):
     grid : object
         Grid object with Nx1r, Nx2r, fx1, fx2, etc.
     fluid : object
-        FluidState object containing vel1, vel2, vel3, dens, pres.
+        SimState object containing vel1, vel2, vel3, dens, pres.
     par : object
         Simulation parameters object with BC, timefin, timenow.
 
@@ -692,8 +682,9 @@ def IC_HD2D_Sod_polar(grid, fluid, par):
 
     Notes
     -----
-    The domain is divided at x=0.5. Left state: rho=1, p=1; right state: rho=0.125, p=0.1.
-    Boundary conditions are set to 'wall'.
+    The domain is divided at x=0.
+    Left state: rho=1, p=1; right state: rho=0.125, p=0.1.
+    Boundary conditions are set to 'axis, peri, free, peri'.
     """
     
     print("cartesian 1D Sod shock tube test (G.A. Sod (1978)) in a 2D polar geometry")
@@ -719,7 +710,6 @@ def IC_HD2D_Sod_polar(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_Sedov_cart(grid, fluid, par):
     """
     Initialize the 2D Sedov-Taylor explosion test in Cartesian coordinates.
@@ -729,7 +719,7 @@ def IC_HD2D_Sedov_cart(grid, fluid, par):
     grid : object
         Grid object.
     fluid : object
-        FluidState object to be initialized.
+        SimState object to be initialized.
     par : object
         Simulation parameters including BC, timefin, timenow.
 
@@ -788,7 +778,6 @@ def IC_HD2D_Sedov_cart(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_Sedov_cyl(grid, fluid, par):
     """
     Initialize the 3D Sedov-Taylor explosion test in 2D Cylindrical coordinates.
@@ -798,7 +787,7 @@ def IC_HD2D_Sedov_cyl(grid, fluid, par):
     grid : object
         Grid object.
     fluid : object
-        FluidState object to be initialized.
+        SimState object to be initialized.
     par : object
         Simulation parameters including BC, timefin, timenow.
 
@@ -812,7 +801,7 @@ def IC_HD2D_Sedov_cyl(grid, fluid, par):
     - Sets initial energy in a small circular region at the origin.
     - Outer region density set to 1.0, pressure near zero.
     - Velocity initially zero everywhere.
-    - Boundary conditions: wall-wall-free-free.
+    - Boundary conditions: axis-wall-free-free.
     - Uses quadrant symmetry.
     """
     print("3D Sedov-Taylor explosion test in Cylindrical (R,Z) geometry")
@@ -855,8 +844,6 @@ def IC_HD2D_Sedov_cyl(grid, fluid, par):
     par.BC[2] = 'free'; par.BC[3] = 'free'
     
     return grid, fluid, par, eos
-
-
 
 
 def IC_HD2D_RP2D(grid, fluid, par):
@@ -924,12 +911,11 @@ def IC_HD2D_RP2D(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_Gresho(grid, fluid, par):
     """
     Initialize the 2D Gresho vortex (Gresho & Chan 1990).
 
-    A stationary isentropic vortex in exact rotational equilibrium.
+    A stationary vortex in steady rotational equilibrium.
     The azimuthal velocity increases linearly for r < 0.2, then
     decreases linearly for 0.2 < r < 0.4, and vanishes for r > 0.4.
     Pressure is set to balance centripetal acceleration exactly.
@@ -984,7 +970,48 @@ def IC_HD2D_Gresho(grid, fluid, par):
     par.BC[:] = 'peri'
 
     return grid, fluid, par, eos
+    
+    
+def IC_HD2D_vortex(grid, fluid, par):
+    """
+    Initialize the 2D isentropic vortex
 
+    Domain: [0, 1] x [0, 1], periodic
+    Gamma = 7/5, t_fin = 10
+
+    Parameters
+    ----------
+    grid : object
+    fluid : object
+    par : object
+
+    Returns
+    -------
+    grid, fluid, par, eos : objects
+    """
+    
+    print("2D isentropic vortex problem")
+    
+    x1ini, x1fin = -5.0, 5.0; x2ini, x2fin = -5.0, 5.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    
+    par.timenow = 0.0; par.timefin = 10.0
+    
+    eos = EOSdata(7.0/5.0)
+    
+    x, y = grid.cx1, grid.cx2
+    beta = 5.0
+    bump = np.exp(0.5 * (1.0 - x**2 - y**2))
+    tmpr = 1.0 - (eos.GAMMA - 1.0) * beta**2 / (8.0 * eos.GAMMA * np.pi**2) * bump**2
+    fluid.dens[:, :] = tmpr**(1.0 / (eos.GAMMA - 1.0))
+    fluid.pres[:, :] = fluid.dens * tmpr
+    fluid.vel1[:, :] = 1.0 - beta / (2.0 * np.pi) * bump * y
+    fluid.vel2[:, :] = 1.0 + beta / (2.0 * np.pi) * bump * x
+    fluid.vel3[:, :] = 0.0
+    
+    par.BC[:] = 'peri'
+
+    return grid, fluid, par, eos
 
 
 def IC_HD2D_shock_cloud(grid, fluid, par):
@@ -1000,7 +1027,7 @@ def IC_HD2D_shock_cloud(grid, fluid, par):
     Domain: [0, 1] x [0, 1]
     Cloud: centre (0.25, 0.5), radius 0.1, rho=10, p=1
     Pre-shock (ambient): rho=1, p=1, v=0
-    Post-shock (x < 0.05): rho=3.86, v1=11.2, p=167
+    Post-shock: Mach-10 Rankine-Hugoniot state, rho=3.8835, v1=9.5856, p=124.75
     Gamma = 5/3, t_fin = 0.06
 
     Parameters
@@ -1024,7 +1051,7 @@ def IC_HD2D_shock_cloud(grid, fluid, par):
 
     par.timenow = 0.0; par.timefin = 0.06
     
-    eos = EOSdata(5.0 / 3.0)
+    eos = EOSdata(5.0/3.0)
 
     # Cloud parameters
     xc, yc = 0.25, 0.5
@@ -1033,16 +1060,22 @@ def IC_HD2D_shock_cloud(grid, fluid, par):
     # Pre-shock (ambient)
     rho_amb = 1.0; p_amb = 1.0
 
-    # Post-shock state (Mach 10 shock in gamma=5/3 gas)
-    rho_post = 3.857143; v1_post = 11.2; p_post = 167.0
+    # Post-shock state: Rankine-Hugoniot jump of a Mach-M shock moving
+    # into gas at rest (rho_amb, p_amb)
+    gam    = eos.GAMMA
+    M_shk  = 10.0
+    D_shk  = M_shk * np.sqrt(gam * p_amb / rho_amb)          # shock speed
+    rho_post = rho_amb * (gam + 1.0) * M_shk**2 / ((gam - 1.0) * M_shk**2 + 2.0)
+    p_post   = p_amb * (2.0 * gam * M_shk**2 - (gam - 1.0)) / (gam + 1.0)
+    v1_post  = D_shk * (1.0 - rho_amb / rho_post)            # mass conservation
+    # gamma = 5/3, M = 10:  rho_post = 3.8835, v1_post = 9.5856, p_post = 124.75
 
     x_shock = 0.05  # initial shock position
 
     x = grid.cx1; y = grid.cx2
     r = np.sqrt((x - xc)**2 + (y - yc)**2)
 
-    post  = x < x_shock          # highest priority
-    cloud = r < rc               # applies only where NOT post-shock (the elif)
+    post  = x < x_shock; cloud = r < rc
 
     # nested where mirrors  if post ... elif cloud ... else ...
     fluid.dens[:, :] = np.where(post, rho_post, np.where(cloud, rho_cloud, rho_amb))
@@ -1056,13 +1089,12 @@ def IC_HD2D_shock_cloud(grid, fluid, par):
     return grid, fluid, par, eos
 
 
-
 def IC_HD2D_gap_opening(grid, fluid, par):
     """
     Simplified 2D gap-opening problem in a protoplanetary disk (polar coords).
 
     Educational version, built to be CONSISTENT with the adiabatic gamma-law
-    EOS (no locally-isothermal fudge). The disk is initialised in exact radial
+    EOS (not locally-isothermal, but gamma ~ 1). The disk is initialised in exact radial
     equilibrium for the chosen gamma, so it stays steady until the planet's
     gravity carves a gap. A low-mass planet sits at (R=1, phi=pi) on a fixed
     circular orbit; its softened gravity is applied as a source term.
@@ -1070,8 +1102,7 @@ def IC_HD2D_gap_opening(grid, fluid, par):
     Design choices for clarity:
       * power-law Sigma(R) and P(R) chosen so that radial balance is EXACT,
         so v_phi includes the (sub-Keplerian) pressure correction;
-      * F1, F2 are accelerations (force per unit mass): the solver applies the
-        density weighting. (Verify your HD solver uses -dens*F, as rMHD does.)
+      * F1, F2 are accelerations, calculated by before_step
       * planet on a fixed orbit (no migration, no disk back-reaction) -- the
         standard teaching simplification.
 
@@ -1082,22 +1113,22 @@ def IC_HD2D_gap_opening(grid, fluid, par):
 
     References
     ----------
-    de Val-Borro, M. et al. (2006), MNRAS 370, 529  (the full benchmark)
+    de Val-Borro, M. et al. (2006), MNRAS 370, 529 
     """
-    print("2D gap-opening problem in a protoplanetary disk (simplified, adiabatic)")
+    print("2D gap-opening in a protoplanetary disk (simplified, adiabatic)")
 
     R_in, R_out = 0.4, 2.5; phi_in, phi_out = 0.0, 2.0 * np.pi
     grid.PolarGrid(R_in, R_out, phi_in, phi_out)
 
-    par.timenow = 0.0; par.timefin = 10.0 * 2.0 * np.pi          # 10 orbits at R = 1
+    par.timenow = 0.0; par.timefin = 25.0 * 2.0 * np.pi # 25 orbits at R = 1
 
-    eos = EOSdata(5.0 / 3.0)
+    eos = EOSdata(1.01)
 
     # --- disk parameters ---
-    Sigma0   = 1.0
-    M_star   = 1.0
-    h0       = 0.05        # aspect ratio (h/R) at R = 1; sets the disk "thickness"
-    a        = 0.5         # Sigma ~ R^(-a)
+    Sigma0 = 1.0
+    M_star = 1.0
+    h0 = 0.05 # aspect ratio (h/R) at R = 1; sets the disk "thickness"
+    a = 0.5 # Sigma ~ R^(-a)
 
     # Temperature/pressure power law chosen so that c_s ~ v_K * h0 at R=1.
     # For a gamma-law gas, locally  c_s^2 = gamma * P / Sigma.  We want the disk
@@ -1106,63 +1137,53 @@ def IC_HD2D_gap_opening(grid, fluid, par):
     # and choose P0 so that  (c_s / v_K)|_{R=1} = h0.
     #   c_s^2(1) = gamma P0 / Sigma0 ,  v_K^2(1) = M_star  ->  P0 = Sigma0 h0^2 M_star / gamma
     P0 = Sigma0 * h0**2 * M_star / eos.GAMMA
-    q  = a + 1.0           # pressure power-law index  P ~ R^(-q)
+    q  = a + 1.0 # pressure power-law index  P ~ R^(-q)
 
     # --- planet parameters ---
-    M_planet   = 5.0e-4    # ~0.5 Jupiter-ish in these units; small enough to be gentle
-    R_planet   = 1.0
+    M_planet = 5.0e-4  # ~0.5 Jupiter-ish in these units; small enough to be gentle
+    R_planet = 1.0
     phi_planet = np.pi
-    eps        = 0.6 * h0 * R_planet   # gravitational softening length
+    eps = 0.6 * h0 * R_planet # gravitational softening length
 
     # ------------------------------------------------------------------
     # Disk state (vectorised, full array including ghosts)
     # ------------------------------------------------------------------
-    R   = grid.cx1; phi = grid.cx2
+    R = grid.cx1; Sigma = Sigma0 * R**(-a); P = P0 * R**(-q)
 
-    Sigma = Sigma0 * R**(-a)
-    P     = P0 * R**(-q)
-
-    # Exact radial equilibrium for THIS gamma:
+    # Exact radial equilibrium for gamma-law EOS:
     #   v_phi^2 / R = M_star / R^2 + (1/Sigma) dP/dR
     # dP/dR = -q P / R, so:
     #   v_phi^2 = M_star / R - q P / Sigma
-    # (the pressure term makes the disk slightly sub-Keplerian -- this is what
-    #  keeps it from drifting; dropping it was the bug in the old IC)
+    # the disk is slightly sub-Keplerian 
     vphi2 = M_star / R - q * P / Sigma
-    vphi2 = np.maximum(vphi2, 0.0)          # guard (only triggers if disk is too hot)
+    vphi2 = np.maximum(vphi2, 0.0) # guard (only triggers if disk is too hot)
     v_phi = np.sqrt(vphi2)
 
-    fluid.dens[:, :] = Sigma
-    fluid.vel1[:, :] = 0.0                   # v_R = 0
-    fluid.vel2[:, :] = v_phi                 # balanced (sub-Keplerian) rotation
+    fluid.dens[:, :] = Sigma; fluid.pres[:, :] = P
+    fluid.vel1[:, :] = 0.0 # v_R = 0
+    fluid.vel2[:, :] = v_phi # balanced (sub-Keplerian) rotation
     fluid.vel3[:, :] = 0.0
-    fluid.pres[:, :] = P
-
-    # ------------------------------------------------------------------
-    # Gravity acceleration
-    # ------------------------------------------------------------------
-    g_R_star = -M_star / R**2
-
-    # planet gravity in Cartesian, then rotate to polar
-    dx = R * np.cos(phi) - R_planet * np.cos(phi_planet)
-    dy = R * np.sin(phi) - R_planet * np.sin(phi_planet)
-    d  = np.sqrt(dx**2 + dy**2 + eps**2)
-    g_x = -M_planet * dx / d**3
-    g_y = -M_planet * dy / d**3
-
-    g_R_planet   =  g_x * np.cos(phi) + g_y * np.sin(phi)
-    g_phi_planet = -g_x * np.sin(phi) + g_y * np.cos(phi)
-
-    sl = (slice(grid.Ngc, grid.Nx1r), slice(grid.Ngc, grid.Nx2r))
-    fluid.F1[:, :] = (g_R_star + g_R_planet)[sl]
-    fluid.F2[:, :] = (g_phi_planet)[sl]
 
     # periodic in phi, open in R
     par.BC[0] = 'free'; par.BC[1] = 'peri'
     par.BC[2] = 'free'; par.BC[3] = 'peri'
+    
+    # radial boundaries: ghost cells hold the initial (sub-Keplerian) equilibrium
+    Ngc = grid.Ngc
+    ghost_in  = np.s_[0:Ngc,  Ngc:-Ngc]          # R < R_in
+    ghost_out = np.s_[-Ngc:, Ngc:-Ngc]           # R > R_out
+    par.BC_fixed[0] = [(0, grid.Nx2, {'dens': Sigma[ghost_in],  'pres': P[ghost_in],
+                                      'vel1': 0.0, 'vel2': v_phi[ghost_in],  'vel3': 0.0})]
+    par.BC_fixed[2] = [(0, grid.Nx2, {'dens': Sigma[ghost_out], 'pres': P[ghost_out],
+                                      'vel1': 0.0, 'vel2': v_phi[ghost_out], 'vel3': 0.0})]
 
+    #set function for gravity potential evaluation
+    par.before_step = lambda grid, state, par, dt: planet_gravity_polar(
+        grid, state, par, M_star=M_star, M_planet=M_planet, r_planet=R_planet,
+        phi0=phi_planet, indirect=True, soft=eps)
+    par.before_step(grid, fluid, par, 0.0)   
+    
     return grid, fluid, par, eos
-
 
 
 def IC_HD2D_jet_cyl(grid, fluid, par):
@@ -1175,7 +1196,7 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     cocoon and Mach disk.
 
     Coordinate system : cylindrical (R, Z) = (x1, x2)
-    Domain            : R in [0, 5], Z in [0, 25]
+    Domain            : R in [0, 10], Z in [0, 25]
     Inlet (face 1)    : R < 1, rho=1, v_z=6, p = rho cs^2 / gamma  (Mach 6)
     Ambient           : rho=10, v=0, same p     (eta = rho_jet/rho_amb = 0.1)
 
@@ -1198,27 +1219,23 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
     grid.CylindricalGrid(R_in, R_out, Z_in, Z_out)
     par.timenow = 0.0
     par.timefin = 15.0
-    eos = EOSdata(5.0 / 3.0)
+    eos = EOSdata(5.0/3.0)
 
     # --- aliases ---
     Ngc  = grid.Ngc; Nx1  = grid.Nx1; Nx1r = grid.Nx1r
 
     # --- jet / ambient parameters (Mach 6, pressure equilibrium) ---
     Mach    = 6.0
-    rho_jet = 1.0
-    rho_amb = 10.0                       # eta = rho_jet/rho_amb = 0.1
-    cs_jet  = 1.0                        # normalise the jet sound speed
-    v_jet   = Mach * cs_jet              # => internal Mach number = 6
+    rho_jet = 1.0; rho_amb = 10.0 # eta = rho_jet/rho_amb = 0.1
+    cs_jet  = 1.0 # normalise the jet sound speed
+    v_jet   = Mach * cs_jet # => internal Mach number = 6
     p_jet   = rho_jet * cs_jet**2 / eos.GAMMA   # p = rho cs^2 / gamma  (= 0.6)
-    p_amb   = p_jet                      # pressure-matched across the nozzle
+    p_amb   = p_jet # pressure-matched across the nozzle
     r_jet   = 1.0
 
     # --- uniform ambient everywhere (incl. ghosts), vectorised ---
-    fluid.dens[:, :] = rho_amb
-    fluid.pres[:, :] = p_amb
-    fluid.vel1[:, :] = 0.0               # v_R
-    fluid.vel2[:, :] = 0.0               # v_Z
-    fluid.vel3[:, :] = 0.0               # v_phi
+    fluid.dens[:, :] = rho_amb; fluid.pres[:, :] = p_amb
+    fluid.vel1[:, :] = fluid.vel2[:, :] = fluid.vel3[:, :] = 0.0 #v_R,Z,phi = 0
 
     # --- nozzle extent along R (tangential to the bottom face) ---
     Rc = grid.cx1[Ngc:Nx1r, Ngc]         # 1D interior R cell-centres
@@ -1240,11 +1257,161 @@ def IC_HD2D_jet_cyl(grid, fluid, par):
 
     # --- boundaries: axis at R=0, wall at Z=0 (overridden by the nozzle),
     #     outflow at R=5 and Z=20 ---
-    par.BC[0] = 'axis'                   # x1 inner  (R = 0)
-    par.BC[1] = 'wall'                   # x2 inner  (Z = 0, nozzle via BC_fixed)
-    par.BC[2] = 'free'                   # x1 outer  (R = 5)
-    par.BC[3] = 'free'                   # x2 outer  (Z = 20)
+    par.BC[0] = 'axis'  # x1 inner  (R = 0)
+    par.BC[1] = 'wall'  # x2 inner  (Z = 0 + nozzle via BC_fixed)
+    par.BC[2] = 'free'  # x1 outer  (R = 5)
+    par.BC[3] = 'free'  # x2 outer  (Z = 20)
     return grid, fluid, par, eos
 
 
+def IC_HD1D_Jeans(grid, fluid, par):
+    """
+    Linear Jeans instability of a uniform self-gravitating gas (periodic).
 
+    rho = rho0 (1 + eps cos kx),  p = p0 (rho/rho0)^gamma (adiabatic mode),  v = 0
+    Linear theory:  omega^2 = cs^2 k^2 - 4 pi G rho0
+        omega^2 < 0 :  delta(t) = eps cosh(sigma t)      (collapse)
+        omega^2 > 0 :  delta(t) = eps cos(omega t)       (Jeans-modified sound wave)
+    Choose the branch with  jeans_ratio = 4 pi G rho0 / (cs k)^2  (= (k_J/k)^2):
+    > 1 unstable, < 1 stable.
+
+    In a periodic box the Poisson solver subtracts the mean density (the
+    "Jeans swindle") -- here this is exactly the intended physics.
+    Gravity is recomputed once per step (par.before_step), so the coupling
+    is first-order accurate in time.
+    """
+    print("1D Jeans instability (periodic)")
+
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+    eos = EOSdata(5.0/3.0)
+
+    rho0, cs, eps = 1.0, 1.0, 1.0e-4
+    k = 2.0 * np.pi # one wavelength in the box
+    jeans_ratio = 2.0 # 4 pi G rho0 / (cs k)^2 ; try 0.5 for the stable branch
+    G = jeans_ratio * (cs * k)**2 / (4.0 * np.pi * rho0)
+    w2 = (cs * k)**2 * (1.0 - jeans_ratio)
+
+    p0 = rho0 * cs**2 / eos.GAMMA
+    fluid.dens[:, :] = rho0 * (1.0 + eps * np.cos(k * grid.cx1))
+    fluid.pres[:, :] = p0 * (fluid.dens / rho0)**eos.GAMMA
+    fluid.vel1[:, :] = 0.0; fluid.vel2[:, :] = 0.0; fluid.vel3[:, :] = 0.0
+
+    par.timenow = 0.0
+    if w2 < 0.0:
+        par.timefin = 3.0 / np.sqrt(-w2) # growth by cosh(3) ~ 10: still linear
+    else:
+        par.timefin = 2.0 * np.pi / np.sqrt(w2) # one full oscillation period
+
+    par.BC[:] = 'peri'
+    par.before_step = lambda grid, state, par, dt: selfgravity_poisson(
+        grid, state, par, G=G, BC=['peri'] * 4)
+    return grid, fluid, par, eos
+
+
+def IC_HD2D_collapse_sph(grid, fluid, par):
+    """
+    Pressureless (cold) collapse of a uniform self-gravitating sphere,
+    spherical-polar (r, theta) grid; Nx2 = 1 gives the purely radial problem.
+
+    A sphere of radius R0 and density rho0 starts at rest in a tenuous
+    ambient medium; pressure is dynamically negligible (sound-crossing time
+    >> free-fall time). The sphere stays uniform and every shell follows the
+    free-fall solution  (the same for all shells, since M(<r)/r^3 = const), 
+    (see the analytical solution by Colgate and White, ApJ (1966))
+    reaching the centre at  t_ff = sqrt(3 pi / (32 G rho0)).
+    The ambient medium is hot (c_s = 2) and dilute.
+
+    Gravity: Poisson solve with an isolated boundary condition -- the outer
+    radial face gets the exact exterior (monopole) potential -G M/r_out of
+    the total mass on the grid (exact for a spherical mass distribution);
+    r = 0 and the theta axes are zero-flux ('free').
+    """
+    print("cold collapse of a uniform sphere (spherical-polar, self-gravity)")
+
+    R0, r_out = 1.0, 2.0
+    grid.SphericalPolarGrid(0.0, r_out, 0.0, np.pi)
+    eos = EOSdata(5.0/3.0)
+
+    G, rho0, rho_amb = 1.0, 1.0, 1.0e-3
+    # The CFL condition sees only sound and flow speeds, not the gravitational
+    # acceleration: gas that is cold AND at rest would allow a first step of a
+    # sizeable fraction of t_ff.
+    cs_amb = 2.0
+    p0 = rho_amb * cs_amb**2 / eos.GAMMA
+    t_ff = np.sqrt(3.0 * np.pi / (32.0 * G * rho0))
+    par.timenow = 0.0; par.timefin = 0.95 * t_ff
+
+    fluid.dens[:, :] = np.where(grid.cx1 < R0, rho0, rho_amb)
+    fluid.pres[:, :] = p0
+    fluid.vel1[:, :] = 0.0; fluid.vel2[:, :] = 0.0; fluid.vel3[:, :] = 0.0
+
+    par.BC[0] = 'axis'; par.BC[1] = 'axis'
+    par.BC[2] = 'free'; par.BC[3] = 'axis'
+
+    def gravity(grid, state, par, dt = 0.0):
+        Ngc = grid.Ngc
+        M = np.sum(grid.cVol * state.dens[Ngc:-Ngc, Ngc:-Ngc])   # total mass on the grid
+        return selfgravity_poisson(grid, state, par, G=G,
+                                   BC=['free', 'free', 'dirichlet', 'free'],
+                                   BC_value={2: -G * M / r_out})
+    par.before_step = gravity
+    return grid, fluid, par, eos
+
+
+def IC_HD2D_merger(grid, fluid, par):
+    """
+    Merger of two self-gravitating Gaussian gas blobs in a periodic box
+    (cf. the "merger" setup of the Ulula code, Diemer 2025, Fig. 5).
+
+    Two identical blobs,  rho = rho_bg + rho_b [exp(-|x-x1|^2/2s^2) + exp(-|x-x2|^2/2s^2)],
+    in a uniform-pressure background, fall together under their mutual gravity,
+    collide, bounce and slowly settle into a single oscillating object.
+    Optional counter-moving velocities (v_orb) give the pair angular momentum
+    and an off-axis, spiralling merger.
+
+    NB: in 2D Cartesian geometry the Poisson equation describes infinitely
+    long "cylinders", so the force between the blobs falls off as 1/d, not
+    1/d^2. In a periodic box the mean density is subtracted from the source ---
+    only the density contrast gravitates.
+
+    Useful checks: total mass is conserved to round-off; the mirror symmetry
+    of the set-up (x -> 1-x, y -> 1-y; and y -> 1-y for v_orb = 0) is preserved;
+    the total energy E_kin + E_th + (1/2) int rho Phi dV is conserved only to
+    truncation error, since gravity enters as a non-conservative source.
+    """
+    print("merger of two self-gravitating blobs (periodic box)")
+
+    grid.CartesianGrid(0.0, 1.0, 0.0, 1.0)
+    eos = EOSdata(5.0 / 3.0)
+
+    G      = 1.0
+    rho_bg = 0.1          # background density
+    rho_b  = 1.0          # blob peak density (above background)
+    s      = 0.05         # blob Gaussian width
+    d      = 0.2          # half-separation: centres at (0.5 -/+ d, 0.5)
+    p0     = 0.01         # uniform pressure -> blob line mass 2 pi s^2 rho_b ~ 0.016
+                          # is below the critical 2 c_s^2 / G ~ 0.033: blobs are
+                          # pressure-supported and do not collapse on their own
+    v_orb  = 0.0          # |v_y| of each blob (opposite signs); 0 = head-on
+
+    par.timenow = 0.0; par.timefin = 10.0
+
+    x, y = grid.cx1, grid.cx2
+    g1 = np.exp(-((x - (0.5 - d))**2 + (y - 0.5)**2) / (2.0 * s**2))
+    g2 = np.exp(-((x - (0.5 + d))**2 + (y - 0.5)**2) / (2.0 * s**2))
+    fluid.dens[:, :] = rho_bg + rho_b * (g1 + g2)
+    fluid.pres[:, :] = p0
+    fluid.vel1[:, :] = 0.0
+    fluid.vel2[:, :] = v_orb * (g1 - g2) / (g1 + g2 + 1e-30) * (g1 + g2 > 1e-3)
+    fluid.vel3[:, :] = 0.0
+
+    par.BC[:] = 'peri'
+    
+    def gravity(grid, state, par, dt = 0.0):
+        Ngc = grid.Ngc
+        M = np.sum(grid.cVol * state.dens[Ngc:-Ngc, Ngc:-Ngc])   # total mass on the grid
+        return selfgravity_poisson(grid, state, par, G=G, BC=['peri', 'peri', 'peri', 'peri'])
+    par.before_step = gravity
+        
+    return grid, fluid, par, eos

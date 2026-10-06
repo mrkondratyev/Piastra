@@ -59,7 +59,7 @@ mrkondratyev
 
 import numpy as np
 from src.common.boundaries import apply_bc_scalar, apply_bc_vector
-
+from src.models.rMHD.rMHD_riemann_approx import LLF_flux, HLL_flux
 
 # ============================================================================
 # Helpers: derived quantities from primitives
@@ -103,7 +103,7 @@ def _b_squared(W, v1, v2, v3, B1, B2, B3):
 
 def prim2cons_rMHD(dens, vel1, vel2, vel3, pres, B1, B2, B3, eos):
     """
-    Convert primitive to conservative variables for an ideal-gas SRMHD MHD.
+    Convert primitive to conservative variables for an ideal-gas SRMHD.
 
     Parameters
     ----------
@@ -145,19 +145,19 @@ def cons2prim_rMHD(mass, mom1, mom2, mom3, ener, Bcon1, Bcon2, Bcon3, x_init, eo
     Recover primitive variables from conservative variables for SRMHD.
 
     Uses the scalar variable  x = rho h W^2  and solves f(x) = 0 with
-    Newton-Raphson (numerical derivative, following the rHD approach).
+    Newton-Raphson (numerical derivative in contrast to the rHD approach).
 
     The velocity is recovered analytically from the momentum equation:
         v_i = (S_i + (S.B / x) B_i) / (x + B^2)
 
     Parameters
     ----------
-    mass           : ndarray  D  (baryon density)
-    mom1,mom2,mom3 : ndarray  S_i (momentum density)
-    ener           : ndarray  E  (total energy density)
-    B1,B2,B3       : ndarray  magnetic field components
-    x_init         : ndarray  initial guess for x = rho h W^2
-    eos            : EOSdata
+    mass              : ndarray  D  (baryon density)
+    mom1,mom2,mom3    : ndarray  S_i (momentum density)
+    ener              : ndarray  E  (total energy density)
+    Bcon1,Bcon2,Bcon3 : ndarray  magnetic field components
+    x_init            : ndarray  initial guess for x = rho h W^2
+    eos               : EOSdata
 
     Returns
     -------
@@ -398,113 +398,21 @@ def Riemann_rMHD(rhol, rhor,
         vxl, vxr, vyl, vyr = vyl, vyr, -vxl, -vxr
         bxl, bxr, byl, byr = byl, byr, -bxl, -bxr
 
-    # Normal B-field: use arithmetic average (as in NR MHD)
-    Bxn = 0.5 * (bxl + bxr)
-
-    # ----------------------------------------------------------------
-    # Derived quantities (left state)
-    # ----------------------------------------------------------------
-    Wl    = _lorentz(vxl, vyl, vzl)
-    enthl = eos.enthalpy_sr(rhol, pl)
-    b2l, vdBl, Bsql = _b_squared(Wl, vxl, vyl, vzl, Bxn, byl, bzl)
-    vsql = vxl**2 + vyl**2 + vzl**2
-
-    # Left conservative state: S_i = (rho h W^2 + B^2) v_i - (v.B) B_i
-    zl    = rhol * enthl * Wl**2 + Bsql
-    Dl    = rhol * Wl
-    S1l   = zl * vxl - vdBl * Bxn
-    S2l   = zl * vyl - vdBl * byl
-    S3l   = zl * vzl - vdBl * bzl
-    El    = rhol * enthl * Wl**2 - pl + 0.5 * (Bsql + Bsql * vsql - vdBl**2)
-    ptotl = pl + 0.5 * b2l
-
-    # 4-vector b components for momentum flux: b^i = B^i/W + W(v.B) v^i
-    bbxl  = Bxn / Wl + Wl * vdBl * vxl
-    bbyl  = byl / Wl + Wl * vdBl * vyl
-    bbzl  = bzl / Wl + Wl * vdBl * vzl
-
-    # Left physical fluxes (x-direction)
-    FDl   = Dl * vxl
-    FS1l  = S1l * vxl - Bxn * bbxl / Wl + ptotl
-    FS2l  = S2l * vxl - Bxn * bbyl / Wl
-    FS3l  = S3l * vxl - Bxn * bbzl / Wl
-    FEl   = S1l           # SR identity: energy flux = momentum density
-    FByl  = byl * vxl - Bxn * vyl
-    FBzl  = bzl * vxl - Bxn * vzl
-
-    # ----------------------------------------------------------------
-    # Derived quantities (right state)
-    # ----------------------------------------------------------------
-    Wr    = _lorentz(vxr, vyr, vzr)
-    enthr = eos.enthalpy_sr(rhor, pr)
-    b2r, vdBr, Bsqr = _b_squared(Wr, vxr, vyr, vzr, Bxn, byr, bzr)
-    vsqr = vxr**2 + vyr**2 + vzr**2
-
-    zr    = rhor * enthr * Wr**2 + Bsqr
-    Dr    = rhor * Wr
-    S1r   = zr * vxr - vdBr * Bxn
-    S2r   = zr * vyr - vdBr * byr
-    S3r   = zr * vzr - vdBr * bzr
-    Er    = rhor * enthr * Wr**2 - pr + 0.5 * (Bsqr + Bsqr * vsqr - vdBr**2)
-    ptotr = pr + 0.5 * b2r
-
-    bbxr  = Bxn / Wr + Wr * vdBr * vxr
-    bbyr  = byr / Wr + Wr * vdBr * vyr
-    bbzr  = bzr / Wr + Wr * vdBr * vzr
-
-    # Right physical fluxes (x-direction)
-    FDr   = Dr * vxr
-    FS1r  = S1r * vxr - Bxn * bbxr / Wr + ptotr
-    FS2r  = S2r * vxr - Bxn * bbyr / Wr
-    FS3r  = S3r * vxr - Bxn * bbzr / Wr
-    FEr   = S1r
-    FByr  = byr * vxr - Bxn * vyr
-    FBzr  = bzr * vxr - Bxn * vzr
-
-    # ----------------------------------------------------------------
-    # SR wave-speed estimates (Doppler-shifted fast magnetosonic speed)
-    # ----------------------------------------------------------------
-    cfl = fast_magnetosonic_speed_sr(rhol, pl, vxl, vyl, vzl, Bxn, byl, bzl, eos)
-    cfr = fast_magnetosonic_speed_sr(rhor, pr, vxr, vyr, vzr, Bxn, byr, bzr, eos)
-
-    # Relativistic signal speeds (Mignone & Bodo 2005 / PLUTO-style estimate)
-    Sl = np.minimum((vxl - cfl) / (1.0 - vxl * cfl + 1e-14),
-                    (vxr - cfr) / (1.0 - vxr * cfr + 1e-14))
-    Sr = np.maximum((vxl + cfl) / (1.0 + vxl * cfl + 1e-14),
-                    (vxr + cfr) / (1.0 + vxr * cfr + 1e-14))
-
     # ----------------------------------------------------------------
     # LLF (Local Lax-Friedrichs / Rusanov)
     # ----------------------------------------------------------------
     if solver_type == 'LLF':
 
-        lam = np.maximum(np.abs(Sl), np.abs(Sr)) # 1.0
-
-        Fmass = 0.5 * (FDl  + FDr  - lam * (Dr  - Dl ))
-        Fmom1 = 0.5 * (FS1l + FS1r - lam * (S1r - S1l))
-        Fmom2 = 0.5 * (FS2l + FS2r - lam * (S2r - S2l))
-        Fmom3 = 0.5 * (FS3l + FS3r - lam * (S3r - S3l))
-        Fetot = 0.5 * (FEl  + FEr  - lam * (Er  - El ))
-        Fbfix = np.zeros_like(Fmass)
-        Fbfiy = 0.5 * (FByl + FByr - lam * (byr - byl))
-        Fbfiz = 0.5 * (FBzl + FBzr - lam * (bzr - bzl))
+        Fmass, Fmom1, Fmom2, Fmom3, Fetot, Fbfix, Fbfiy, Fbfiz = \
+              LLF_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos)
 
     # ----------------------------------------------------------------
     # HLL (Harten-Lax-van Leer)
     # ----------------------------------------------------------------
     elif solver_type == 'HLL':
 
-        Sl = np.minimum(Sl, 0.0)
-        Sr = np.maximum(Sr, 0.0)
-
-        Fmass = (Sr * FDl  - Sl * FDr  + Sr * Sl * (Dr  - Dl )) / (Sr - Sl)
-        Fmom1 = (Sr * FS1l - Sl * FS1r + Sr * Sl * (S1r - S1l)) / (Sr - Sl)
-        Fmom2 = (Sr * FS2l - Sl * FS2r + Sr * Sl * (S2r - S2l)) / (Sr - Sl)
-        Fmom3 = (Sr * FS3l - Sl * FS3r + Sr * Sl * (S3r - S3l)) / (Sr - Sl)
-        Fetot = (Sr * FEl  - Sl * FEr  + Sr * Sl * (Er  - El )) / (Sr - Sl)
-        Fbfix = np.zeros_like(Fmass)
-        Fbfiy = (Sr * FByl - Sl * FByr + Sr * Sl * (byr - byl)) / (Sr - Sl)
-        Fbfiz = (Sr * FBzl - Sl * FBzr + Sr * Sl * (bzr - bzl)) / (Sr - Sl)
+        Fmass, Fmom1, Fmom2, Fmom3, Fetot, Fbfix, Fbfiy, Fbfiz = \
+              HLL_flux(rhol,rhor, vxl,vxr, vyl,vyr, vzl,vzr, pl,pr, bxl,bxr, byl,byr, bzl,bzr, eos)
 
     else:
         
@@ -542,6 +450,7 @@ def boundCond_rMHD(grid, BC, BCm, MHD):
     ----------
     grid  : Grid
     BC    : array of 4 str  --  [x1_inner, x2_inner, x1_outer, x2_outer]
+    BCm   : array of 4 str  --  [x1_inner, x2_inner, x1_outer, x2_outer]
     fluid : SimState
 
     Returns

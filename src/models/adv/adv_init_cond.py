@@ -6,11 +6,18 @@ This module provides functions to set up simple 1D and 2D linear advection
 test problems. It initializes the advected quantity, velocity fields, 
 and simulation time parameters.
 
+Currently implemented
+---------------------
+  IC_adv1D_smooth     : 1D smooth gaussian advection
+  IC_adv1D_disc       : 1D discontinuous profile advection
+  IC_adv2D_smooth     : 2D smooth gaussian advection
+  IC_adv2D_disc       : 2D discontinuous profile advection
+  IC_adv_user_defined : placeholder for custom ICs
+
 Author: mrkondratyev
 Date: June 14, 2024
 """
 import numpy as np
-
 
 
 def IC_adv_user_defined(grid, adv, par):
@@ -22,7 +29,7 @@ def IC_adv_user_defined(grid, adv, par):
     grid : object
         Grid object containing cell coordinates and ghost cells.
     adv : object
-        Advected state object with attribute `dens` (2D array of advected quantity)
+        SimState object with attribute `dens` (2D array of advected quantity)
         and velocity components `vel1` and `vel2`.
     par : object
         Simulation parameters including `timefin` and `timenow`.
@@ -30,7 +37,7 @@ def IC_adv_user_defined(grid, adv, par):
     Returns
     -------
     grid, adv, par : objects
-        Updated advected state and simulation parameters.
+        SimState and simulation parameters.
 
     Notes
     -----
@@ -57,7 +64,6 @@ def IC_adv_user_defined(grid, adv, par):
     )  
     
     return grid, adv, par
-
 
 
 def IC_adv1D_smooth(grid, adv, par):
@@ -113,7 +119,6 @@ def IC_adv1D_smooth(grid, adv, par):
     return grid, adv, par
 
 
-
 def IC_adv1D_disc(grid, adv, par):
     """
     Initialize a 1D linear advection test problem with a discontinuous profile
@@ -159,7 +164,6 @@ def IC_adv1D_disc(grid, adv, par):
     par.BC[:] = 'peri'
 
     return grid, adv, par
-
 
 
 def IC_adv2D_smooth(grid, adv, par):
@@ -214,7 +218,6 @@ def IC_adv2D_smooth(grid, adv, par):
     par.BC[:] = 'peri'
     
     return grid, adv, par
-
 
 
 def IC_adv2D_disc(grid, adv, par):

@@ -19,8 +19,15 @@ Date: Tue Jun 25 13:21:17 2024
 
 import matplotlib.pyplot as plt
 import numpy as np
-from IPython.display import display, clear_output 
-
+# Live redraw inside Jupyter needs IPython.display; in plain python
+# (python main.py) the figure is redrawn in an interactive window instead.
+try:
+    from IPython import get_ipython
+    from IPython.display import display, clear_output
+    _IN_NOTEBOOK = (get_ipython() is not None
+                    and 'IPKernelApp' in get_ipython().config)
+except ImportError:
+    _IN_NOTEBOOK = False 
 
 def plot_setup(grid, var, time):
     """
@@ -207,5 +214,9 @@ def plotting(grid, var, time, line, ax, fig, im):
         im.set_clim(vmin=varmin, vmax=varmax)
         ax.set_title('solution at time = ' + str(np.round(time, 4)))
 
-    clear_output(wait=True)
-    display(fig)
+    if _IN_NOTEBOOK:                 # Jupyter: redraw the figure in the cell
+        clear_output(wait=True)
+        display(fig)
+    else:                            # plain python: interactive window
+        fig.canvas.draw_idle()
+        plt.pause(0.001)

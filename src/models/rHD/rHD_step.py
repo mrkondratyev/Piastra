@@ -12,6 +12,7 @@ It provides:
 - CFLcondition_rHD: SR-aware CFL timestep
 - oneStep_rHD_RK: RK1/RK2/RK3 update with prim <-> cons conversion
 - flux_calc_rHD: Godunov-type residuals with 4-velocity reconstruction
+- curv_source_rHD: curvature source terms inclusion for non-Cartesian geometries 
 
 Reconstruction strategy
 -----------------------
@@ -57,7 +58,7 @@ class rHD2D:
     eos : EOSdata
         Equation of state object.
     par : Parameters
-        Simulation parameters including CFL, RK_order, flux_type, rec_type.
+        Simulation parameters including CFL, RK_order, solver_type, rec_type.
     """
 
     def __init__(self, g, HD, eos, par):
@@ -87,6 +88,12 @@ class rHD2D:
         """
         dt = min(CFLcondition_rHD(self.g, self.HD, self.eos, self.par.CFL),
                  self.par.timefin - self.par.timenow)
+                 
+        # procedures that involve some evaluations before the timestep 
+        # e.g., self-gravity, cooling and so on 
+        if self.par.before_step is not None:
+            self.par.before_step(self.g, self.HD, self.par, dt) 
+                 
         self.HD = oneStep_rHD_RK(self.g, self.HD, self.eos, self.par, dt)
         self.par.timenow += dt
         return self.HD
@@ -119,12 +126,8 @@ def CFLcondition_rHD(g, HD, eos, CFL):
     """
     Compute the maximum stable timestep for 2D special-relativistic
     hydrodynamics using the SR CFL condition.
-
-    The maximum signal speed in each cell is estimated as
-        λ_max = max(|Sl|, |Sr|)
-    using the SR wave-speed formula from Mignone & Bodo (2005), eqs. (9)-(10).
-
-    A simplified but slightly conservative estimate is used here:
+    
+    A simplified but slightly conservative estimate for signal speeds is used here:
         λ ≈ (|v| + cs) / (1 + |v| cs)
     which bounds the actual fastest characteristic speed.
 
@@ -354,7 +357,6 @@ def flux_calc_rHD(g, HD, par, eos):
         p_rc = HD.pres[Ngc    :g.Nx1r + 1, Ngc:-Ngc]
         troubled = ((dens_L <= 0.0) | (dens_R <= 0.0) |
                     (pres_L <= 0.0) | (pres_R <= 0.0) |
-                    (W_L <= 0.0) | (W_R <= 0.0) |
                     (np.abs(p_rc - p_lc) > 0.33 * np.minimum(p_lc, p_rc)))
 
         # Fallback to PLM with minmod at troubled faces
@@ -402,7 +404,6 @@ def flux_calc_rHD(g, HD, par, eos):
         p_rc = HD.pres[Ngc:-Ngc, Ngc    :g.Nx2r + 1]
         troubled = ((dens_L <= 0.0) | (dens_R <= 0.0) |
                     (pres_L <= 0.0) | (pres_R <= 0.0) |
-                    (W_L <= 0.0) | (W_R <= 0.0) |
                     (np.abs(p_rc - p_lc) > 0.33 * np.minimum(p_lc, p_rc)))
         
         # Fallback to PLM with minmod at troubled faces
@@ -467,7 +468,7 @@ def curv_source_rHD(g, HD, eos):
     a non-Cartesian basis produces momentum source terms. The relativistic form
     differs from the Newtonian one by replacing the momentum-flux prefactor
 
-        dens            ->      rho_h * W**2
+        dens -> rho_h * W**2
 
     where  rho_h = rho + rho*eps + p  is the relativistic specific enthalpy
     (times rest density) and  W = 1/sqrt(1 - v^2)  is the Lorentz factor. The

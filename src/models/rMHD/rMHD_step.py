@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-rMHD_one_step.py
+rMHD_step.py
 ================
 
 Container class and time-stepping routines for 2D Special-Relativistic
 Magnetohydrodynamics (SRMHD) with Constrained Transport (CT) divergence control.
 
-This module mirrors MHD_one_step_CT.py for the relativistic MHD equations.
+This module mirrors MHD_step_CT.py for the relativistic MHD equations.
 Spatial reconstruction is performed on the 4-velocity components  u^i = W v^i
 (identical strategy to rHD_one_step.py) to guarantee  |v_face| < 1 after
 reconstruction.  The magnetic field is advanced using the Constrained Transport
 method ('flux-CT') so that div B = 0 is preserved to machine precision.
+
+Note that this solver does not work with fixed inflow boundary conditions 'BC_fixed'
 
 Components
 ----------
@@ -18,7 +20,8 @@ Components
   CFLcondition_rMHD       SR CFL timestep using fast magnetosonic speed
   oneStep_rMHD_RK_CT      TVD Runge-Kutta update (RK1 / RK2 / RK3)
   flux_calc_rMHD_CT       residual computation (Godunov fluxes + CT electric field)
-  boundCond_electric_field_rMHD   ghost-cell fill for face-centred electric field
+  boundCond_electric_field   ghost-cell fill for face-centred electric field
+  curv_source_rMHD_CT     curvature factors for momentum equations on curvilinear grids
 
 References
 ----------
@@ -68,6 +71,12 @@ class rMHD2D_CT:
     """
 
     def __init__(self, g, MHD, eos, par):
+        # Fixed (inflow) ghost states are not implemented for rMHD: with CT
+        # the boundary EMF would also have to be prescribed (see MHD2D_CT).
+        if any(par.BC_fixed.get(face) for face in (0, 1, 2, 3)):
+            raise ValueError(
+                "par.BC_fixed (fixed inflow states) is not supported by the "
+                "rMHD solver.")
         self.g = g
         self.MHD  = MHD
         self.eos  = eos
@@ -75,10 +84,14 @@ class rMHD2D_CT:
 
     def step_RK(self):
         """Advance the SRMHD state by one Runge-Kutta timestep."""
-        dt = min(
-            CFLcondition_rMHD(self.g, self.MHD, self.eos, self.par.CFL),
-            self.par.timefin - self.par.timenow,
-        )
+        dt = min(CFLcondition_rMHD(self.g, self.MHD, self.eos, self.par.CFL),
+            self.par.timefin - self.par.timenow)
+        
+        # procedures that involve some evaluations before the timestep 
+        # e.g., self-gravity, cooling and so on 
+        if self.par.before_step is not None:
+            self.par.before_step(self.g, self.MHD, self.par, dt) 
+                 
         self.MHD = oneStep_rMHD_RK_CT(self.g, self.MHD, self.eos, self.par, dt)
         self.par.timenow += dt
         return self.MHD
@@ -273,7 +286,7 @@ def oneStep_rMHD_RK_CT(g, MHD, eos, par, dt):
 
 
 # ============================================================================
-# Helper: call cons2prim_sr_MHD for a SimState object
+# Helper: call cons2prim_rMHD for a SimState object
 # ============================================================================
 
 def _prim_recovery(state, x_guess, Ngc, eos):
@@ -332,11 +345,8 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
     """
     MHD = boundCond_rMHD(g, par.BC, par.BCm, MHD)
 
-    Ngc  = g.Ngc
-    Nx1  = g.Nx1
-    Nx2  = g.Nx2
-    Nx1r = g.Nx1r
-    Nx2r = g.Nx2r
+    Ngc = g.Ngc; Nx1 = g.Nx1; Nx2 = g.Nx2
+    Nx1r = g.Nx1r; Nx2r = g.Nx2r
 
     MHD.divB[:, :] = 0.0
 
@@ -484,12 +494,12 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
     # ----------------------------------------------------------------
     # CT: electric field at cell corners  E_3 = -(v x B)_3
     # ----------------------------------------------------------------
-    fluxB21, fluxB12 = boundCond_electric_field_rMHD(g, fluxB21, fluxB12, par.BCm)
+    fluxB21, fluxB12 = boundCond_electric_field(g, fluxB21, fluxB12, par.BCm)
     
     #arithemtic average in 2D and 1D 
     ave = 4.0 if ((g.Nx1 > 1) & (g.Nx2 > 1)) else 2.0
         
-    #average electric field on the edges (flux-CT)
+    #average electric field on the edges (flux-CT by Balsara and Spicer (1999))
     Efld3 = (
         -(fluxB21[Ngc:Nx1r+1, Ngc-1:Nx2r  ] + fluxB21[Ngc:Nx1r+1, Ngc:Nx2r+1]) / ave
         + (fluxB12[Ngc-1:Nx1r,  Ngc:Nx2r+1] + fluxB12[Ngc:Nx1r+1, Ngc:Nx2r+1]) / ave
@@ -502,7 +512,7 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
     # Curvature source terms evaluation
     STv1, STv2, STv3 = curv_source_rMHD_CT(g, MHD, eos)
     
-    #relativistic "force" (actually it is approximate, since we do not solve GRHD)
+    #relativistic "force" (actually it is approximate, since we do not solve GRMHD eqns)
     rhoh = MHD.dens[Ngc:-Ngc, Ngc:-Ngc] * \
         eos.enthalpy_sr(MHD.dens[Ngc:-Ngc, Ngc:-Ngc],  \
         MHD.pres[Ngc:-Ngc, Ngc:-Ngc])
@@ -525,14 +535,14 @@ def flux_calc_rMHD_CT(g, MHD, par, eos):
 
 
 # ============================================================================
-# Electric-field boundary conditions (same structure as MHD_one_step_CT.py)
+# Electric-field boundary conditions (same structure as MHD_step_CT.py)
 # ============================================================================
 
-def boundCond_electric_field_rMHD(g, Efld3x1, Efld3x2, BC):
+def boundCond_electric_field(g, Efld3x1, Efld3x2, BC):
     """
     Apply boundary conditions to the face-centred z-electric field for CT.
 
-    Identical to boundCond_electric_field in MHD_one_step_CT.py.
+    Identical to boundCond_electric_field in MHD_step_CT.py.
 
     Parameters
     ----------

@@ -11,32 +11,32 @@ This class handles:
 - CFL-limited timestep calculation for 2D linear advection
 - Single-step Runge-Kutta updates (RK1, RK2, RK3)
 - Flux evaluation using either upwind or Lax-Wendroff schemes
-- Primitive variable reconstruction to cell faces for higher-order accuracy
-- Periodic boundary condition handling
+- Reconstruction to cell faces for higher-order accuracy
+- Various boundary condition handling
 
 The underlying methods are suitable for explicit, finite-volume advection
-simulations of scalar or vector fields.
+simulations of scalar fields.
 
 Attributes
 ----------
 g : object
     Grid object containing domain size, spacing, face areas, cell volumes, and ghost cells.
 adv : object
-    Advected state object containing:
+    SimState object containing:
         - adv : 2D array of advected scalar field
         - vel1, vel2 : velocity components in x1 and x2 directions
 par : object
     Simulation parameters including:
         - CFL : Courant number
         - RK_order : 'RK1', 'RK2', or 'RK3'
-        - flux_type : 'adv' (upwind) or 'LW' (Lax-Wendroff)
+        - solver_type : 'adv' (upwind) or 'LW' (Lax-Wendroff)
         - rec_type : reconstruction type
         - timenow : current simulation time
         - timefin : final simulation time
 
 Example usage
 -------------
->>> advector = Advection2D(grid, adv, par)
+>>> advector = Adv2D(grid, adv, par)
 >>> adv = advector.step_RK()  # advances the solution by one RK timestep
 """
 
@@ -65,7 +65,7 @@ class Adv2D:
         Advected state object, expected to have attributes adv (2D array), vel1, vel2.
     par : object
         Simulation parameters object, expected to have attributes CFL, RK_order,
-        flux_type ('adv' or 'LW'), rec_type, timenow, timefin.
+        solver_type ('adv' or 'LW'), rec_type, timenow, timefin.
     """
 
     def __init__(self, g, adv, par):
@@ -123,16 +123,16 @@ def oneStep_adv_RK(g, adv, par, dt):
     g : object
         Grid object containing cell sizes, face areas, and ghost cell count.
     adv : object
-        Advected state object containing 2D array of conservative variables and velocities.
+        SimState object containing 2D array of conservative variables and velocities.
     par : object
-        Simulation parameters including flux type ('adv' or 'LW') and RK order ('RK1', 'RK2', 'RK3').
+        Simulation parameters including solver type ('adv' or 'LW') and RK order ('RK1', 'RK2', 'RK3').
     dt : float
         Timestep to use for this RK iteration.
 
     Returns
     -------
     adv : object
-        Updated advected state object after one RK step.
+        Updated SimState object after one RK step.
 
     Notes
     -----
@@ -234,7 +234,7 @@ def CFLcondition_adv(g, adv, CFL):
     
     #SECOND APPROACH 
     inv_dt = np.max(np.abs(adv.vel1) / g.dx1[Ngc:-Ngc, Ngc:-Ngc] + \
-        np.abs(adv.vel2) / g.dx2[Ngc:-Ngc, Ngc:-Ngc])
+        np.abs(adv.vel2) / (g.dx2[Ngc:-Ngc, Ngc:-Ngc]*g.hx2[Ngc:-Ngc, Ngc:-Ngc]))
     
     return CFL / inv_dt 
 
@@ -253,9 +253,9 @@ def flux_calc_adv(g, adv, par, dt):
     g : object
         Grid object with cell sizes, volumes, face areas, and ghost cells.
     adv : object
-        Advected state object with 2D array of conservative variables and velocities.
+        SimState object with 2D array of conservative variables and velocities.
     par : object
-        Simulation parameters including flux_type ('adv' or 'LW') and reconstruction type.
+        Simulation parameters including solver_type ('adv' or 'LW') and reconstruction type.
     dt : float
         Timestep used for Lax-Wendroff flux.
 

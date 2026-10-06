@@ -53,10 +53,10 @@ class MHD2D_GLM:
     ----------
     g   : object
         Grid object with domain sizes, spacing, volumes, and face areas.
-    fluid : object
-        FluidState object containing primitive and conservative variables.
+    MHD : object
+        SimState object containing primitive and conservative variables.
     par : object
-        Simulation parameters including CFL, RK_order, flux_type, rec_type, phystime, phystimefin.
+        Simulation parameters including CFL, RK_order, solver_type, rec_type, timenow, timefin.
     eos : object
         Equation of state object.
     """
@@ -69,8 +69,8 @@ class MHD2D_GLM:
         ----------
         g : object
             Grid object.
-        fluid : object
-            FluidState object.
+        MHD : object
+            SimState object.
         eos : object
             Equation of state object.
         par : object
@@ -93,6 +93,12 @@ class MHD2D_GLM:
         """
         dt, c_h = CFLcondition_MHD(self.g, self.MHD, self.eos, self.par.CFL)
         dt = min(dt, self.par.timefin - self.par.timenow)
+        
+        # procedures that involve some evaluations before the timestep 
+        # e.g., self-gravity, cooling and so on 
+        if self.par.before_step is not None:
+            self.par.before_step(self.g, self.MHD, self.par, dt) 
+        
         self.MHD = oneStep_MHD_RK_GLM(self.g, self.MHD, self.eos, self.par, dt, c_h)
         self.par.timenow += dt
         return self.MHD
@@ -107,7 +113,7 @@ def _rk_stage(MHD_out, MHD_a, MHD_b, \
     ResB1, ResB2, ResB3, ResGLM, \
     dt, a, b, c):
     """
-    Set HD_out.* = a * HD_a.* + b * HD_b.* + c * dt * Res*
+    Set MHD_out.* = a * MHD_a.* + b * MHD_b.* + c * dt * Res*
  
     For SSP-RK, the standard combinations are:
       Stage 1 (predictor): a=1,    b=0,    c=-1     -> HD_h = HD - dt*R(HD)
@@ -139,7 +145,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     g : object
         Grid object.
     MHD : object
-        Fluid state object.
+        SimState object.
     eos : object
         Equation of state object.
     CFL : float
@@ -198,11 +204,11 @@ def oneStep_MHD_RK_GLM(g, MHD, eos, par, dt, c_h):
     g : object
         Computational grid with geometry and metric data.
     MHD : object
-        Fluid state containing primitive and conservative variables.
+        SimState containing primitive and conservative variables.
     eos : object
         Equation of state object.
     par : object
-        Simulation parameters (RK order, reconstruction type, flux type, etc.).
+        Simulation parameters (RK order, reconstruction type, solver type, etc.).
     dt : float
         Timestep size.
     c_h : float
@@ -211,7 +217,7 @@ def oneStep_MHD_RK_GLM(g, MHD, eos, par, dt, c_h):
     Returns
     -------
     MHD : object
-        Updated fluid state after one timestep.
+        Updated SimState after one timestep.
 
     Notes
     -----
@@ -251,6 +257,7 @@ def oneStep_MHD_RK_GLM(g, MHD, eos, par, dt, c_h):
             MHD.bfi2[Ngc:-Ngc, Ngc:-Ngc],
             MHD.bfi3[Ngc:-Ngc, Ngc:-Ngc],
             eos)
+    MHD.glmcon = MHD.bglm[Ngc:-Ngc, Ngc:-Ngc].copy()
     
     #residuals for conservative variables calculation
     #1st Runge-Kutta iteration - predictor stage
@@ -266,11 +273,11 @@ def oneStep_MHD_RK_GLM(g, MHD, eos, par, dt, c_h):
     if (par.RK_order == 'RK1'): 
         
         #simply rewrite the conservative state here for clarity
-        MHD.mass  = MHD_h.mass
-        MHD.mom1  = MHD_h.mom1; MHD.mom2 = MHD_h.mom2; MHD.mom3 = MHD_h.mom3
-        MHD.etot  = MHD_h.etot
-        MHD.bcon1 = MHD_h.bcon1; MHD.bcon2 = MHD_h.bcon2; MHD.bcon3 = MHD_h.bcon3
-        MHD.bglm  = MHD_h.bglm
+        MHD.mass   = MHD_h.mass
+        MHD.mom1   = MHD_h.mom1; MHD.mom2 = MHD_h.mom2; MHD.mom3 = MHD_h.mom3
+        MHD.etot   = MHD_h.etot
+        MHD.bcon1  = MHD_h.bcon1; MHD.bcon2 = MHD_h.bcon2; MHD.bcon3 = MHD_h.bcon3
+        MHD.glmcon = MHD_h.glmcon
     
     #second-order Runge-Kutta scheme
     elif (par.RK_order == 'RK2'):
@@ -346,7 +353,7 @@ def flux_calc_MHD_GLM(g, MHD, par, eos, c_h):
     grid : object
         Computational grid object.
     MHD : object
-        Fluid state (primitive + conservative variables).
+        SimState (primitive + conservative variables).
     eos : object
         Equation of state.
     par : object

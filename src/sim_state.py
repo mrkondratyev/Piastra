@@ -28,7 +28,7 @@ Notes
 - Magnetic field arrays (bfi*, fb*, bcon*, divB) are allocated for
   modes 'MHD' and 'rMHD'.
 - SWE arrays (b, b_x, b_y, f_c) include ghost cells so that source
-  term application in SWE_one_step.py can index them identically to
+  term application in SWE_step.py can index them identically to
   h, vel1, vel2. They are set once by the IC function and never change.
 - This module does not implement any solvers; it is pure storage.
   External solver routines access the arrays consistently regardless
@@ -122,10 +122,13 @@ class SimState:
         Set by the IC function; zero for flat bottom.
     b_x, b_y : ndarray, shape grid.grid_shape
         Bathymetry gradient components (with ghost cells).
-        Computed from b by the IC function using grid_misc.gradient().
+        Computed from b by the IC function using internal helper function 
+        (see SWE_init_cond.py).
     f_c : ndarray, shape grid.grid_shape
         Coriolis parameter (with ghost cells).
         May be spatially variable (beta-plane) or constant (zero).
+    g_ff : float
+        free-fall gravitational acceleration.
     """
 
     def __init__(self, grid, par):
@@ -152,7 +155,7 @@ class SimState:
             # free fall acceleration (constant)
             self.g_ff = 1.0
             # Bathymetry and its gradient (with ghost cells, set by IC function)
-            # b_x and b_y are computed via grid_misc.gradient() in the IC function
+            # b_x and b_y are computed via cell_gradient() in the IC function
             # and stored here so the time integrator can access them without
             # recomputing every step.
             self.b   = np.zeros(grid.grid_shape, dtype=np.double)

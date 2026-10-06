@@ -7,12 +7,12 @@ parameters.py
 Central module for storing simulation parameters for different
 fluid dynamics solvers: advection, hydrodynamics (HD), special-relativistic
 hydrodynamics (rHD), magnetohydrodynamics (MHD), special-relativistic
-magnetohydrodynamics (rMHD), thermal diffusion, and shallow water (SWE).
+magnetohydrodynamics (rMHD), thermal diffusion (diff), and shallow water (SWE).
 
 The Parameters class:
 - Defines defaults for numerical schemes
 - Stores boundary conditions, CFL, and timing info
-- Provides validation for mode and scheme selection
+- Provides validation for mode and scheme selection (other options are checked by the solvers)
 - Supports modes: 'adv', 'HD', 'rHD', 'MHD', 'rMHD', 'diff', 'SWE'
 
 Author: mrkondratyev
@@ -54,7 +54,7 @@ class Parameters:
         Options: 'PCM', 'PLM', 'PPMorig', 'PPM', 'WENO', 'MP5'.
         Not used for 'diff' mode.
     RK_order : str, optional
-        Runge-Kutta temporal integration order. Default is 'RK3'.
+        Runge-Kutta temporal integration order. Default is 'RK2'.
         Options: 'RK1', 'RK2', 'RK3'.
         Not used for 'diff' mode.
     solver_type : str, optional
@@ -62,19 +62,22 @@ class Parameters:
     CFL : float, optional
         Courant-Friedrichs-Lewy number. Default is 0.7.
     divb_tr : str, optional
-        Divergence of magnetic field treatment (MHD only): 'CT' , 'GLM', or '8wave'.
+        Divergence of magnetic field treatment (MHD only): 'CT', 'GLM', or '8wave'.
     rkl2_stages : int, optional
         Number of RKL2 stages s ≥ 2 (mode='diff', solver_type='rkl2' only).
         Default is 10.
 
     Attributes
     ----------
-    BC : np.ndarray of str
+    BC : np.ndarray (dtype=object) of str
         Boundary conditions for each face, default is 'free' on all sides
         (overwritten by the IC function for the chosen problem).
-    BCm : np.ndarray of str or None
+        Four boundaries are marked clock-wise as [x1_inner, x2_inner, x1_outer, x2_outer].
+    BCm : np.ndarray (dtype=object) of str, or None
         Boundary conditions for the magnetic field (MHD, rMHD only);
         None for all other modes.
+    BC_fixed : container for inflow/Dirichlet boundaries 
+    before_step : function for additional physics 
     timenow : float
         Current simulation time.
     timefin : float
@@ -121,7 +124,11 @@ class Parameters:
         self.timenow = 0.0; self.timefin = 0.0
 
         # Boundary conditions (set by IC function)
-        self.BC = np.array(["free", "free", "free", "free"], dtype=str)
+        # the list of boundaries is 
+        #[x1_inner, x2_inner, x1_outer, x2_outer]
+        # dtype=object: a dtype=str array would be "<U4" and silently cut longer
+        # names to 4 letters, e.g. a typo 'walls' -> 'wall', which then passes the check
+        self.BC = np.array(["free", "free", "free", "free"], dtype=object)
         # Fixed (Dirichlet) ghost-fill patches, keyed by face index 0..3.
         # Each entry: list of (start, end, {field: value}) tuples giving an
         # interior index range along that boundary and the prescribed state.
@@ -133,6 +140,15 @@ class Parameters:
         # solver type
         self.solver_type = (solver_type if solver_type is not None
                           else self._default_solver[mode])
+                                       
+        # Optional function f(grid, state, par, dt): extra physics done once
+        # per time step, before the hydro update (operator splitting, first order in time). 
+        # Called by the HD/rHD/MHD/rMHD solvers in step_RK, after dt is computed. 
+        # Examples: gravity (fill state.F1, state.F2), cooling.
+        # Change primitive variables (and F1, F2) only: the step recomputes the conserved ones from them.
+        # None = nothing to call. Not stored by save_data (a function); restart_simulation
+        # rebuilds it by re-running the problem's IC function on scratch objects.
+        self.before_step = None
 
         # ── Diffusion mode ────────────────────────────────────────────────
         if mode == "diff":
@@ -163,14 +179,14 @@ class Parameters:
           
         # ── rMHD ──────────────────────────────────────────────────────────
         if mode == "rMHD":
-            self.BCm = np.array(["free", "free", "free", "free"], dtype=str)
+            self.BCm = np.array(["free", "free", "free", "free"], dtype=object)
             if divb_tr not in ["CT"]:
                 print("CT scheme is only available for rMHD")
             self.divb_tr = "CT"
 
         # ── MHD ───────────────────────────────────────────────────────────
         elif mode == "MHD":
-            self.BCm = np.array(["free", "free", "free", "free"], dtype=str)
+            self.BCm = np.array(["free", "free", "free", "free"], dtype=object)
             if divb_tr not in ["CT", "8wave", "GLM"]:
                 raise ValueError(
                     f"Invalid divb_tr: '{divb_tr}'. "

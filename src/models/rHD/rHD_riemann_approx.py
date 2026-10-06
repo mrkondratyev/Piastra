@@ -241,7 +241,9 @@ def HLLC_flux(rhol, rhor, vxl, vxr, vyl, vyr, vzl, vzr, pl, pr, eos):
 
     # Contact wave speed  "Ss" (Mignone & Bodo 2005, eq. 18)
     disc  = np.maximum((etot_hll + Fmx_hll)**2 - 4.0 * momx_hll * FE_hll, 0.0)
-    Ss = ((etot_hll + Fmx_hll) - np.sqrt(disc)) / (2.0 * FE_hll + 1e-28)
+    #Ss = ((etot_hll + Fmx_hll) - np.sqrt(disc)) / (2.0 * FE_hll + 1e-28)
+    #this is the same as above, but without a possible division by small number
+    Ss = 2.0 * momx_hll / (etot_hll + Fmx_hll + np.sqrt(disc))
 
     # Starred pressure (Mignone & Bodo 2005, eq. 17)
     Pstar = (pl + Sl * Ss * El - (Ss + Sl - vxl) * momxl) / (1.0 - Sl * Ss) 

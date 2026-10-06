@@ -1,79 +1,60 @@
 # -*- coding: utf-8 -*-
 """
-riemann_exact_swe.py
+SWE_riemann_exact.py
 ====================
 
 Exact Riemann solver for the 1D shallow water equations (SWE).
 
-The SWE in conservation form (normal direction x, tangential direction y):
+Equations (x = normal direction, y = tangential direction):
 
-    h_t  + (h vx)_x                          = 0
-    (h vx)_t + (h vx^2 + g h^2 / 2)_x       = 0
-    (h vy)_t + (h vx vy)_x                   = 0
+    h_t      + (h vx)_x                = 0
+    (h vx)_t + (h vx^2 + g h^2 / 2)_x  = 0
+    (h vy)_t + (h vx vy)_x             = 0
 
-where:
-    h   – water height (plays the role of density)
-    vx  – normal velocity
-    vy  – tangential velocity (passively advected across contacts)
-    g   – gravitational acceleration
+h is the water height, vx, vy the normal and tangential velocities, g the
+gravitational acceleration, c = sqrt(g h) the gravity-wave speed.
 
 Wave structure
 --------------
-The SWE Riemann problem produces exactly **three wave families**:
+    lambda_1 = vx - c   left wave:  shock or rarefaction
+    lambda_2 = vx       shear wave: only vy jumps (h, vx continuous)
+    lambda_3 = vx + c   right wave: shock or rarefaction
 
-    λ₁ = vx − c    (left-going, genuinely nonlinear → shock or rarefaction)
-    λ₂ = vx        (contact / entropy wave; vy jumps here, vx and h are continuous)
-    λ₃ = vx + c    (right-going, genuinely nonlinear → shock or rarefaction)
+The SWE are the isentropic gas-dynamics equations with rho -> h,
+p -> g h^2 / 2 (gamma = 2), so the algorithm follows Toro (2009), Ch. 4.
 
-where c = sqrt(g h) is the gravity-wave (shallow-water) speed.
+Star state
+----------
+h* is the root of
 
-SWE are mathematically equivalent to the isentropic gas-dynamics equations
-with an adiabatic exponent γ = 2 and the pressure law p = g h²/2.
-This means the exact-solution algorithm mirrors the gas-dynamics case
-(Toro 2009), with the following substitutions:
+    F(h*) = f_L(h*) + f_R(h*) + (vx_R - vx_L) = 0,
 
-    gas dynamics   ↔   SWE
-    ─────────────────────────────────────
-    ρ              ↔   h
-    p = ρ^γ / γ   ↔   g h²/2
-    c = sqrt(γ p/ρ) ↔  sqrt(g h)
-    γ = 2
+    f_K = 2 (c* - c_K)                                    rarefaction, h* <= h_K
+    f_K = (h* - h_K) sqrt( g (h* + h_K) / (2 h* h_K) )    shock,       h* >  h_K
 
-The Riemann invariants across a rarefaction fan are
-    R±  =  vx ± 2c            (analogous to the γ=2 gas-dynamics invariants)
+with c* = sqrt(g h*), and then  vx* = (vx_L + vx_R)/2 + (f_R - f_L)/2.
+Shocks move with  S_L = vx_L - sqrt(g h* (h* + h_L) / (2 h_L))  and
+S_R = vx_R + sqrt(g h* (h* + h_R) / (2 h_R)); inside a rarefaction the
+Riemann invariant vx +- 2c is constant. Across the shear wave vy is
+upwinded: vy_L where x/t < vx*, vy_R otherwise.
 
-Across a shock (Rankine-Hugoniot):
-    h* (vx* - S) = h_K (vx_K - S)          (mass)
-    h* vx* (vx* - S) + g h*²/2 = h_K vx_K (vx_K - S) + g h_K²/2  (momentum)
-
-Eliminating S gives the shock-speed formula and the jump condition:
-    vx* - vx_K = ±(h* - h_K) sqrt( g/(2 h_K h*) * (h_K + h*) / 2 )
-
-which is the SWE analogue of Toro (2009)
-
-Contact wave
-------------
-The middle wave λ₂ = vx separates two states that share the same (h*, vx*)
-but may differ in vy.  The tangential velocity vy is determined by upwind
-selection: vy* = vy_L if the contact moves rightward (vx* ≥ 0), else vy_R.
-
-Two public interfaces
----------------------
-1.  ``exact_swe_godunov_state``
-        Vectorised: samples the exact solution at x/t = 0 for use as a
-        Godunov flux in the SWE finite-volume solver.
-
-2.  ``exact_swe_solution``
-        Scalar-initial-data version: returns (h, vx, vy) profiles on an
-        arbitrary array of x values at a given time t > 0.
-        Intended for generating reference solutions and convergence tests.
+Public interfaces
+-----------------
+exact_swe_godunov_state : vectorised state at x/t = 0 (Godunov flux,
+                          solver_type = 'Exact' in Riemann_SWE).
+exact_swe_solution      : (h, vx, vy) profiles at time t for scalar
+                          initial data (reference solutions, tests).
 
 References
 ----------
-(1) E. F. Toro, "Riemann Solvers and Numerical Methods for Fluid Dynamics" (2009) 
-(2) E. F. Toro, "Computational Algorithms for Shallow Water Equations" (2025)
+E. F. Toro, "Riemann Solvers and Numerical Methods for Fluid Dynamics",
+    3rd ed., Springer (2009)
+E. F. Toro, "Shock-Capturing Methods for Free-Surface Shallow Flows",
+    Wiley (2001)
+E. F. Toro, "Computational Algorithms for Shallow Water Equations",
+    Springer (2024)
 
-Author: mrkondratyev; tutorial style follows riemann_exact.py
+Author: mrkondratyev
 """
 
 import numpy as np
@@ -85,29 +66,14 @@ import numpy as np
 
 def _pressure_fn(h_star, h_K, vx_K, c_K, g):
     """
-    Evaluate the pressure-like function  f_K(h*)  for one side K of the fan.
+    Wave function f_K(h*) for side K (L or R):
 
-    This is the SWE analogue of Toro (2009), Eq. (5.54) / (5.56):
+        rarefaction (h* <= h_K):  f_K = 2 (c* - c_K)
+        shock       (h* >  h_K):  f_K = (h* - h_K) sqrt( g (h* + h_K) / (2 h* h_K) )
 
-    Rarefaction (h* ≤ h_K):
-        f_K = 2 (c* − c_K)  =  2 (sqrt(g h*) − sqrt(g h_K))
-
-    Shock (h* > h_K):
-        f_K = (h* − h_K) sqrt( g (h* + h_K) / (2 h* h_K) )
-
-    Parameters
-    ----------
-    h_star : float or ndarray   current height iterate in the star region
-    h_K    : float or ndarray   height on side K  (L or R)
-    vx_K   : float or ndarray   normal velocity on side K   (unused here, kept for API symmetry)
-    c_K    : float or ndarray   celerity on side K  = sqrt(g h_K)
-    g      : float              gravitational acceleration
-
-    Returns
-    -------
-    f : float or ndarray   value of the Riemann function
+    vx_K is unused (kept for a uniform call signature).
     """
-    #wave speed 
+    #wave speed
     c_star = np.sqrt(g * np.maximum(h_star, 0.0))
 
     # Rarefaction branch (isentropic): f = 2(c* - c_K)
@@ -125,25 +91,24 @@ def _pressure_fn(h_star, h_K, vx_K, c_K, g):
 
 def _pressure_fn_deriv(h_star, h_K, c_K, g):
     """
-    Derivative  df_K/dh*  needed by Newton-Raphson.
+    Derivative df_K/dh* for the Newton iteration:
 
-    Rarefaction:  df/dh* = c* / h*       (since dc*/dh* = g/(2 c*))
-    Shock:        df/dh* = g (3 h* + h_K) / (4 h* c_shk)
-                  where c_shk = sqrt(g(h*+h_K)/(2 h* h_K)) * (h*-h_K) would
-                  be the full expression; we differentiate the exact formula.
+        rarefaction:  df/dh* = g / c* = sqrt(g / h*)
+        shock:        df/dh* = g (2 h*^2 + h* h_K + h_K^2) / (4 h*^2 h_K Q),
+                      Q = sqrt( g (h* + h_K) / (2 h* h_K) )
+
+    The shock branch is coded as  Q - (h* - h_K) g / (4 h*^2 Q),  which is
+    the same expression.
     """
     c_star = np.sqrt(g * np.maximum(h_star, 0.0))
 
-    # Rarefaction: df/dh* = g / (2 c*) / 1  = sqrt(g / h*)
+    # Rarefaction: df/dh* = g / c* = sqrt(g / h*)
     df_rar = np.where(c_star > 0.0,
                       np.sqrt(g / np.maximum(h_star, 1e-30)),
                       np.zeros_like(h_star))
 
-    # Shock: differentiate f = (h*-h_K) sqrt(g(h*+h_K)/(2 h* h_K))
-    # Let A = g/(2 h_K),  q = (h* + h_K) / h*  = 1 + h_K/h*
-    # f = (h*-h_K) sqrt(A q)
-    # df/dh* = sqrt(A q) + (h*-h_K)/(2 sqrt(A q)) * A * d(q)/dh*
-    # d(q)/dh* = -h_K/h*^2
+    # Shock: differentiate f = (h*-h_K) sqrt(A q),
+    # A = g/(2 h_K),  q = (h* + h_K) / h*,  dq/dh* = -h_K / h*^2
     A    = g / (2.0 * np.maximum(h_K, 1e-30))
     q    = (h_star + h_K) / np.maximum(h_star, 1e-30)
     sqAq = np.sqrt(np.maximum(A * q, 0.0))
@@ -157,39 +122,23 @@ def _pressure_fn_deriv(h_star, h_K, c_K, g):
 
 def _initial_height_guess(h_L, vx_L, c_L, h_R, vx_R, c_R, g):
     """
-    Adaptive initial guess for h*.
+    Initial guess for h* (Toro 2001, Ch. 5):
 
-    Three estimates are blended:
+        PVRS (linearised):  h_pvrs = h_bar - (vx_R - vx_L) h_bar / (4 c_bar),
+                            h_bar = (h_L + h_R)/2,  c_bar = (c_L + c_R)/2
+        two rarefactions:   h_trr = c*^2 / g,
+                            c* = (c_L + c_R)/2 - (vx_R - vx_L)/4   (exact for two fans)
 
-    PVRS (linearised):
-        h_pvrs = ((c_L + c_R) - (vx_R - vx_L)/2)^2 / (4g)  ... wait,
-        more precisely the primitive-variable Riemann solver gives
-        h_pvrs = (c_L + c_R - (vx_R - vx_L)/4)^2 / g
-
-    Two-rarefaction (TRR): from setting both waves to rarefactions
-        h_trr = ((c_L + c_R - (vx_R - vx_L)/2) / (2*sqrt(g)) )^2
-        simplified to  h_trr = (c_L + c_R)/2 - (vx_R-vx_L)/4)^2 / g
-
-    Two-shock: iterative; approximated by PVRS.
-
-    In practice the two-rarefaction estimate is excellent for SWE because
-    rarefactions are more common than shocks (no entropy condition complication).
-    We use PVRS when h_pvrs lies between h_L and h_R, TRR for strong
-    rarefactions, and fall back to PVRS otherwise.
+    h_pvrs is used when it lies between h_L and h_R, h_trr otherwise.
     """
-    # PVRS estimate (primitive-variable linearisation for SWE)
-    # Linearises around arithmetic averages
+    # PVRS estimate (linearised around arithmetic averages)
     h_bar = 0.5 * (h_L + h_R)
     c_bar = 0.5 * (c_L + c_R)
     h_pvrs = h_bar - 0.25 * (vx_R - vx_L) * h_bar / c_bar
     h_pvrs = np.maximum(h_pvrs, 1e-14)
 
-    # Two-rarefaction estimate (exact for two rarefaction waves)
-    # From R+ invariant = R- invariant at x* :
-    # vx* + 2 c* = vx_L + 2 c_L   (left)
-    # vx* - 2 c* = vx_R - 2 c_R   (right)
-    # Adding: 4 c* = (vx_L - vx_R) + 2(c_L + c_R)
-    # c* = (c_L + c_R)/2 - (vx_R - vx_L)/4
+    # Two-rarefaction estimate, from the Riemann invariants
+    #   vx* + 2 c* = vx_L + 2 c_L,   vx* - 2 c* = vx_R - 2 c_R
     c_star_trr = 0.5 * (c_L + c_R) - 0.25 * (vx_R - vx_L)
     c_star_trr = np.maximum(c_star_trr, 1e-14)
     h_trr = c_star_trr**2 / g
@@ -206,24 +155,21 @@ def _initial_height_guess(h_L, vx_L, c_L, h_R, vx_R, c_R, g):
 def _solve_star_height(h_L, vx_L, c_L, h_R, vx_R, c_R, g,
                        tol=1e-8, max_iter=100):
     """
-    Newton-Raphson iteration for the star-region height h*.
+    Newton iteration for  F(h*) = f_L(h*) + f_R(h*) + (vx_R - vx_L) = 0.
 
-    Solves  F(h*) = f_L(h*) + f_R(h*) + (vx_R - vx_L) = 0
-
-    where f_K is defined in _pressure_fn.  
+    Stops when the relative change of h* is below tol in every cell (or
+    after max_iter iterations); h* is kept >= 1e-14.
 
     Parameters
     ----------
-    h_L, h_R   : float or ndarray   heights on left/right sides
-    vx_L, vx_R : float or ndarray   normal velocities
-    c_L, c_R   : float or ndarray   celerities  sqrt(g h)
-    g          : float
-    tol        : float              convergence tolerance on relative change
-    max_iter   : int
+    h_L, h_R, vx_L, vx_R, c_L, c_R : float or ndarray   left/right states, c = sqrt(g h)
+    g        : float
+    tol      : float   tolerance on the relative change of h*
+    max_iter : int
 
     Returns
     -------
-    h_star : float or ndarray   converged star-region height
+    h_star : float or ndarray
     """
     h_star = _initial_height_guess(h_L, vx_L, c_L, h_R, vx_R, c_R, g)
 
@@ -252,16 +198,7 @@ def _solve_star_height(h_L, vx_L, c_L, h_R, vx_R, c_R, g,
 
 def _compute_star_velocity(h_star, h_L, vx_L, c_L, h_R, vx_R, c_R, g):
     """
-    Star-region normal velocity  vx*  from h*.
-
-    From adding the two wave conditions:
-        vx* = 0.5*(vx_L + vx_R) + 0.5*(f_R(h*) - f_L(h*))
-
-    Parameters  mirror _solve_star_height.
-
-    Returns
-    -------
-    vx_star : float or ndarray
+    Star-region normal velocity:  vx* = (vx_L + vx_R)/2 + (f_R(h*) - f_L(h*))/2.
     """
     f_L = _pressure_fn(h_star, h_L, vx_L, c_L, g)
     f_R = _pressure_fn(h_star, h_R, vx_R, c_R, g)
@@ -276,35 +213,28 @@ def _sample_solution(S, h_L, vx_L, c_L, vy_L,
                           h_R, vx_R, c_R, vy_R,
                           h_star, vx_star, g):
     """
-    Sample the exact SWE Riemann solution at similarity speed  S = x/t.
+    Exact solution at the similarity speed S = x/t.
 
-    The wave pattern consists of:
-      - Left wave  (rarefaction fan or shock)
-      - Contact discontinuity at  S = vx*  (vy jumps here)
-      - Right wave (rarefaction fan or shock)
-
-    Parameters
-    ----------
-    S       : float or ndarray   sampling speed  x/t
-    h_L/R   : float or ndarray   left/right heights
-    vx_L/R  : float or ndarray   left/right normal velocities
-    c_L/R   : float or ndarray   left/right celerities
-    vy_L/R  : float or ndarray   left/right tangential velocities
-    h_star  : float or ndarray   star-region height
-    vx_star : float or ndarray   star-region normal velocity
-    g       : float
+    Left wave  (S < vx*):
+        shock (h* > h_L):        h_L for S <= S_L, h* otherwise,
+                                 S_L = vx_L - sqrt(g h* (h* + h_L) / (2 h_L))
+        rarefaction (h* <= h_L): head vx_L - c_L, tail vx* - c*, inside
+                                 vx = (vx_L + 2 c_L + 2 S)/3,  c = (vx_L + 2 c_L - S)/3
+    Right wave (S >= vx*), mirror image:
+                                 S_R = vx_R + sqrt(g h* (h* + h_R) / (2 h_R)),
+                                 head vx_R + c_R, tail vx* + c*, inside
+                                 vx = (vx_R - 2 c_R + 2 S)/3,  c = (S - vx_R + 2 c_R)/3
+    Inside a fan h = c^2 / g. Tangential velocity: vy_L for S < vx*, else vy_R.
 
     Returns
     -------
-    h, vx, vy : float or ndarray   sampled state
+    h, vx, vy : float or ndarray
     """
     c_star = np.sqrt(g * np.maximum(h_star, 0.0))
 
     # ── Left wave ────────────────────────────────────────────────────────
-    # Shock speed from the Rankine-Hugoniot mass condition:
-    #   S_L (h* − h_L) = h* vx* − h_L vx_L
-    #   → S_L = vx_L − sqrt( g h* (h* + h_L) / (2 h_L) )
-    # (derived by substituting f_L = vx_L − vx* into the mass jump)
+    # Shock speed (mass jump with vx_L - vx* = f_L):
+    #   S_L = vx_L - sqrt( g h* (h* + h_L) / (2 h_L) )
     S_shk_L = vx_L - np.sqrt(g * h_star * (h_star + h_L) /
                                (2.0 * np.maximum(h_L, 1e-30)))
 
@@ -312,11 +242,7 @@ def _sample_solution(S, h_L, vx_L, c_L, vy_L,
     S_head_L = vx_L - c_L       # leading edge of left fan
     S_tail_L = vx_star - c_star  # trailing edge of left fan
 
-    # Height and velocity inside left rarefaction fan
-    # From Riemann invariant  vx + 2c = vx_L + 2c_L  at all points in fan:
-    #   c_fan = (c_L + (vx_L - S)/2)  
-    #   vx_fan = (vx_L + 2 c_L + 2 S) / 3  
-    #   c_fan  = (vx_L + 2 c_L - S) / 3
+    # Inside the left fan: vx + 2c = vx_L + 2c_L and vx - c = S
     vx_fan_L = (vx_L + 2.0 * c_L + 2.0 * S) / 3.0
     c_fan_L  = (vx_L + 2.0 * c_L - S) / 3.0
     h_fan_L  = np.maximum(c_fan_L**2 / g, 0.0)
@@ -336,14 +262,14 @@ def _sample_solution(S, h_L, vx_L, c_L, vy_L,
     vx_left = np.where(h_star <= h_L, vx_left_rar, vx_left_shk)
 
     # ── Right wave ───────────────────────────────────────────────────────
-    # Shock speed (Rankine-Hugoniot):
-    #   S_R = vx_R + sqrt( g h* (h* + h_R) / (2 h_R) )
+    # Shock speed:  S_R = vx_R + sqrt( g h* (h* + h_R) / (2 h_R) )
     S_shk_R = vx_R + np.sqrt(g * h_star * (h_star + h_R) /
                                (2.0 * np.maximum(h_R, 1e-30)))
 
     S_head_R = vx_R + c_R        # leading edge of right fan
     S_tail_R = vx_star + c_star   # trailing edge of right fan
 
+    # Inside the right fan: vx - 2c = vx_R - 2c_R and vx + c = S
     vx_fan_R = (vx_R - 2.0 * c_R + 2.0 * S) / 3.0
     c_fan_R  = (S - vx_R + 2.0 * c_R) / 3.0
     h_fan_R  = np.maximum(c_fan_R**2 / g, 0.0)
@@ -375,39 +301,24 @@ def _sample_solution(S, h_L, vx_L, c_L, vy_L,
 
 def exact_swe_godunov_state(h_L, h_R, vx_L, vx_R, vy_L, vy_R, g):
     """
-    Sample the exact SWE Riemann solution at the cell interface (x/t = 0).
+    Exact SWE Riemann solution at the interface, x/t = 0 (vectorised).
 
-    Intended for use as the Godunov numerical flux inside the SWE
-    finite-volume solver (replace the HLL call in ``Riemann_flux_SWE``).
-    All arguments may be NumPy arrays for vectorised use over all interfaces.
+    Used as the Godunov flux by Riemann_SWE with solver_type = 'Exact':
+        F_h = h0 vx0,   F_hvx = h0 vx0^2 + g h0^2 / 2,   F_hvy = h0 vx0 vy0.
 
     Parameters
     ----------
-    h_L, h_R   : float or ndarray   left/right water heights
-    vx_L, vx_R : float or ndarray   left/right normal velocities
-    vy_L, vy_R : float or ndarray   left/right tangential velocities
-    g          : float              gravitational acceleration
+    h_L, h_R, vx_L, vx_R, vy_L, vy_R : float or ndarray   left/right states
+    g : float
 
     Returns
     -------
-    h0, vx0, vy0 : float or ndarray
-        Water height, normal velocity, and tangential velocity at x/t = 0.
-        Pass these directly to the SWE flux formula:
-            F_h   = h0 * vx0
-            F_hvx = h0 * vx0**2 + g * h0**2 / 2
-            F_hvy = h0 * vx0 * vy0
-
-    Raises
-    ------
-    ValueError
-        If the initial data generates a dry state (total Riemann invariant
-        condition violated: vx_R - vx_L ≥ 2*(c_L + c_R)).
+    h0, vx0, vy0 : float or ndarray   state at x/t = 0
 
     Notes
     -----
-    A dry-bed initial condition (h_L = 0 or h_R = 0) is handled by clamping
-    h_star to a small positive number; the result approaches the wet/dry front
-    speed in the limit.
+    No error is raised for dry or vacuum-generating data: h* is clamped to
+    1e-14, which approximates the wet/dry front.
     """
     h_L  = np.asarray(h_L,  dtype=float)
     h_R  = np.asarray(h_R,  dtype=float)
@@ -439,47 +350,35 @@ def exact_swe_solution(h_L, vx_L, vy_L,
                         h_R, vx_R, vy_R,
                         g, x, t, x0=0.5):
     """
-    Compute the exact solution of the 1D SWE Riemann problem at time t > 0.
+    Exact solution of the 1D SWE Riemann problem at time t > 0.
 
-    Given constant left and right states separated at x = x0, evaluates the
-    self-similar solution at every point in the array ``x``.
+    Left and right constant states are separated at x = x0; the
+    self-similar solution is evaluated at the points x.
 
     Parameters
     ----------
-    h_L, h_R   : float   left/right water heights (scalar)
-    vx_L, vx_R : float   left/right normal velocities
-    vy_L, vy_R : float   left/right tangential velocities
-    g          : float   gravitational acceleration
-    x          : array_like   spatial positions where solution is evaluated
-    t          : float        time  (must be > 0)
-    x0         : float        initial discontinuity position  (default 0.5)
+    h_L, vx_L, vy_L, h_R, vx_R, vy_R : float   left/right states
+    g  : float
+    x  : array_like   positions
+    t  : float        time (> 0)
+    x0 : float        initial discontinuity position (default 0.5)
 
     Returns
     -------
-    h  : ndarray   water height  at (x, t)
-    vx : ndarray   normal velocity
-    vy : ndarray   tangential velocity
+    h, vx, vy : ndarray
 
     Raises
     ------
     ValueError
-        If t ≤ 0 or if the data generates a complete dry-bed (h* → 0).
+        If t <= 0, or if the data separate completely (dry bed between
+        the two waves): vx_R - vx_L >= 2 (c_L + c_R).
 
     Examples
     --------
-    Classical dam-break (h_L=1, h_R=0.1, vx=vy=0, g=9.81):
+    Stoker dam break (wet bed), g = 1:
 
-    >>> import numpy as np
     >>> x = np.linspace(0, 1, 1000)
-    >>> h, vx, vy = exact_swe_solution(1.0, 0.0, 0.0,
-    ...                                 0.1, 0.0, 0.0,
-    ...                                 9.81, x, 0.3)
-
-    Wet-dam-break (Stoker 1957):
-
-    >>> h, vx, vy = exact_swe_solution(2.0, 0.0, 0.0,
-    ...                                 1.0, 0.0, 0.0,
-    ...                                 1.0, x, 0.5)
+    >>> h, vx, vy = exact_swe_solution(2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, x, 0.5)
     """
     if t <= 0.0:
         raise ValueError(f"Time must be positive, got t = {t}.")
@@ -528,7 +427,8 @@ def exact_swe_solution(h_L, vx_L, vy_L,
 
 
 # =========================================================================
-#  Quick self-test / demo  (run with  python SWE/riemann_exact.py)
+#  Quick self-test / demo
+#  (from the repository root:  python -m src.models.SWE.SWE_riemann_exact)
 # =========================================================================
 
 if __name__ == "__main__":
@@ -575,7 +475,7 @@ if __name__ == "__main__":
                 ax.set_title(f'{label}\nt={t},  h*={hs:.4f},  vx*={vs:.4f}',
                              fontsize=8)
 
-    plt.suptitle('Exact SWE Riemann solver — test cases  (g = 9.81)', y=1.01)
+    plt.suptitle(f'Exact SWE Riemann solver — test cases  (g = {g})', y=1.01)
     plt.tight_layout()
     plt.savefig('swe_riemann_exact.png', dpi=120, bbox_inches='tight')
     plt.show()

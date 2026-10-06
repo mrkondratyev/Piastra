@@ -22,7 +22,7 @@ The module contains two main interfaces:
 2. ``exact_riemann_godunov_state`` -- samples the exact solution at the
    interface (x/t = 0) for use as a Godunov numerical flux. Works with
    arrays for integration into the finite-volume framework
-   (flux_type = 'Exact' in Riemann_nr_hydro).
+   (solver_type = 'Exact' in Riemann_HD).
 
 References
 ----------
@@ -34,7 +34,6 @@ References
  Notes
 ----------
 - works only for ideal gas EOS! 
-  by now, this function will silently corrupt with non-ideal EOS
 
 Author
 ------
@@ -158,7 +157,7 @@ def _initial_pressure_guess(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma):
     p0 : float or ndarray
         Initial guess for star-region pressure.
     """
-    #PVRS (linearized) estimate (Toro, Eq. 9.28)
+    #PVRS (linearized) estimate
     Cup = 0.25 * (rhol + rhor) * (csl + csr)
     p_pvrs = 0.5 * (pl + pr) + 0.5 * (vxl - vxr) * Cup
     p_pvrs = np.maximum(p_pvrs, 1e-14)
@@ -166,13 +165,13 @@ def _initial_pressure_guess(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma):
     pmin = np.minimum(pl, pr)
     pmax = np.maximum(pl, pr)
 
-    #two-rarefaction estimate TRRS (Toro, Eq. 9.31)
+    #two-rarefaction estimate TRRS 
     z = (gamma - 1.0) / (2.0 * gamma)
     p_tr = ((csl + csr - (gamma - 1.0) / 2.0 * (vxr - vxl)) /
             (csl / pl ** z + csr / pr ** z)) ** (1.0 / z)
     p_tr = np.maximum(p_tr, 1e-14)
 
-    #two-shock estimate TSRS using PVRS as starting point (Toro, Eq. 9.29)
+    #two-shock estimate TSRS using PVRS as starting point 
     gl = np.sqrt(2.0 / ((gamma + 1.0) * rhol) / (p_pvrs + (gamma - 1.0) / (gamma + 1.0) * pl))
     gr = np.sqrt(2.0 / ((gamma + 1.0) * rhor) / (p_pvrs + (gamma - 1.0) / (gamma + 1.0) * pr))
     p_ts = (gl * pl + gr * pr - (vxr - vxl)) / (gl + gr)
@@ -190,7 +189,7 @@ def _initial_pressure_guess(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma):
 #  Newton method for pressure
 # =========================================================================
 def _solve_star_pressure(rhol, vxl, pl, csl, rhor, vxr, pr, csr, gamma,
-                          eps=1e-8, max_iter=100):
+                          eps=1e-8, max_iter=50):
     """
     Find the star-region pressure p* by Newton-Raphson iteration.
 
@@ -293,7 +292,7 @@ def _sample_solution(S, rhol, vxl, pl, csl, rhor, vxr, pr, csr,
                       pstar, ustar, gamma):
     """
     Sample the exact Riemann solution at a given similarity variable S = x/t
-    (Toro, Section 4.5, Figure 4.14).
+    (Toro, Section 4.5).
 
     Given the star-region values (p*, u*), determines which wave region
     the sampling point falls in and computes the corresponding state.
@@ -339,7 +338,7 @@ def _sample_solution(S, rhol, vxl, pl, csl, rhor, vxr, pr, csr,
 
     #--- left rarefaction (p* <= p_L) ---
 
-    #sound speed behind left rarefaction (Toro, Eq. 4.54)
+    #sound speed behind left rarefaction
     cstarL_rar = csl * pratio_L ** (gm1 / (2.0 * gamma))
     #head and tail speeds of the left rarefaction fan 
     SHL = vxl - csl          #head (leading edge)
@@ -448,7 +447,7 @@ def exact_riemann_godunov_state(rhol, rhor, vxl, vxr, pl, pr, gamma):
     to obtain the Godunov state for numerical flux computation.
 
     This function works with arrays and is used internally by
-    ``Riemann_HD`` when ``flux_type = 'Exact'``.
+    ``Riemann_HD`` when ``solver_type = 'Exact'``.
 
     Parameters
     ----------

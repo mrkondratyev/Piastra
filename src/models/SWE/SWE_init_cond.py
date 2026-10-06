@@ -122,7 +122,8 @@ def IC_SWE1D_dam(grid, state, par):
 
     x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
+    
+    state.g_ff = 1.0
     par.timenow = 0.0; par.timefin = 0.3
 
     left = grid.cx1 < 0.5
@@ -143,27 +144,17 @@ def IC_SWE2D_dam(grid, state, par):
     Circular dam break — radially symmetric 2D Riemann-like problem.
 
     A cylindrical column of water (h = h_in for r < r₀) collapses outward
-    into a quiescent ambient (h = h_out). This is the SWE analogue of
-    the Sedov-Taylor blast wave and is the canonical 2D test for
-    radially-symmetric shock dynamics on a Cartesian grid:
-
+    into a quiescent ambient (h = h_out), leading to: 
+    
       • An outward-propagating circular shock wave (right-moving wave)
       • An inward-propagating circular rarefaction (left-moving wave)
         which converges at the centre and reflects, leaving a low
-        depression there ("Mexican hat" profile)
-      • A contact-like circular ridge separating shock from rarefaction
-
-    A clean reference solution can be obtained by running Piastra in
-    cylindrical 1D mode with the same initial discontinuity at r₀; the
-    1D radial profile must match the azimuthally-averaged 2D solution.
-    Departures from circular symmetry in the 2D run reveal the grid
-    imprint of the Riemann solver (Cartesian asymmetries are most
-    visible along the diagonals and axes).
-
-    Standard parameters (Toro 2009, §17.7.1; Liska & Wendroff 2003):
+        depression there
+        
+    Parameters:
         h_in  = 2.5,   h_out = 0.5,   r₀ = 0.5,   g = 1
     Domain: [0, 2] × [0, 2], free outflow on all sides.
-    Final time t = 0.25 captures the shock at r ≈ 1.0, well inside the
+    Final time t = 0.25 captures the shock at r ≈ 0.8, well inside the
     domain so boundary effects are negligible.
     """
     print("SWE -- circular dam break (2D radial Riemann problem)")
@@ -172,15 +163,14 @@ def IC_SWE2D_dam(grid, state, par):
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
     par.timenow = 0.0; par.timefin = 0.25
-
+    
+    state.g_ff = 1.0
     x_c = 0.5 * (x1ini + x1fin); y_c = 0.5 * (x2ini + x2fin)
 
-    r0 = 0.5
-    h_in = 2.5; h_out = 0.5
+    r0 = 0.5; h_in = 2.5; h_out = 0.5
 
     r = np.sqrt((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2)
 
-    state.g_ff = 1.0
     state.h   [:, :] = np.where(r < r0, h_in, h_out)
     state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
     
@@ -212,13 +202,12 @@ def IC_SWE2D_bathtub(grid, state, par):
     # ~6-7 wave traversals (c≈4.4, domain=1)
     par.timenow = 0.0; par.timefin = 1.5  
 
-    # center of the bump
+    # the bump
     x_c = 0.5 * (x1ini + x1fin); y_c = 0.5 * (x2ini + x2fin)
-
-    r = np.sqrt((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2)
-    func = np.sinc(r / np.pi)          # np.sinc includes the pi factor
-    func[r > np.pi] = 0.0
-    
+    r = np.sqrt((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2)    
+    sigma = 0.1; ampl = 0.1
+    func = ampl * np.exp(-r**2/sigma**2)
+  
     state.g_ff = 9.81
     state.h   [:, :] = 1.0 + func
     state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
@@ -228,254 +217,111 @@ def IC_SWE2D_bathtub(grid, state, par):
     return grid, state, par, None
 
 
-
 # ============================================================================
-# Cylindrical explosion (SWE blast wave)
+# Rotating collapse of a water column
 # ============================================================================
-
-def IC_SWE2D_expl(grid, state, par):
+def IC_SWE2D_rotdam(grid, state, par):
     """
-    Cylindrical SWE explosion.
+    Collapse of a raised water column on an f-plane: the circular dam break
+    of dam2D, but with rotation.
+ 
+    Without rotation the column spreads out completely (dam2D). With
+    rotation potential vorticity q = (zeta + f)/h is conserved on fluid
+    columns: as the column spreads, h decreases and zeta must become
+    negative, zeta = f (h / h_in - 1). The spreading is arrested at a
+    distance ~ L_R, leaving a balanced ANTICYCLONE (clockwise for f > 0)
+    surrounded by an outgoing ring of inertia-gravity waves.
 
-    The shallow water pressure is p = g h² / 2, equivalent to a
-    barotropic EOS with gamma = 2. This test is the SWE analogue of
-    the Sedov blast wave and tests the solver in 2D with strong
-    height gradients.
-
-    Domain: [0, 1] × [0, 1], wall boundaries.
-    g = 1, t_fin = 2.5
+    Domain [-3, 3]^2, free outflow.
     """
-    print("SWE -- cylindrical explosion (SWE blast wave)")
-
-    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    print("SWE -- rotating collapse of a water column")
+ 
+    x1ini, x1fin = -3.0, 3.0; x2ini, x2fin = -3.0, 3.0
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    # shock reaches wall at ~0.3 time units in
-    par.timenow = 0.0; par.timefin = 0.30   
-
-    #center of the explosion
-    x_c = 0.5 * (x1ini + x1fin); y_c = 0.5 * (x2ini + x2fin)
-    r   = np.sqrt((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2)
-
-    state.g_ff = 1.0
-    state.h[:, :] = np.where(r < 0.1, 10.0, 0.1)
+ 
+    par.timenow = 0.0; par.timefin = 10.0 # ~ 5 inertial periods 2 pi / f0
+ 
+    g_phys = 1.0; H0 = 0.5; f0 = 3.0 # c = 0.707, L_R = c / f0 = 0.236
+    r0   = 0.5  # column radius, r0 / L_R = 2.1
+    eta0 = 0.025 # try 1.0 for the nonlinear regime
+ 
+    state.g_ff = g_phys
+    state.f_c[:, :] = f0
+    state.b[:, :] = 0.0; state.b_x[:, :] = 0.0; state.b_y[:, :] = 0.0
+ 
+    r = np.sqrt(grid.cx1**2 + grid.cx2**2)
+    state.h[:, :] = np.where(r < r0, H0 + eta0, H0)
     state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
-           
-    par.BC[:]   = 'wall'
-    
-    return grid, state, par, None
-
-
-
-# ============================================================================
-# Tsunami propagation
-# ============================================================================
-
-def IC_SWE2D_tsunami(grid, state, par):
-    """
-    Tsunami propagation over a deep ocean.
-
-    A localised 2D Gaussian sea-surface displacement (initial elevation
-    of order 1 m on top of 4000 m of water) propagates outward as a
-    long gravity wave. With H = 4000 m the long-wave speed is
-    c = √(gH) ≈ 198 m/s — fast enough to cross a 1000-km domain in
-    ~85 minutes, which sets the natural timescale.
-
-    The bathymetry is flat (b = 0); modify state.b here for a more
-    interesting variable-depth test (continental shelf, seamount, etc.).
-
-    Domain: [0, 1e6 m] × [0, 1e6 m] (SI units), free outflow.
-    g = 9.81, t_fin = 1 hour.
-    """
-    print("SWE -- tsunami propagation over deep ocean")
-
-    x1ini, x1fin = 0.0, 1.0e6; x2ini, x2fin = 0.0, 1.0e6
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    # 1 hour — wave crosses ~70% of domain
-    par.timenow = 0.0; par.timefin = 3600.0          
-
-    x_c = 0.5 * (x1ini + x1fin)
-    y_c = 0.5 * (x2ini + x2fin)
-    
-    #free-fall acceleration
-    state.g_ff      = 9.81
-    
-    # Coriolis irrelevant on tsunami timescales
-    # (period 2π/f ≈ 17 hr ≫ t_fin = 1 hr)
-    state.f_c[:, :] = 0.0         
-    
-    # Flat bathymetry (b = 0); customise here for variable bed.
-    # state.b[:, :] = ...
-    state.b_x[:, :], state.b_y[:, :] = _gradient_full(grid, state.b)
-
-    # 2D Gaussian sea-surface displacement: 1 m amplitude on 4000 m of water
-    H0    = 4000.0           # ocean depth
-    eta0  = 1.0              # peak surface displacement
-    sigma = 5.0e4            # 50 km half-width — typical earthquake source
-
-    state.h[:, :] = H0 + eta0 * np.exp(
-        -((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2) / sigma**2)
-    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
-    
-    # let the wave leave the domain
+ 
     par.BC[:] = 'free'
-    
+ 
     return grid, state, par, None
 
 
+
 # ============================================================================
-# Geostrophic ocean flow
+# Coastal Kelvin wave (replaces atmo2D)
 # ============================================================================
-
-def IC_SWE2D_ocean(grid, state, par):
+def IC_SWE2D_kelvin(grid, state, par):
     """
-    Geostrophic ocean eddy on a beta-plane.
-
-    A localised circular height anomaly is initialised in geostrophic
-    balance with the velocity field:
-        v₁ = -g/f ∂h/∂x₂
-        v₂ = +g/f ∂h/∂x₁
-
-    A positive height anomaly (∂h/∂x₂ < 0 on the north side) generates
-    eastward flow on the south side and westward flow on the north
-    side, i.e. *anticyclonic* circulation in the Northern hemisphere
-    (rotating clockwise as seen from above). The eddy size is set close
-    to the Rossby radius L_R = √(gH)/f₀ ≈ 1000 km so the dynamics are
-    on the cusp between geostrophic adjustment and Rossby-wave
-    propagation.
-
-    The Coriolis parameter varies linearly with x₂ (beta-plane):
-        f_c(x₂) = f₀ + β (x₂ - y_c)
-
-    On the β-plane an isolated geostrophic eddy westward-drifts at the
-    long Rossby-wave speed c_R = β L_R² ≈ 16 m/s ≈ 1400 km/day, so the
-    2-day run shows clear westward propagation across the basin.
-
-    Domain: [0, 1e6 m] × [0, 1e6 m] (SI units).
-    g = 9.81, t_fin = 2 days.
+    Coastal Kelvin wave along the southern wall (x2 = 0) of a periodic
+    channel on an f-plane (Kelvin 1879).
+ 
+    With v2 = 0 everywhere the linear equations split into a plain gravity
+    wave along the coast and a geostrophic balance across it,
+        f0 v1 = -g d(eta)/dx2,
+    which gives the exact, NON-DISPERSIVE solution
+        eta = eta0 * exp(-x2 / L_R) * F(x1 - c t),
+        v1  = sqrt(g / H0) * eta,     v2 = 0,     L_R = c / f0.
+    It travels with the coast on its RIGHT (eastward here, f0 > 0). Since
+    v2 = 0, the wall conditions are satisfied exactly on BOTH walls, for
+    any channel width.
+ 
+    After one period t = Lx / c the wave is back at its initial position.
+    Diagnostics:
+      - amplitude / phase error of eta vs. the initial state
+        (numerical dissipation / dispersion; convergence order);
+      - max|v2| / max|v1| vs. time: any error in the Coriolis treatment
+        breaks the cross-shore balance and generates v2 and Poincare waves.
+    Try f0 -> -f0: the IC is no longer a solution and splits into a
+    westward Kelvin wave plus Poincare waves.
     """
-    print("SWE -- geostrophic ocean eddy (beta-plane)")
-
-    x1ini, x1fin = 0.0, 1.0e6
-    x2ini, x2fin = 0.0, 1.0e6
+    print("SWE -- coastal Kelvin wave")
+ 
+    Lx, Ly = 16.0, 6.0   # Ly = 6 L_R for a clear picture
+    x1ini, x1fin = 0.0, Lx; x2ini, x2fin = 0.0, Ly
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0
-    par.timefin = 2.0 * 86400.0      # 2 days
-    par.BC[0]   = 'peri'
-    par.BC[1]   = 'wall'
-    par.BC[2]   = 'peri'
-    par.BC[3]   = 'wall'
-
-    x_c = 0.5 * (x1ini + x1fin)
-    y_c = 0.5 * (x2ini + x2fin)
-
-    state.g_ff = 9.81
-    g_phys     = state.g_ff
-
-    # Beta-plane Coriolis parameter
-    f0    = 1.0e-4                   # mid-latitude f₀ (rad/s)
-    beta  = 1.6e-11                  # df/dy (rad/m/s)
-    state.f_c[:, :] = f0 + beta * (grid.cx2 - y_c)
-
-    # 2D Gaussian SSH anomaly: 1 m bump on 1000 m background, ~150 km wide
-    H0    = 1000.0
-    A     = 1.0                      # 1 m sea-surface height anomaly
-    sigma = 1.5e5                    # 150 km half-width
-    state.h[:, :] = H0 + A * np.exp(
-        -((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2) / sigma**2)
-
-    # Geostrophic balance: v = (g/f) ẑ × ∇h
-    h_x, h_y = _gradient_full(grid, state.h)
-    f_safe   = np.where(np.abs(state.f_c) > 1e-20, state.f_c, 1e-20)
-
-    state.vel1[:, :] = -g_phys * h_y / f_safe
-    state.vel2[:, :] =  g_phys * h_x / f_safe
-
+ 
+    g_phys = 1.0; H0 = 1.0; f0 = 1.0
+    c   = np.sqrt(g_phys * H0)
+    L_R = c / f0
+ 
+    par.timenow = 0.0; par.timefin = Lx / c   # one full period
+ 
+    state.g_ff = g_phys
+    state.f_c[:, :] = f0
+    state.b[:, :] = 0.0; state.b_x[:, :] = 0.0; state.b_y[:, :] = 0.0
+ 
+    eta0 = 1.0e-2 * H0 # linear regime
+    x0 = 0.5 * Lx # initial pulse position
+    s  = 1.0 # pulse half-width along the coast
+ 
+    eta = eta0 * np.exp(-grid.cx2 / L_R) * np.exp(-((grid.cx1 - x0) / s)**2)
+ 
+    state.h[:, :]    = H0 + eta
+    state.vel1[:, :] = np.sqrt(g_phys / H0) * eta
+    state.vel2[:, :] = 0.0
+ 
+    # periodic along the coast (x1), walls across (x2)
+    par.BC[0] = 'peri'; par.BC[1] = 'wall'
+    par.BC[2] = 'peri'; par.BC[3] = 'wall'
+ 
     return grid, state, par, None
-
-
-# ============================================================================
-# Geostrophic atmospheric flow
-# ============================================================================
-
-def IC_SWE2D_atmo(grid, state, par):
-    """
-    Shallow-water atmospheric ridge with seeded instability.
-
-    A broad Gaussian pressure (height) ridge is initialised in
-    geostrophic balance:
-        v₁ = -g/f ∂h/∂x₂,   v₂ = +g/f ∂h/∂x₁
-
-    A small *velocity* perturbation is added to seed any instability
-    (the height field itself remains a clean balanced state). This
-    matters: adding noise to h would induce O(g·δh/(f·dx)) ~ 30 m/s
-    grid-scale velocities through the geostrophic relation, swamping
-    the balanced eddy with random jets at the start. Adding noise
-    directly to v keeps the IC physical and the noise amplitude
-    transparent.
-
-    The β-plane Coriolis varies linearly with x₂:
-        f_c(x₂) = f₀ + β (x₂ - y_c)
-
-    Domain: [0, 1e6 m] × [0, 1e6 m] (SI units).
-    g = 9.81, t_fin = 2 days.
-    """
-    print("SWE -- geostrophic atmospheric ridge (beta-plane)")
-
-    x1ini, x1fin = 0.0, 1.0e6
-    x2ini, x2fin = 0.0, 1.0e6
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0
-    par.timefin = 2.0 * 86400.0
-    par.BC[0]   = 'peri'
-    par.BC[1]   = 'wall'
-    par.BC[2]   = 'peri'
-    par.BC[3]   = 'wall'
-
-    x_c = 0.5 * (x1ini + x1fin)
-    y_c = 0.5 * (x2ini + x2fin)
-
-    state.g_ff = 9.81
-    g_phys     = state.g_ff
-
-    f0   = 1.5e-4
-    beta = 1.6e-11
-    state.f_c[:, :] = f0 + beta * (grid.cx2 - y_c)
-
-    # 2D Gaussian height anomaly (no noise on h — see docstring).
-    scale_x = (x1fin - x1ini) / 8.0
-    scale_y = (x2fin - x2ini) / 8.0
-    A = 40.0
-    H0 = 2000.0
-
-    state.h[:, :] = H0 + A * np.exp(
-        -((grid.cx1 - x_c)**2 / scale_x**2
-          + (grid.cx2 - y_c)**2 / scale_y**2))
-
-    # Geostrophic balance from the smooth height field
-    h_x, h_y = _gradient_full(grid, state.h)
-    f_safe   = np.where(np.abs(state.f_c) > 1e-20, state.f_c, 1e-20)
-
-    state.vel1[:, :] = -g_phys * h_y / f_safe
-    state.vel2[:, :] =  g_phys * h_x / f_safe
-
-    # Small velocity noise to break symmetry (1% of geostrophic peak).
-    rng    = np.random.default_rng(42)
-    v_peak = float(np.max(np.abs(state.vel2)))
-    eps    = 0.01 * v_peak
-    state.vel1 += eps * (rng.random(grid.grid_shape) - 0.5)
-    state.vel2 += eps * (rng.random(grid.grid_shape) - 0.5)
-
-    return grid, state, par, None
-
+ 
 
 # ============================================================================
 # Barotropic instability of a Bickley jet
 # ============================================================================
-
 def IC_SWE2D_bickley(grid, state, par):
     """
     Barotropic (Rayleigh-Kuo) instability of a zonal jet.
@@ -499,8 +345,8 @@ def IC_SWE2D_bickley(grid, state, par):
     the unstable wavenumber dominates within a few e-foldings) seeds
     the instability; the jet rolls up into a chain of vortices.
 
-    Domain: [0, 4 L_jet] × [0, 4 L_jet], periodic in x₁, wall in x₂.
-    Reference: Poulin & Flierl, J. Fluid Mech. 481, 329 (2003).
+    Domain: [0, 8πL] × [0, 8L];, periodic in x₁, wall in x₂.
+    Reference: Poulin & Flierl (2003).
     """
     print("SWE -- barotropic instability of a Bickley jet")
 
@@ -514,21 +360,15 @@ def IC_SWE2D_bickley(grid, state, par):
     x2ini, x2fin = 0.0, Ly
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
 
-    par.timenow = 0.0
-    par.timefin = 80.0          # several e-foldings at σ ≈ 0.165
-    par.BC[0]   = 'peri'        # x₁_min  (zonal)
-    par.BC[1]   = 'peri'        # x₁_max
-    par.BC[2]   = 'wall'        # x₂_min  (meridional)
-    par.BC[3]   = 'wall'
+    par.timenow = 0.0; par.timefin = 80.0 # several e-foldings at σ ≈ 0.165
 
     y_c = 0.5 * (x2ini + x2fin)
 
     # Physical parameters
-    U0    = 1.0                 # jet peak velocity
-    f0    = 1.0                 # f-plane Coriolis (Rossby number U/(fL) = 1)
+    U0 = 1.0 # jet peak velocity
+    f0 = 1.0 # f-plane Coriolis (Rossby number U/(fL) = 1)
     g_phys = 9.81
-    h0    = 10.0                # background depth → c = sqrt(gh) ~ 9.9 ≫ U0
-                                #  ⇒ low Froude, well within shallow-water regime
+    h0 = 10.0 # background depth → c = sqrt(gh) ~ 9.9 ≫ U, low Froude, well within SWE regime
     state.g_ff = g_phys
     state.f_c[:, :] = f0
 
@@ -543,19 +383,64 @@ def IC_SWE2D_bickley(grid, state, par):
     # Small sinusoidal perturbation in v₂ to break translational symmetry.
     # k_x = 2π·n/Lx with n = 3 puts the perturbation near the most-unstable
     # wavenumber kL ≈ 0.9 (since k = 2π·3/(8π) = 0.75/L).
-    eps = 1.0e-3 * U0
+    eps = 3.0e-2 * U0
     pert = eps * np.sin(2.0 * np.pi * 3.0 * grid.cx1 / Lx) * sech2
 
     state.vel1[:, :] = v1_jet
     state.vel2[:, :] = pert
+    
+    par.BC[0] = 'peri'; par.BC[1] = 'wall'
+    par.BC[2] = 'peri'; par.BC[3] = 'wall'
 
+    return grid, state, par, None
+
+
+# ============================================================================
+# Lake at rest over a seamount (well-balancing diagnostic)
+# ============================================================================
+def IC_SWE2D_lake(grid, state, par):
+    """
+    "Lake at rest" over a Gaussian seamount: h + b = H0, v = 0.
+ 
+    The EXACT solution is that nothing moves. A scheme is called
+    well-balanced if it keeps this state to round-off. Here the bed source
+    -g grad(b) is a cell-centred central difference, applied separately
+    from the face fluxes of g h^2/2, so the two do not cancel discretely:
+    expect spurious currents and surface waves at the level of the
+    truncation error, decreasing with resolution.
+ 
+    Diagnostics: max|v| and max|h + b - H0| vs. time and vs. resolution.
+    """
+    print("SWE -- lake at rest over a seamount (well-balancing test)")
+ 
+    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
+    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
+ 
+    par.timenow = 0.0; par.timefin = 1.0      # ~ 3 gravity-wave crossings
+ 
+    g_phys = 9.81; H0 = 1.0
+    state.g_ff = g_phys
+    state.f_c[:, :] = 0.0
+ 
+    x_c = 0.5 * (x1ini + x1fin); y_c = 0.5 * (x2ini + x2fin)
+    b_max = 0.5; sigma_b = 0.1                # seamount: half of the depth
+ 
+    state.b[:, :] = b_max * np.exp(
+        -((grid.cx1 - x_c)**2 + (grid.cx2 - y_c)**2) / sigma_b**2)
+    state.b_x[:, :], state.b_y[:, :] = _gradient_full(grid, state.b)
+ 
+    state.h[:, :] = H0 - state.b              # flat free surface
+    state.vel1[:, :] = 0.0; state.vel2[:, :] = 0.0
+ 
+    par.BC[:] = 'wall'
+ 
     return grid, state, par, None
 
 
 # ============================================================================
 # Shallow-water Kelvin-Helmholtz instability
 # ============================================================================
-def IC_SWE2D_KH(grid, state, par):
+def IC_SWE2D_KHI(grid, state, par):
     """
     Shallow-water analogue of the Kelvin-Helmholtz instability.
 
@@ -567,7 +452,7 @@ def IC_SWE2D_KH(grid, state, par):
 
         v₁(x₂) = U₀ tanh((x₂ - y_c)/δ)
         v₂(x₂) = small seed perturbation
-        h     = h₀  (constant)
+        h = h₀ (constant)
 
     With h constant, gravity does not enter the linear instability
     problem, but the gravity-wave speed c = √(gh) must satisfy U₀ ≪ c
@@ -576,11 +461,9 @@ def IC_SWE2D_KH(grid, state, par):
     almost identical to the incompressible 2D KHI.
 
     The contact wave (which carries the shear) is exactly where the
-    exact Riemann solver outperforms HLL — running this with HLL
-    gives a notably more diffuse roll-up than the exact solver.
+    exact Riemann solver outperforms HLL
 
-    Domain: [0, 1] × [0, 1], periodic in both directions.
-    Reference: layered version in Hesthaven & Warburton, Sec. 13.3.
+    Domain: [0, 1] × [0, 1], with periodic boundaries along X and walls along Y.
     """
     print("SWE -- 'Kelvin-Helmholtz' instability (shear layer)")
 
@@ -592,10 +475,10 @@ def IC_SWE2D_KH(grid, state, par):
     y_c = 0.5 * (x2ini + x2fin)
 
     # Physical parameters
-    U0    = 0.5                 # half-jump in zonal velocity
-    delta = 0.025               # shear-layer half-thickness (≪ Lx)
+    U0    = 0.5 # half-jump in velocity
+    delta = 0.025 # shear-layer half-thickness (≪ Lx)
     h0    = 1.0
-    g_phys = 9.81               # → c = √(gh) ≈ 3.13, Froude ≈ 0.16
+    g_phys = 9.81  # → c = √(gh) ≈ 3.13, Froude ≈ 0.16
 
     state.g_ff = g_phys
     # No rotation
@@ -605,8 +488,7 @@ def IC_SWE2D_KH(grid, state, par):
     state.vel1[:, :] = U0 * np.tanh((grid.cx2 - y_c) / delta)
 
     # Seed: two-mode perturbation in v₂ localised on the interface,
-    # with two wavelengths fitting in the box.  Two modes prevent the
-    # roll-up from being a single huge eddy.
+    # with two wavelengths fitting in the box.  
     eps = 1.0e-2 * U0
     envelope = np.exp(-((grid.cx2 - y_c) / (8.0 * delta))**2)
     pert = eps * envelope * (
@@ -617,75 +499,10 @@ def IC_SWE2D_KH(grid, state, par):
     # Uniform height
     state.h[:, :] = h0
     
-    par.BC[:]   = 'peri'
-
-    return grid, state, par, None
-
-
-# ============================================================================
-# Flow over a bump (transcritical with hydraulic jump)
-# ============================================================================
-def IC_SWE1D_bump(grid, state, par):
-    """
-    Steady (asymptotic) supercritical flow over a smooth bump.
-
-    A subcritical inflow on the left enters a channel containing a
-    smooth Gaussian bump in the bed, accelerates over the bump to
-    supercritical, and forms a stationary hydraulic jump downstream
-    where the flow returns to subcritical. This is the SWE analogue
-    of the de Laval nozzle / shock-in-divergent-section problem.
-
-    Bathymetry:
-        b(x₁, x₂) = b_max exp(-((x₁-x_b)/σ_b)²)            (uniform in x₂)
-
-    Initial condition (will adjust to the steady transcritical state
-    as boundary conditions force the solution):
-        h + b = H₀     (lake at rest perturbed by bump)
-        v₁    = q / h  (uniform discharge)
-        v₂    = 0
-
-    Choose Froude number well above 1 just downstream of the bump
-    crest so a jump forms.  Specifically:
-        H₀ = 2.0,   b_max = 0.2,   q = 4.42  (gives Fr ≈ 1 at crest)
-
-    Note on well-balancing: this test will reveal whether the SWE
-    solver preserves "lake at rest" (h + b = const, v = 0) over a
-    non-trivial bathymetry. A naive non-well-balanced scheme produces
-    spurious waves even when the analytical solution is stationary
-    --- a useful warning to the user.
-
-    Domain: [0, 25] × [0, 5], inflow on left (free), outflow on right.
-    Reference: Vázquez-Cendón, J. Comput. Phys. 148, 497 (1999).
-    """
-    print("SWE -- transcritical flow over a bump")
-
-    x1ini, x1fin = 0.0, 25.0; x2ini, x2fin = 0.0, 5.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 12.0     
-    state.g_ff      = 9.81
-    state.f_c[:, :] = 0.0
-
-    # ─── Bathymetry: smooth Gaussian bump centred at x_b ──────────────
-    x_b   = 10.0
-    sig_b =  2.0
-    b_max =  0.2
-
-    state.b[:, :] = b_max * np.exp(-((grid.cx1 - x_b) / sig_b)**2)
-
-    # ─── Bathymetry gradients (geometry-aware central differences) ────
-    state.b_x[:, :], state.b_y[:, :] = _gradient_full(grid, state.b)
-
-    # ─── Initial state: lake at rest perturbed by bump + uniform flow ─
-    # Total free-surface elevation H₀ above z = 0
-    H0 = 2.0
-    q  = 4.42      # discharge per unit width (m²/s); chosen for Fr_crest ≈ 1
-
-    state.h[:, :]    = np.maximum(H0 - state.b, 0.1)   # avoid dry cells
-    state.vel1[:, :] = q / state.h
-    state.vel2[:, :] = 0.0
-    
-    par.BC[:]   = 'free'
+    par.BC[0] = 'peri'
+    par.BC[1] = 'wall'
+    par.BC[2] = 'peri'
+    par.BC[3] = 'wall'
 
     return grid, state, par, None
 
@@ -693,7 +510,6 @@ def IC_SWE1D_bump(grid, state, par):
 # ============================================================================
 # Internal helper: full-grid gradient (including ghost cells in output)
 # ============================================================================
-
 def _gradient_full(grid, var):
     """
     Compute the gradient of a full-grid array (including ghost cells)

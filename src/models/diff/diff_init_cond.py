@@ -21,12 +21,11 @@ Available problems
 ------------------
 ``'user_defined'``   IC_diff_user_defined
 ``'gauss2D'``        IC_diff2D_gaussian   – single Gaussian pulse, 2D Cartesian
-``'cross2D'``        IC_diff2D_cross      – two crossed Gaussian pulses, 2D Cartesian
-``'ring2D'``         IC_diff2D_ring       – ring-shaped hot band, 2D Cartesian
-``'gauss1D'``        IC_diff1D_gaussian   – 1D Gaussian (Nx2 = 1), Cartesian
 ``'step1D'``         IC_diff1D_step       – 1D step function (Nx2 = 1), Cartesian
 ``'sine1D'``         IC_diff1D_sine       – 1D sinusoidal mode decay (Nx2 = 1), Cartesian
 ``'cyl2D'``          IC_diff2D_cyl        – 2D cylindrically-symmetric ring, Cartesian grid
+``'gauss2Dpol'``     IC_diff2D_gauss_polar– 2D gaussian on the polar grid 
+``'gauss2Dsph'``     IC_diff2D_gauss_sph  - 2D gaussian on the spherical polar grid 
 
 Author: mrkondratyev
 """
@@ -75,7 +74,6 @@ def IC_diff_user_defined(grid, diff, par):
     return grid, diff, par
 
 
-
 def IC_diff2D_gaussian(grid, diff, par):
     """
     2D Cartesian diffusion of a single Gaussian temperature pulse.
@@ -121,151 +119,6 @@ def IC_diff2D_gaussian(grid, diff, par):
     par.BC[:] = 'free'
     
     return grid, diff, par
-
-
-
-def IC_diff2D_cross(grid, diff, par):
-    """
-    2D Cartesian diffusion of two orthogonal Gaussian hot bands (cross shape).
-
-    The initial temperature field is the sum of:
-      - a narrow Gaussian ridge along x1 = x0  (tall in x2)
-      - a narrow Gaussian ridge along x2 = y0  (tall in x1)
-
-    This tests that diffusion in x1 and x2 is handled symmetrically and
-    that the operator is correct in both directions independently.
-
-    Parameters
-    ----------
-    grid : Grid
-    diff : SimState
-    par  : Parameters
-
-    Returns
-    -------
-    grid, diff, par
-    """
-    print("Thermal diffusion – 2D crossed Gaussian ridges")
-
-    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 0.5
-
-    #diffusion coefficient 
-    diff.kappa = 0.005
-
-    #center of the cross 
-    x0 = 0.5 * (x1ini + x1fin)
-    y0 = 0.5 * (x2ini + x2fin)
-    sigma_narrow = 0.04   # narrow direction of each ridge
-    sigma_wide   = 0.40   # wide direction of each ridge
-
-    # ridge along x = x0  (narrow in x1, wide in x2)
-    T_ridge1 = np.exp(
-        -((grid.cx1 - x0)**2 / sigma_narrow**2 +
-          (grid.cx2 - y0)**2 / sigma_wide**2))
-
-    # ridge along y = y0  (wide in x1, narrow in x2)
-    T_ridge2 = np.exp(
-        -((grid.cx1 - x0)**2 / sigma_wide**2 +
-          (grid.cx2 - y0)**2 / sigma_narrow**2))
-
-    diff.T[:, :] = T_ridge1 + T_ridge2
-    
-    par.BC[:] = 'free'
-    
-    return grid, diff, par
-
-
-def IC_diff2D_ring(grid, diff, par):
-    """
-    2D Cartesian diffusion of a hot annular ring.
-
-    The initial temperature is a Gaussian function of the distance from
-    a circle of radius r0, so the profile is a torus cross-section:
-
-        T(x, y, 0) = exp( -(r - r0)^2 / sigma^2 )
-        r = sqrt((x - x0)^2 + (y - y0)^2)
-
-    As time advances the ring spreads inward and outward, eventually
-    filling the interior with a smooth hill.
-
-    Parameters
-    ----------
-    grid : Grid
-    diff : SimState
-    par  : Parameters
-
-    Returns
-    -------
-    grid, diff, par
-    """
-    print("Thermal diffusion – 2D annular ring")
-
-    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 0.2
-
-    #diffusion coefficient 
-    diff.kappa = 0.005
-
-    #center of the ring  
-    x0 = 0.5 * (x1ini + x1fin)
-    y0 = 0.5 * (x2ini + x2fin)
-    r0    = 0.25   # ring radius
-    sigma = 0.04   # ring width
-
-    r = np.sqrt((grid.cx1 - x0)**2 + (grid.cx2 - y0)**2)
-    diff.T[:, :] = np.exp(-((r - r0) / sigma)**2)
-
-    par.BC[:] = 'free'
-
-    return grid, diff, par
-
-
-def IC_diff1D_gaussian(grid, diff, par):
-    """
-    1D Cartesian diffusion of a Gaussian pulse (Nx2 = 1).
-
-    Sets up a 1D problem by using a flat y-domain (x2ini = x2fin = 0.5)
-    with Nx2 = 1.  The initial temperature is a Gaussian in x1.
-
-    The exact solution is:
-
-        T(x, t) = sigma0 / sqrt(sigma0^2 + 4*kappa*t)
-                  * exp( -(x - x0)^2 / (sigma0^2 + 4*kappa*t) )
-
-    Parameters
-    ----------
-    grid : Grid  (must be created with Nx2 = 1)
-    diff : SimState
-    par  : Parameters
-
-    Returns
-    -------
-    grid, diff, par
-    """
-    print("Thermal diffusion – 1D Gaussian pulse")
-
-    x1ini, x1fin = 0.0, 1.0; x2ini, x2fin = 0.0, 1.0
-    grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
-
-    par.timenow = 0.0; par.timefin = 0.5
-
-    #diffusion coefficient 
-    diff.kappa = 0.01
-
-    x0 = 0.5 * (x1ini + x1fin) #center of the gaussian 
-    sigma0 = 0.08 #semi-width
-
-    diff.T[:, :] = np.exp(-((grid.cx1 - x0) / sigma0)**2)
-
-    par.BC[:] = 'free'
-
-    return grid, diff, par
-
 
 
 def IC_diff1D_step(grid, diff, par):
@@ -359,7 +212,6 @@ def IC_diff2D_cyl(grid, diff, par):
     return grid, diff, par
 
 
-
 def IC_diff1D_sine(grid, diff, par):
     """
     1D diffusion of a sinusoidal initial condition (Nx2 = 1).
@@ -399,4 +251,52 @@ def IC_diff1D_sine(grid, diff, par):
     par.BC[0] = 'peri'; par.BC[1] = 'free'
     par.BC[2] = 'peri'; par.BC[3] = 'free'
 
+    return grid, diff, par
+
+
+def IC_diff2D_gauss_polar(grid, diff, par):
+    """
+    Spreading of an OFF-CENTRE 2D Gaussian on a polar (R, phi) grid.
+
+    Exact solution of dT/dt = kappa lap(T) in the plane (not polar-symmetric
+    about the grid origin, so both the R- and the phi-metric are exercised):
+        T(x, t) = t0/(t0+t) * exp( -|x - x0|^2 / (4 kappa (t0+t)) ),
+    x0 = (R=1, phi=0). Annular wedge R in [0.5, 1.5], phi in [-pi/4, pi/4];
+    at t_fin the Gaussian is ~1e-7 at the boundaries ('free').
+    """
+    print("Thermal diffusion - off-centre 2D Gaussian on a polar grid")
+    grid.PolarGrid(0.5, 1.5, -0.25 * np.pi, 0.25 * np.pi)
+    diff.kappa = 0.01
+    t0 = 0.125                               # initial width^2 = 4 kappa t0 = 0.005
+    par.timenow = 0.0; par.timefin = 0.125
+
+    x = grid.cx1 * np.cos(grid.cx2); y = grid.cx1 * np.sin(grid.cx2)
+    diff.T[:, :] = np.exp(-((x - 1.0)**2 + y**2) / (4.0 * diff.kappa * t0))
+
+    par.BC[:] = 'free'
+    return grid, diff, par
+
+
+def IC_diff2D_gauss_sph(grid, diff, par):
+    """
+    Spreading of a 3D Gaussian centred ON THE AXIS, spherical-polar (r, theta).
+
+    Exact solution (axisymmetric about the polar axis, not about the origin):
+        T(x, t) = (t0/(t0+t))^(3/2) * exp( -|x - x0|^2 / (4 kappa (t0+t)) ),
+    x0 on the axis at r = 1 (theta = 0). Shell r in [0.5, 1.5], theta in
+    [0, pi/2]; the axis face is exercised directly, the other faces see
+    T ~ 1e-7 at t_fin ('free').
+    """
+    print("Thermal diffusion - on-axis 3D Gaussian on a spherical-polar grid")
+    grid.SphericalPolarGrid(0.5, 1.5, 0.0, 0.5 * np.pi)
+    diff.kappa = 0.01
+    t0 = 0.125
+    par.timenow = 0.0; par.timefin = 0.125
+
+    r, th = grid.cx1, grid.cx2
+    dist2 = r**2 + 1.0 - 2.0 * r * np.cos(th)          # |x - x0|^2, x0 = (r=1, theta=0)
+    diff.T[:, :] = np.exp(-dist2 / (4.0 * diff.kappa * t0))
+
+    par.BC[0] = 'free'; par.BC[1] = 'axis'
+    par.BC[2] = 'free'; par.BC[3] = 'free'
     return grid, diff, par

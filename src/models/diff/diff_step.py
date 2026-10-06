@@ -8,22 +8,22 @@ diff_step.py
 
 Solves the parabolic equation
 
-    ∂T/∂t = ∇·(κ ∇T)
+    ∂T/∂t = ∇·(κ ∇T) + f
 
 on the structured 2D grid provided by grid_setup.Grid, using a
 finite-volume discretisation that is consistent with all geometries
 supported by that class (Cartesian, cylindrical, polar).
 
 Two time-integration methods are available, selected via the ``solver``
-argument of Diffusion2D:
+argument of Diff2D:
 
 ``'expl'`` – Explicit forward-Euler.
     Stable for
 
         dt  ≤  dx1² · dx2² / (2 · κ_max · (dx1² + dx2²))
 
-``'rkl2'`` – RKL2 Super Time Stepping (Meyer, Balsara & Aslam 2014,
-    MNRAS 422, 2102).  Each super-step spans
+``'rkl2'`` – RKL2 Super Time Stepping (Meyer, Balsara & Aslam 2012, MNRAS, 422, 2102).  
+    Each super-step spans
 
         dt_super  =  dt_expl · (s² + s − 2) / 4
 
@@ -53,7 +53,7 @@ Usage
 -----
 >>> from grid_setup         import Grid
 >>> from sim_state          import SimState
->>> from diffusion_one_step import Diffusion2D
+>>> from diffusion_step import Diff2D
 >>>
 >>> g   = Grid(128, 128, 2)
 >>> g.CartesianGrid(0.0, 1.0, 0.0, 1.0)
@@ -92,8 +92,8 @@ class Diff2D:
     Provides a ``step_RK()`` method that advances the temperature field
     by one (super-)timestep using either the explicit Euler scheme or
     the RKL2 super time-stepping algorithm.  The interface is intentionally
-    kept identical to the other Piastra solver classes (Advection2D,
-    Hydro2D, …) so that the same ``run_simulation`` loop can drive it.
+    kept identical to the other Piastra solver classes (Adv2D,
+    HD2D, …) so that the same ``run_simulation`` loop can drive it.
 
     Parameters
     ----------
@@ -161,7 +161,7 @@ class Diff2D:
         else: 
             
             raise ValueError(
-                f"Invalid diff_solver: '{self.par.solver_type}'. "
+                f"Invalid solver_type: '{self.par.solver_type}'. "
                 f"Expected 'expl' or 'rkl2'.")
         
         self.par.timenow += dt
@@ -178,7 +178,9 @@ def CFLcondition_diff(g, diff, CFL):
 
     For a uniform grid the von Neumann stability condition is
 
-        dt  ≤  dx1² · dx2² / (2 · κ_max · (dx1² + dx2²))
+        dt  ≤  dx1² · dx2² / (2 · κ_max · (dx1² + dx2²)),
+        
+    where dx1, dx2 are the linear (!) cell sizes along x1, x2. 
 
     Parameters
     ----------
@@ -208,7 +210,7 @@ def CFLcondition_diff(g, diff, CFL):
 
 
 # ============================================================================
-#   Spatial operator  L(T) = ∇·(κ ∇T)
+#   Spatial operator  L(T) = ∇·(κ ∇T) + f (where 'f' is a source)
 # ============================================================================
 
 def _face_kappa(kappa, Ngc, Nx1r, Nx2r):
@@ -243,7 +245,7 @@ def spatial_operator_diff(g, diff):
 
         L(T)[i,j] = [ F1_{i+½} · S1_{i+½} − F1_{i-½} · S1_{i-½}
                     + F2_{j+½} · S2_{j+½} − F2_{j-½} · S2_{j-½} ]
-                    / V_{i,j}
+                    / V_{i,j} + ST_{i,j}
 
     where
 
@@ -272,8 +274,8 @@ def spatial_operator_diff(g, diff):
     # Diffusive fluxes (gradient × face diffusivity)
     flux1 = kf1 * g1; flux2 = kf2 * g2
 
-    # Finite-volume divergence 
-    LT = div_face_vector(g, flux1, flux2)
+    # Finite-volume divergence + heating/cooling source term addition
+    LT = div_face_vector(g, flux1, flux2) + diff.ST
 
     return LT
 
@@ -316,8 +318,7 @@ def _rkl2_coefs(s):
     """
     Pre-compute the RKL2 recursion coefficients for s stages.
 
-    Reference: Meyer, Balsara & Aslam (2014), MNRAS 422, 2102,
-    equations (17)–(20).
+    Reference: Meyer, Balsara & Aslam (2012), MNRAS 422, 2102.
 
     Parameters
     ----------

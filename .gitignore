@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+output/
+*.npz
+*.dat
+.ipynb_checkpoints/

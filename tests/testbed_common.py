@@ -6,7 +6,7 @@ testbed_common.py
 
 Shared building blocks for the Piastra testbed (tests/).
 
-The testbed checks the framework along the three axes standard for a
+The testbed checks the framework along the axes standard for a
 computational (astrophysical) fluid-dynamics code:
 
   * sanity (test_sanity.py) -- every (mode, problem) in the catalogue
@@ -21,8 +21,10 @@ computational (astrophysical) fluid-dynamics code:
   * robustness (test_robustness.py) -- every solver_type / rec_type /
     RK_order combination stays finite and positivity-preserving on strong
     shock/blast problems (Sod, Woodward-Colella, Brio-Wu, dam-break, ...).
+  * restart (test_restart.py) -- a run continued from a snapshot
+    reproduces the uninterrupted run bit for bit.
 
-This module holds only the plumbing shared by all four: building a
+This module holds only the plumbing shared by all suites: building a
 (grid, state, par, eos, solver) tuple for one case, stepping it, and a
 handful of small numerical diagnostics (finiteness/positivity, conserved
 volume integrals, an L2 error, observed convergence order).

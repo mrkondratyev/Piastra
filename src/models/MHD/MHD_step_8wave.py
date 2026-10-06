@@ -53,10 +53,10 @@ class MHD2D_8wave:
     ----------
     g : object
         Grid object with domain sizes, spacing, volumes, and face areas.
-    fluid : object
-        FluidState object containing primitive and conservative variables.
+    MHD : object
+        SimState object containing primitive and conservative variables.
     par : object
-        Simulation parameters including CFL, RK_order, flux_type, rec_type, phystime, phystimefin.
+        Simulation parameters including CFL, RK_order, solver_type, rec_type, timenow, timefin.
     eos : object
         Equation of state object.
     """
@@ -69,8 +69,8 @@ class MHD2D_8wave:
         ----------
         g : object
             Grid object.
-        fluid : object
-            FluidState object.
+        MHD : object
+            SimState object.
         eos : object
             Equation of state object.
         par : object
@@ -92,18 +92,24 @@ class MHD2D_8wave:
         """
         dt = min(CFLcondition_MHD(self.g, self.MHD, self.eos, self.par.CFL),
                  self.par.timefin - self.par.timenow)
+                 
+        # procedures that involve some evaluations before the timestep 
+        # e.g., self-gravity, cooling and so on 
+        if self.par.before_step is not None:
+            self.par.before_step(self.g, self.MHD, self.par, dt) 
+                 
         self.MHD = oneStep_MHD_RK_8wave(self.g, self.MHD, self.eos, self.par, dt)
         self.par.timenow += dt
         return self.MHD
 
 
 # -------------------------
-# Small helper: one RK stage applied to all five conservative variables
+# Small helper: one RK stage applied to all eight conservative variables
 # -------------------------
 def _rk_stage(MHD_out, MHD_a, MHD_b, \
     ResM, Res1, Res2, Res3, ResE, ResB1, ResB2, ResB3, dt, a, b, c):
     """
-    Set HD_out.* = a * HD_a.* + b * HD_b.* + c * dt * Res*
+    Set MHD_out.* = a * MHD_a.* + b * MHD_b.* + c * dt * Res*
  
     For SSP-RK, the standard combinations are:
       Stage 1 (predictor): a=1,    b=0,    c=-1     -> HD_h = HD - dt*R(HD)
@@ -133,7 +139,7 @@ def CFLcondition_MHD(g, MHD, eos, CFL):
     g : object
         Grid object.
     MHD : object
-        Fluid state object.
+        SimState object.
     eos : object
         Equation of state object.
     CFL : float
@@ -192,7 +198,7 @@ def oneStep_MHD_RK_8wave(g, MHD, eos, par, dt):
     eos : object
         Equation of state object.
     par : object
-        Simulation parameters (RK order, reconstruction type, flux type, etc.).
+        Simulation parameters (RK order, reconstruction type, solver type, etc.).
     dt : float
         Timestep size.
 

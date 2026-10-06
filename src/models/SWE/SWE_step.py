@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===============================================================================
-SWE_one_step.py
+SWE_step.py
 ===============================================================================
 
 Container class and time-stepping routines for the 2D Shallow Water Equations.
@@ -11,11 +11,8 @@ with Strang operator splitting to handle the source terms from bathymetry
 and the Coriolis force at second-order accuracy in time:
 
     U* = U^n + (dt/2) S(U^n)          -- half-step source
-    U** = U* - dt ∇·F(U*)             -- full hyperbolic step (RK2)
+    U** = U* - dt ∇·F(U*)            -- full hyperbolic step (RK2)
     U^{n+1} = U** + (dt/2) S(U**)     -- half-step source
-
-The hyperbolic step uses the MUSCL-Hancock PLM reconstruction from SWE_phys.py
-and the HLL Riemann solver, giving second-order accuracy in smooth regions.
 
 The bathymetry gradient (b_x, b_y) and Coriolis parameter (f_c) are stored
 as arrays on the SimState object and set once by the initial condition function.
@@ -46,12 +43,12 @@ class SWE2D:
     ----------
     g : object
         Grid object with domain sizes, spacing, volumes, and face areas.
-    HD : object
-        FluidState object containing primitive and conservative variables.
+    SWE : object
+        SimState object containing primitive and conservative variables.
     par : object
         Simulation parameters including CFL, RK_order, flux_type, rec_type, phystime, phystimefin.
     eos : object
-        Equation of state object.
+        Equation of state object (None here).
     """
 
     def __init__(self, g, SWE, par):
@@ -63,7 +60,7 @@ class SWE2D:
         g : object
             Grid object.
         SWE : object
-            FluidState object.
+            SimState object.
         par : object
             Simulation parameters object.
         """
@@ -82,10 +79,10 @@ class SWE2D:
         Returns
         -------
         SWE : object
-            Updated FluidState object.
+            Updated SimState object.
         """
         dt = min(CFLcondition_SWE(self.g, self.SWE, self.par.CFL),
-                 self.par.timefin - self.par.timenow)
+            self.par.timefin - self.par.timenow)
         
         #Strang splitting for the source terms (Coriolis + variable bottom)
         self.SWE = _apply_strang_source(self.SWE, dt)
@@ -122,7 +119,7 @@ def CFLcondition_SWE(g, SWE, CFL):
     g : object
         Grid object with attributes dx1, dx2 (cell spacings) and Ngc (ghost cells).
     SWE : object
-        Fluid state object with attributes h, vel1, vel2 (height and velocities).
+        SimState object with attributes h, vel1, vel2 (height and velocities).
     CFL : float
         CFL number (0 < CFL <= 1) controlling timestep size.
     
@@ -223,21 +220,21 @@ def oneStep_SWE_RK(g, SWE, par, dt):
     g : object
         Grid object with attributes Nx1, Nx2, Ngc, dx1, dx2, fS1, fS2, cVol.
     SWE : object
-        Fluid state object containing:
+        SimState object containing:
             - h, vel1, vel2, : primitive variables
             - H, mom1, mom2 : conservative variables
     par : object
         Simulation parameters including:
             - CFL : CFL number
             - RK_order : 'RK1', 'RK2', or 'RK3'
-            - phystime, phystimefin : current and final simulation time
+            - timenow, timefin : current and final simulation time
     dt : float
         Suggested timestep (bounded by CFL condition).
 
     Returns
     -------
     SWE : object
-        Updated FluidState object after one Runge-Kutta timestep.
+        Updated SimState object after one Runge-Kutta timestep.
     """
     
     #define local copy of ghost cells number to simplify array indexing
@@ -284,6 +281,7 @@ def oneStep_SWE_RK(g, SWE, par, dt):
         SWE.mom1 = (SWE_h.mom1 + SWE.mom1) / 2.0 - dt * Res1 / 2.0 
         SWE.mom2 = (SWE_h.mom2 + SWE.mom2) / 2.0 - dt * Res2 / 2.0 
     
+    #third-order Runge-Kutta scheme
     elif (par.RK_order == 'RK3'):
         
         #Primitive variables recovery after 1st RK stage
@@ -340,7 +338,6 @@ def flux_calc_SWE(g, SWE, par):
     - boundary conditions are taken into account via ghost cells,
     - primitive variables are reconstructed to cell faces,
     - fluxes are computed via (approximate) Riemann solvers,
-    - source terms are calculated, if needed, 
     - residuals are obtained via finite-volume integral form.    
     
     Parameters
@@ -348,9 +345,9 @@ def flux_calc_SWE(g, SWE, par):
     g : object
         Grid object with attributes Nx1, Nx2, Ngc, fS1, fS2, cVol.
     SWE : object
-        Fluid state object at current time step.
+        SimState object at current time step.
     par : object
-        Simulation parameters including reconstruction type (rec_type) and flux_type.
+        Simulation parameters including reconstruction type (rec_type) and solver_type.
     
 
     Returns
@@ -378,12 +375,12 @@ def flux_calc_SWE(g, SWE, par):
         vel1_L, vel1_R = VarReconstruct(SWE.vel1, g, par.rec_type, 1)
         vel2_L, vel2_R = VarReconstruct(SWE.vel2, g, par.rec_type, 1)
 
-        #fluxes calculation with approximate Riemann solver (see flux_type) in 1-dim
+        #fluxes calculation with approximate Riemann solver (see solver_type) in 1-dim
         Fh, Fx, Fy = \
             Riemann_SWE(h_L, h_R, \
             vel1_L, vel1_R, vel2_L, vel2_R, SWE.g_ff, par.solver_type, 1)
         
-        #residuals calculation for mass, 3 components of momentum and total energy in 1-dim
+        #residuals calculation forheight and 2 momentum components in 1-dim
         ResH = ( Fh[1:,:]*g.fS1[1:,:] - Fh[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         Res1 = ( Fx[1:,:]*g.fS1[1:,:] - Fx[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
         Res2 = ( Fy[1:,:]*g.fS1[1:,:] - Fy[:-1,:]*g.fS1[:-1,:] ) / g.cVol[:,:]
@@ -397,12 +394,12 @@ def flux_calc_SWE(g, SWE, par):
         vel1_L, vel1_R = VarReconstruct(SWE.vel1, g, par.rec_type, 2)
         vel2_L, vel2_R = VarReconstruct(SWE.vel2, g, par.rec_type, 2)
      
-        #fluxes calculation with approximate Riemann solver (see flux_type) in 2-dim
+        #fluxes calculation with approximate Riemann solver (see solver_type) in 2-dim
         Fh, Fx, Fy = \
             Riemann_SWE(h_L, h_R, \
             vel1_L, vel1_R, vel2_L, vel2_R, SWE.g_ff, par.solver_type, 2)
         
-        #residuals calculation for mass, 3 components of momentum and total energy in 2-dim
+        #residuals calculation for height and 2 momentum components in 2-dim
         #here we add the fluxes differences to the residuals after 1-dim calculation
         ResH += ( Fh[:,1:]*g.fS2[:,1:] - Fh[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]
         Res1 += ( Fx[:,1:]*g.fS2[:,1:] - Fx[:,:-1]*g.fS2[:,:-1] ) / g.cVol[:,:]

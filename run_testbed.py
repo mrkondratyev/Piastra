@@ -3,7 +3,7 @@
 run_testbed.py
 
 Entry point for Piastra's testbed: runs the sanity / conservation /
-convergence / robustness suites under tests/ and prints a single pass/fail
+convergence / robustness / restart suites under tests/ and prints a single pass/fail
 report.
 
 Usage
@@ -35,12 +35,14 @@ import tests.test_sanity as test_sanity
 import tests.test_conservation as test_conservation
 import tests.test_convergence as test_convergence
 import tests.test_robustness as test_robustness
+import tests.test_restart as test_restart
 
 SUITES = {
     "sanity":       test_sanity,
     "conservation": test_conservation,
     "convergence":  test_convergence,
     "robustness":   test_robustness,
+    "restart":      test_restart,
 }
 
 
@@ -109,7 +111,7 @@ def run_suite(name, module, quiet=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Run the Piastra testbed.")
-    parser.add_argument("--suite", default="sanity,conservation,convergence,robustness",
+    parser.add_argument("--suite", default="sanity,conservation,convergence,robustness,restart",
                          help="comma-separated subset of: " + ",".join(SUITES))
     parser.add_argument("-q", "--quiet", action="store_true",
                          help="only print failing/erroring tests")

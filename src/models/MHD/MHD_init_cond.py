@@ -6,6 +6,11 @@ This module provides functions to set up 1D and 2D MHD
 test problems. It initializes the grid, fluid state, 
 and simulation time parameters.
 
+Currently implemented
+---------------------
+  see below
+  IC_adv_user_defined : placeholder for custom ICs
+
 Author: mrkondratyev
 Date: June 17, 2024
 """
@@ -133,10 +138,8 @@ def IC_MHD1D_Alfven(grid, MHD, par):
     MHD.fb1[:, :]  = B0
 
     # --- staggered fb2: indexed 0..Nx1-1, coordinate from the ghost-offset
-    #     face array fx1[Ngc:Ngc+Nx1, Ngc]; sin varies along x, broadcast
-    #     across columns (original wrote MHD.fb2[i, :]).
-    x_face = grid.fx1[Ngc:Ngc + Nx1, Ngc]                 # shape (Nx1,)
-    MHD.fb2[:Nx1, :] = amp * np.sin(2.0 * np.pi * x_face)[:, None]
+    x_c = grid.cx1[Ngc:Ngc + Nx1, Ngc]  # shape (Nx1,)
+    MHD.fb2[:, :] = amp * np.sin(2.0 * np.pi * x_c)[:, None]
 
     # --- cell-centered block: smooth sinusoids; velocity tied to B by the
     #     Alfven relation v_perp = -B_perp / sqrt(rho0). Nx2r+1 upper bound.
@@ -203,8 +206,8 @@ def IC_MHD1D_BW(grid, MHD, par):
     MHD.fb1[:, :]  = 0.75
 
     # --- staggered fb2:
-    left_face = grid.fx1[Ngc:Ngc + Nx1, 1] < 0.5 
-    MHD.fb2[:Nx1, :] = np.where(left_face[:, None], 1.0, -1.0)
+    left_c = grid.cx1[Ngc:Ngc + Nx1, Ngc] < 0.5
+    MHD.fb2[:, :] = np.where(left_c[:, None], 1.0, -1.0)
 
     # --- cell-centered block
     sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r + 1))
@@ -330,8 +333,8 @@ def IC_MHD1D_RJ(grid, MHD, par):
     MHD.bfi3[:, :] = 2.0 / s4pi
 
     # --- staggered fb2 
-    left_face = grid.fx1[Ngc:Ngc + Nx1, 1] < 0.5          # shape (Nx1,)
-    MHD.fb2[:Nx1, :] = np.where(left_face[:, None], 3.6 / s4pi, 4.0 / s4pi)
+    left_c = grid.cx1[Ngc:Ngc + Nx1, Ngc] < 0.5           # shape (Nx1,)
+    MHD.fb2[:, :] = np.where(left_c[:, None], 3.6 / s4pi, 4.0 / s4pi)
 
     # --- cell-centered block
     sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r + 1))
@@ -402,7 +405,7 @@ def IC_MHD2D_blast_cart(grid, MHD, par):
     MHD.fb1[:, :]  = b0; MHD.fb2[:, :]  = b0
     
     sl  = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
-    rad = np.sqrt((grid.fx1[sl] - 0.5)**2 + (grid.fx2[sl] - 0.5)**2)
+    rad = np.sqrt((grid.cx1[sl] - 0.5)**2 + (grid.cx2[sl] - 0.5)**2)
     MHD.pres[sl] = np.where(rad < 0.1, 10.0, 0.1)
     
     par.BC[:] = 'free'
@@ -483,7 +486,7 @@ def IC_MHD2D_blast_sph(grid, MHD, par):
     2D magnetized explosion test (spherical axisymmetry).
 
     A standard blast wave problem in a magnetized medium. 
-    A high-pressure circular region is initialized in the center 
+    A high-pressure circular region is initialized in the center
     of a uniform low-pressure medium with a vertical background magnetic field.
 
     Parameters
@@ -514,7 +517,7 @@ def IC_MHD2D_blast_sph(grid, MHD, par):
     
     par.timenow = 0.0; par.timefin = 0.2
     
-    eos = EOSdata(7.0 / 5.0)
+    eos = EOSdata(7.0/5.0)
     
     Ngc  = grid.Ngc
     Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
@@ -583,7 +586,7 @@ def IC_MHD2D_OT(grid, MHD, par):
     grid.CartesianGrid(x1ini, x1fin, x2ini, x2fin)
     par.timenow = 0.0; par.timefin = 0.5
 
-    eos = EOSdata(5.0 / 3.0)
+    eos = EOSdata(5.0/3.0)
     Ngc  = grid.Ngc
     Nx1  = grid.Nx1; Nx2 = grid.Nx2
     Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
@@ -697,7 +700,7 @@ def IC_MHD2D_Alfven(grid, MHD, par):
         B_z    = 0.1 sin(2 pi xprop)        (out-of-plane)
         v_par  = 0
         v_perp = -B_perp ,  v_z = -B_z      (Alfven relation, sqrt(rho) = 1)
-    rotated into the grid frame exactly as in the supplied Fortran IC:
+    rotated into the grid:
         B1 = B_par cos t - B_perp sin t ,  B2 = B_par sin t + B_perp cos t
         v1 = B_perp sin t , v2 = -B_perp cos t , v3 = -B_z .
  
@@ -714,8 +717,8 @@ def IC_MHD2D_Alfven(grid, MHD, par):
     (Gardiner & Stone use Lx = 1, Ly = 1/2, tan(theta) = Lx/Ly, one wavelength
     along the diagonal); set theta and the grid extents accordingly.
  
-    Domain [0,1] x [0,1], periodic in both directions; gamma = 5/3,
-    t_fin = 5 (five wave crossings).
+    Domain [0,sqrt(2)] x [0,sqrt(2)], periodic in both directions; gamma = 5/3,
+    theta = pi/4, t_fin = 5 (five wave crossings).
  
     Parameters
     ----------
@@ -726,13 +729,8 @@ def IC_MHD2D_Alfven(grid, MHD, par):
     Returns
     -------
     grid, MHD, par, eos : objects
- 
-    References
-    ----------
-    Toth, G. (2000), J. Comput. Phys. 161, 605
-    Gardiner, T. A. & Stone, J. M. (2005), J. Comput. Phys. 205, 509
     """
-    print("2D circularly polarized Alfven wave (Toth 2000; Gardiner & Stone 2005)")
+    print("2D circularly polarized Alfven wave")
  
     # --- grid + time ---
     x1ini, x1fin = 0.0, np.sqrt(2.0); x2ini, x2fin = 0.0, np.sqrt(2.0)
@@ -791,7 +789,7 @@ def IC_MHD2D_Alfven(grid, MHD, par):
 
 def IC_MHD2D_current_sheet(grid, MHD, par):
     """
-    2D current sheet / magnetic reconnection test (Athena code, Stone et al (2008)).
+    2D current sheet / magnetic reconnection test.
 
     Two anti-parallel current sheets are set up by a magnetic field that points
     along y and reverses sign twice across x. A small, domain-filling velocity
@@ -809,11 +807,7 @@ def IC_MHD2D_current_sheet(grid, MHD, par):
     Field            : B_y = -B0 for -0.25 < x < 0.25, B0 otherwise; B_x = B_z = 0
     Perturbation      : v_x = A * sin(2pi y);
                         v_y = v_z = 0
-
-    NOTE on convention: the canonical statement uses B_y(x) with v_x perturbation;
-    this routine uses the equivalent x<->y relabelling (B_x(y), v_x(y) seed). The
-    physics (field-parallel shear across anti-parallel sheets) is identical.
-
+                        
     Parameters
     ----------
     grid : object   CartesianGrid, cx1, cx2, Ngc, Nx1, Nx2, Nx1r, Nx2r.
@@ -823,11 +817,6 @@ def IC_MHD2D_current_sheet(grid, MHD, par):
     Returns
     -------
     grid, MHD, par, eos : objects
-
-    References
-    ----------
-    Gardiner, T. A. & Stone, J. M. (2005), J. Comput. Phys. 205, 509
-    Fromang, S. et al. (2006), A&A 457, 371
     """
     print("2D MHD current sheet / reconnection test (Gardiner & Stone 2005)")
 
@@ -843,8 +832,7 @@ def IC_MHD2D_current_sheet(grid, MHD, par):
     Nx1r = grid.Nx1r; Nx2r = grid.Nx2r
 
     #current sheet parameters 
-    B0  = 1.0 # * np.sqrt(4.0*np.pi)
-    A = 0.1; beta = 0.01
+    B0  = 1.0; A = 0.1; beta = 0.01
 
     # --- uniform fields (incl. ghosts) ---
     MHD.dens[:, :] = 1.0
@@ -858,8 +846,8 @@ def IC_MHD2D_current_sheet(grid, MHD, par):
     sl = (slice(Ngc, Nx1r), slice(Ngc, Nx2r))
 
     # --- staggered fb2:
-    center = np.abs(grid.fx1[Ngc:Ngc + Nx1, 1]) < 0.25 
-    MHD.fb2[:Nx1, :] = np.where(center[:, None], -B0, B0)
+    center = np.abs(grid.cx1[Ngc:Ngc + Nx1, Ngc]) < 0.25
+    MHD.fb2[:, :] = np.where(center[:, None], -B0, B0)
     
     MHD.vel1[sl] = A * np.sin(2.0 * np.pi * grid.cx2[sl]) 
 
@@ -977,7 +965,7 @@ def IC_MHD2D_disk(grid, MHD, par):
 
     Coordinate system : cylindrical (R, z) = (x1, x2).
     Geometry          : CylindricalGrid, R in [0.4, 2.6], z in [-1, 1].
-    Divergence control: cleaning only (run with divb_tr = 'GLM').
+    Divergence control: cleaning only (run with divb_tr = 'GLM' or '8wave').
 
     Parameters
     ----------
@@ -996,7 +984,11 @@ def IC_MHD2D_disk(grid, MHD, par):
     Hawley, J. F. (2000), ApJ 528, 462
     """
     print("2D Newtonian constant-l accretion torus (Papaloizou-Pringle / Hawley)")
-
+    if par.divb_tr not in ["8wave", "GLM"]:
+        raise ValueError(
+            f"Invalid divb_tr: '{par.divb_tr}' for MHD disk2D. "
+            f"Expected one of ['8wave', 'GLM'].")
+            
     # --- grid ---
     R_in_g, R_out_g = 0.4, 2.6
     Z_bot,  Z_top   = -1.0, 1.0
@@ -1011,7 +1003,7 @@ def IC_MHD2D_disk(grid, MHD, par):
     R_inner  = 0.65         # inner edge   (must exceed R_max/2 for a bound torus)
     beta_min = 100.0        # min plasma beta of the seed field (large -> weak)
     rho_max  = 1.0
-    n_orbit  = 20.0         # run length in orbital periods at R_max
+    n_orbit  = 7.0         # run length in orbital periods at R_max
 
     if R_inner <= 0.5 * R_max:
         raise ValueError("unbound torus: need R_inner > R_max/2 (C must be < 0).")
@@ -1115,8 +1107,8 @@ def IC_MHD2D_shock_cloud(grid, MHD, par):
 
     References
     ----------
-    Orlando, S. et al. (2008), ApJ 678, 274
-    Shin, M.-S., Stone, J. M. & Snyder, G. F. (2008), ApJ 680, 336
+    Orlando, S. et al. (2008), ApJ 
+    Shin, M.-S., Stone, J. M. & Snyder, G. F. (2008), ApJ 
     """
     print("2D MHD shock-cloud interaction")
 
@@ -1176,7 +1168,7 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     optionally, a constant toroidal B_phi).  The ambient is uniform and threaded
     by the same axial B_z so the poloidal flux does not terminate in vacuum.
 
-    Simplifications (vs. the full Tesileanu/PLUTO setup):
+    Simplifications:
       * fields are CONSTANT across the nozzle (no radial B_z, B_phi profiles),
         so the inlet values are scalars and the nozzle gas pressure is uniform;
       * a pure axial field (B_phi = 0) is in exact radial equilibrium.  A
@@ -1214,7 +1206,7 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
 
     References
     ----------
-    Mignone, A. et al. (2007), ApJS 170, 228   (PLUTO; MHD/Jet test, simplified)
+    Mignone, A. et al. (2007), ApJS 
     """
     
     print("2D axisymmetric magnetized jet (cylindrical, constant inlet field, GLM)")
@@ -1232,9 +1224,7 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     eos = EOSdata(5.0 / 3.0)
 
     # --- aliases ---
-    Ngc  = grid.Ngc
-    Nx1  = grid.Nx1
-    Nx1r = grid.Nx1r
+    Ngc  = grid.Ngc; Nx1  = grid.Nx1; Nx1r = grid.Nx1r
 
     # --- jet / ambient parameters ---
     Mach     = 6.0
@@ -1245,7 +1235,7 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
     p_jet    = rho_jet * cs_jet**2 / eos.GAMMA   # gas pressure (= 0.6)
     r_jet    = 1.0
 
-    beta_jet = 100.0                      # 2 p_jet / B0^2  -> axial field strength
+    beta_jet = 0.1                      # 2 p_jet / B0^2  -> axial field strength
     B0       = np.sqrt(2.0 * p_jet / beta_jet)   # constant axial field B_z
     Bphi0    = 0.0                        # constant toroidal field (0 = pure axial)
 
@@ -1254,20 +1244,15 @@ def IC_MHD2D_jet_cyl(grid, MHD, par):
 
     MHD.dens[:, :] = rho_amb
     MHD.pres[:, :] = p_amb
-    MHD.vel1[:, :] = 0.0
-    MHD.vel2[:, :] = 0.0
-    MHD.vel3[:, :] = 0.0
-    MHD.bfi1[:, :] = 0.0                  # B_R = 0
-    MHD.bfi2[:, :] = B0                   # B_Z = axial ambient field
-    MHD.bfi3[:, :] = 0.0                  # B_phi = 0 in ambient
-    MHD.fb1[:, :]  = 0.0                  # staggered faces unused (cleaning run)
-    MHD.fb2[:, :]  = B0
+    MHD.vel1[:, :] = MHD.vel2[:, :] = MHD.vel3[:, :] = 0.0
+    MHD.bfi1[:, :] = 0.0; MHD.bfi2[:, :] = B0; MHD.bfi3[:, :] = 0.0 #Bz only 
+    MHD.fb1[:, :]  = 0.0; MHD.fb2[:, :]  = B0 # staggered faces unused (cleaning run)
     MHD.bglm[:, :] = 0.0
 
     # --- nozzle extent along R (tangential to the bottom face) ---
-    Rc = grid.cx1[Ngc:Nx1r, Ngc]          # 1D interior R cell-centres
-    in_jet = np.nonzero(Rc < r_jet)[0]    # contiguous from the axis
-    start  = int(in_jet[0])               # 0
+    Rc = grid.cx1[Ngc:Nx1r, Ngc]  # 1D interior R cell-centres
+    in_jet = np.nonzero(Rc < r_jet)[0] # contiguous from the axis
+    start  = int(in_jet[0]) # 0
     end    = int(in_jet[-1]) + 1
 
     # --- fixed (Dirichlet) inlet on the bottom face (face 1): all scalars ---

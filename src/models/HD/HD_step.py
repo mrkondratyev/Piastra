@@ -63,23 +63,23 @@ class HD2D:
     g : object
         Grid object with domain sizes, spacing, volumes, and face areas.
     HD : object
-        FluidState object containing primitive and conservative variables.
+        SimState object containing primitive and conservative variables.
     par : object
-        Simulation parameters including CFL, RK_order, flux_type, rec_type, phystime, phystimefin.
+        Simulation parameters including CFL, RK_order, solver_type, rec_type, timenow, timefin.
     eos : object
         Equation of state object.
     """
 
     def __init__(self, g, HD, eos, par):
         """
-        Initialize the Hydro2D container.
+        Initialize the HD2D container.
 
         Parameters
         ----------
         g : object
             Grid object.
         HD : object
-            FluidState object.
+            SimState object.
         eos : object
             Equation of state object.
         par : object
@@ -97,10 +97,16 @@ class HD2D:
         Returns
         -------
         HD : object
-            Updated FluidState object.
+            Updated SimState object.
         """
         dt = min(CFLcondition_HD(self.g, self.HD, self.eos, self.par.CFL),
                  self.par.timefin - self.par.timenow)
+                 
+        # procedures that involve some evaluations before the timestep 
+        # e.g., self-gravity, cooling and so on 
+        if self.par.before_step is not None:
+            self.par.before_step(self.g, self.HD, self.par, dt) 
+                 
         self.HD = oneStep_HD_RK(self.g, self.HD, self.eos, self.par, dt)
         self.par.timenow += dt
         return self.HD
@@ -148,7 +154,7 @@ def CFLcondition_HD(g, HD, eos, CFL):
     g : object
         Grid object with attributes dx1, dx2 (cell spacings) and Ngc (ghost cells).
     HD : object
-        Fluid state object with attributes dens, vel1, vel2 (density and velocities).
+        SimState object with attributes dens, vel1, vel2 (density and velocities).
     eos : object
         Equation of state object providing sound_speed(density, pressure).
     CFL : float
@@ -220,7 +226,7 @@ def oneStep_HD_RK(g, HD, eos, par, dt):
     g : object
         Grid object with attributes Nx1, Nx2, Ngc, dx1, dx2, fS1, fS2, cVol.
     HD : object
-        Fluid state object containing:
+        SimState object containing:
             - dens, vel1, vel2, vel3, pres : primitive variables
             - mass, mom1, mom2, mom3, etot : conservative variables
     eos : object
@@ -229,14 +235,14 @@ def oneStep_HD_RK(g, HD, eos, par, dt):
         Simulation parameters including:
             - CFL : CFL number
             - RK_order : 'RK1', 'RK2', or 'RK3'
-            - phystime, phystimefin : current and final simulation time
+            - timenow, timefin : current and final simulation time
     dt : float
         Suggested timestep (bounded by CFL condition).
 
     Returns
     -------
     HD : object
-        Updated FluidState object after one Runge-Kutta timestep.
+        Updated SimState object after one Runge-Kutta timestep.
     """
     
     #define local copy of ghost cells number to simplify array indexing
@@ -334,7 +340,7 @@ def oneStep_HD_RK(g, HD, eos, par, dt):
 # ============================================================================
 def _prim_recovery(state, Ngc, eos):
     """
-    Call cons2prim_nr_hydro and write results back into
+    Call cons2prim_HD and write results back into
     state.{dens,vel*,pres}.
 
     Parameters
@@ -371,7 +377,7 @@ def flux_calc_HD(g, HD, par, eos):
     g : object
         Grid object with attributes Nx1, Nx2, Ngc, fS1, fS2, cVol.
     HD : object
-        Fluid state object at current time step.
+        SimState object at current time step.
     par : object
         Simulation parameters including reconstruction type (rec_type) and flux_type.
     eos : object

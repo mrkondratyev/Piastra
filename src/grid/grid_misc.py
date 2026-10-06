@@ -181,9 +181,10 @@ def Ln_norm(grid, n, var_num, var_ref):
     Ngc = grid.Ngc 
     norm = 0.0
     
-    norm = np.sum( grid.cVol[:,:]*(var_num[Ngc:-Ngc, Ngc:-Ngc] - var_ref[Ngc:-Ngc, Ngc:-Ngc])**n )
+    abs_delta_var = np.abs(var_num[Ngc:-Ngc, Ngc:-Ngc] - var_ref[Ngc:-Ngc, Ngc:-Ngc])
+    norm = np.sum( grid.cVol[:,:]*(abs_delta_var)**n )
     
-    return norm
+    return norm**(1.0/n)
     
 
 
