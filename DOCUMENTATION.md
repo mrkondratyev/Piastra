@@ -200,8 +200,8 @@ four coordinate systems by construction.
 | `cell_gradient` | `(grid, f) -> g1, g2` | second-order gradient of a cell-centred scalar, **on cell centres**, metric-corrected via `hx2` |
 | `face_gradient` | `(grid, f) -> g1, g2` | same, but evaluated **on faces** (shapes `(Nx1+1,Nx2)` / `(Nx1,Nx2+1)`) — what the Poisson operator and the diffusion solver use |
 | `edge_to_face_curl` | `(grid, edg_var) -> fV1, fV2` | discrete Stokes-theorem curl of an out-of-plane edge scalar, producing a solenoidal-by-construction staggered field — used to seed CT's initial `fb1/fb2` from a vector potential |
-| `Ln_norm` | `(grid, n, var_num, var_ref) -> float` | `( sum(cVol * |num - ref|^n) )^(1/n)` over the real cells — volume-weighted, not normalized by the total volume |
-| `integral_over_grid` | `(grid, var) -> float` | volume integral `sum(cVol * var)` of a ghost-inclusive field |
+| `Ln_norm` | `(grid, n, var_num, var_ref) -> float` | `(sum(cVol * abs(num - ref)^n))^(1/n)` over the real cells |
+| `integral_over_grid` | `(grid, var) -> float` | volume integral `sum(cVol * var)` of a ghost-inclusive field over the real cells |
 
 `cell_gradient` vs. `face_gradient`: use `cell_gradient` when you need a
 gradient sampled at the same locations as the input field (e.g. converting
