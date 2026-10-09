@@ -231,8 +231,17 @@ def _face_kappa(kappa, Ngc, Nx1r, Nx2r):
     if np.isscalar(kappa):
         return kappa, kappa
 
-    kf1 = 0.5 * (kappa[Ngc:Nx1r+1, Ngc:Nx2r] + kappa[Ngc-1:Nx1r, Ngc:Nx2r])
-    kf2 = 0.5 * (kappa[Ngc:Nx1r, Ngc:Nx2r+1] + kappa[Ngc:Nx1r, Ngc-1:Nx2r])
+    # use arithmetic mean 
+    # kf1 = 0.5 * (kappa[Ngc:Nx1r+1, Ngc:Nx2r] + kappa[Ngc-1:Nx1r, Ngc:Nx2r])
+    # kf2 = 0.5 * (kappa[Ngc:Nx1r, Ngc:Nx2r+1] + kappa[Ngc:Nx1r, Ngc-1:Nx2r])
+
+    # use harmonic mean 
+    # ---- x1 faces: cells (i-1, j) and (i, j) ----
+    k_minus = kappa[Ngc-1:Nx1r, Ngc:Nx2r]; k_plus = kappa[Ngc:Nx1r+1, Ngc:Nx2r]
+    kf1 = 2.0 * k_minus * k_plus / np.maximum(k_minus + k_plus, 1e-300)
+    # ---- x2 faces: cells (i, j-1) and (i, j) ----
+    k_minus = kappa[Ngc:Nx1r, Ngc-1:Nx2r]; k_plus = kappa[Ngc:Nx1r, Ngc:Nx2r+1]
+    kf2 = 2.0 * k_minus * k_plus / np.maximum(k_minus + k_plus, 1e-300)
     
     return kf1, kf2
 
