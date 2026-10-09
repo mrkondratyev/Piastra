@@ -396,6 +396,11 @@ def solve_poisson(grid, rhs, BC, BC_value=None, phi0=None,
     diagA_safe = np.where(np.abs(diagA) > 1e-300, diagA, 1.0)
 
     r = b - poisson_operator(grid, phi_int, BC, BC_value)
+    
+    ones = np.ones(shape); vol_total = np.sum(grid.cVol)
+    if no_dirichlet:
+        r -= _dot(grid, r, ones) / vol_total
+                       
     z = r / diagA_safe
     p = z.copy()
     rz_old = _dot(grid, r, z)
@@ -415,6 +420,14 @@ def solve_poisson(grid, rhs, BC, BC_value=None, phi0=None,
 
         phi_int += alpha * p
         r -= alpha * Ap
+        
+        # Pure-periodic / pure-Neumann: the residual must stay in the range
+        # of A (zero volume integral). Round-off feeds a constant component
+        # into r that CG cannot remove; when ||rhs|| is small that component
+        # exceeds tol*||rhs|| and CG diverges instead of stopping.
+        if no_dirichlet:
+            r -= _dot(grid, r, ones) / vol_total
+        
         niter += 1
 
         resnorm = np.sqrt(_dot(grid, r, r))
