@@ -12,7 +12,7 @@ Notes
 -------
 
 Boundary conditions are applied through ``apply_bc_scalar``, 
-``apply_bc_fixed`` from ``boundaries.py``.  
+from ``boundaries.py`` ('BC_fixed' is treated internally here) 
 The four-element array ``BC`` encodes:
 
     BC[0] : x1 inner (left / bottom-R)
@@ -31,7 +31,7 @@ Author
 mrkondratyev
 """
 import numpy as np
-from src.common.boundaries import apply_bc_scalar, apply_bc_fixed
+from src.common.boundaries import apply_bc_scalar
 
 
 
@@ -65,12 +65,32 @@ def boundCond_diff(grid, BC, diff, BC_fixed=None):
     diff.T = apply_bc_scalar(diff.T, Ngc, BC[3], axis=2, side='outer')
     
     # --- fixed (Dirichlet) ghost-fill, applied LAST so it overrides the above ---
+    # T_b sits ON THE FACE: the ghost cell is mirrored about it, T_g = 2 T_b - T_1
+    # this leads to the second-order spatial convergence instead of first order 
+    # see M. Zingale's "Tutorial on computational astrophysical hydrodynamics"
     if BC_fixed is not None:
-       N1, N2 = diff.T.shape
-       state_fields = {'T': diff.T}
-       for face in (0, 1, 2, 3):
-           if BC_fixed.get(face):
-               apply_bc_fixed(state_fields, Ngc, N1, N2, face, BC_fixed[face])
+        N1, N2 = diff.T.shape
+        T = diff.T
+        # ---- face 0: x1 inner ----
+        for (start, end, values) in BC_fixed.get(0, []):
+            if 'T' in values:
+                j0 = Ngc + start; j1 = Ngc + end
+                T[Ngc - 1, j0:j1] = 2.0 * values['T'] - T[Ngc, j0:j1]
+        # ---- face 2: x1 outer ----
+        for (start, end, values) in BC_fixed.get(2, []):
+            if 'T' in values:
+                j0 = Ngc + start; j1 = Ngc + end
+                T[N1 - Ngc, j0:j1] = 2.0 * values['T'] - T[N1 - Ngc - 1, j0:j1]
+        # ---- face 1: x2 inner ----
+        for (start, end, values) in BC_fixed.get(1, []):
+            if 'T' in values:
+                i0 = Ngc + start; i1 = Ngc + end
+                T[i0:i1, Ngc - 1] = 2.0 * values['T'] - T[i0:i1, Ngc]
+        # ---- face 3: x2 outer ----
+        for (start, end, values) in BC_fixed.get(3, []):
+            if 'T' in values:
+                i0 = Ngc + start; i1 = Ngc + end
+                T[i0:i1, N2 - Ngc] = 2.0 * values['T'] - T[i0:i1, N2 - Ngc - 1]
     
     return diff
 
